@@ -10,6 +10,7 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+include(CTest)
 set(TRAIL_MATE_UCONSOLE_PACKAGE_VERSION "${PROJECT_VERSION}"
     CACHE STRING "Debian package version for trailmate-uconsole")
 find_package(Threads REQUIRED)
@@ -112,6 +113,21 @@ target_link_libraries(trailmate_uconsole_shell
         trailmate_uconsole_linux_common
 )
 trailmate_apply_linux_common_warnings(trailmate_uconsole_shell)
+
+# ---------------------------------------------------------------------------
+# Smoke tests
+# ---------------------------------------------------------------------------
+
+if(BUILD_TESTING)
+    add_executable(trailmate_uconsole_map_workspace_smoke
+        tests/uconsole_map_workspace_smoke.cpp
+    )
+    target_link_libraries(trailmate_uconsole_map_workspace_smoke
+        PRIVATE trailmate_uconsole_shell
+    )
+    add_test(NAME trailmate_uconsole_map_workspace_smoke
+             COMMAND trailmate_uconsole_map_workspace_smoke)
+endif()
 
 # ---------------------------------------------------------------------------
 # Device executable - uConsole desktop window with framebuffer fallback

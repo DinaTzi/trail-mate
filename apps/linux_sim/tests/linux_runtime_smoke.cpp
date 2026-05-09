@@ -66,6 +66,7 @@ int main()
     set_env_var("TRAIL_MATE_HOSTLINK_PORT", "44192");
     set_env_var("TRAIL_MATE_GPS_SUPPORTED", "1");
     set_env_var("TRAIL_MATE_GPS_READY", "1");
+    set_env_var("TRAIL_MATE_LORA_SIMULATED", "1");
 
     settings_store::clear_namespace("settings");
     settings_store::clear_namespace("runtime_smoke");

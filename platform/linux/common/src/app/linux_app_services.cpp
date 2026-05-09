@@ -19,6 +19,7 @@
 #include "chat/infra/node_store_core.h"
 #include "chat/infra/store/ram_store.h"
 #include "chat/linux_noop_mesh_adapter.h"
+#include "chat/linux_raw_lora_mesh_adapter.h"
 #include "chat/ports/i_contact_blob_store.h"
 #include "chat/ports/i_node_blob_store.h"
 #include "chat/usecase/chat_service.h"
@@ -177,6 +178,51 @@ bool is_supported_protocol(::chat::MeshProtocol protocol)
         return true;
     default:
         return false;
+    }
+}
+
+bool raw_lora_enabled_for_mode(::platform::linux_runtime::LinuxRuntimeMode mode)
+{
+    if (const char* value = std::getenv("TRAIL_MATE_LORA_DISABLE"))
+    {
+        if (std::strcmp(value, "1") == 0 || std::strcmp(value, "true") == 0 ||
+            std::strcmp(value, "TRUE") == 0)
+        {
+            return false;
+        }
+    }
+
+    if (const char* value = std::getenv("TRAIL_MATE_LORA_ADAPTER"))
+    {
+        if (std::strcmp(value, "raw") == 0 ||
+            std::strcmp(value, "sx1262") == 0)
+        {
+            return true;
+        }
+        if (std::strcmp(value, "noop") == 0 ||
+            std::strcmp(value, "off") == 0)
+        {
+            return false;
+        }
+    }
+
+    return mode == ::platform::linux_runtime::LinuxRuntimeMode::DeviceRealMesh ||
+           LinuxRawLoraMeshAdapter::hardwareCandidatePresent();
+}
+
+const ::chat::MeshConfig& mesh_config_for_protocol(
+    const ::app::AppConfig& config)
+{
+    switch (config.mesh_protocol)
+    {
+    case ::chat::MeshProtocol::MeshCore:
+        return config.meshcore_config;
+    case ::chat::MeshProtocol::RNode:
+        return config.rnode_config;
+    case ::chat::MeshProtocol::LXMF:
+    case ::chat::MeshProtocol::Meshtastic:
+    default:
+        return config.meshtastic_config;
     }
 }
 
@@ -1369,11 +1415,16 @@ struct LinuxAppServices::Implementation
           contact_service(node_store, contact_store),
           chat_model(),
           chat_store(),
+          raw_lora_enabled(raw_lora_enabled_for_mode(options.runtime_mode)),
           noop_mesh_adapter(),
+          raw_lora_mesh_adapter(self_node_id),
           loopback_mesh_adapter(self_node_id),
           mesh_adapter(demo_world_enabled
                            ? static_cast<::chat::IMeshAdapter&>(
                                  loopback_mesh_adapter)
+                       : raw_lora_enabled
+                           ? static_cast<::chat::IMeshAdapter&>(
+                                 raw_lora_mesh_adapter)
                            : static_cast<::chat::IMeshAdapter&>(
                                  noop_mesh_adapter)),
           chat_service(chat_model, mesh_adapter, chat_store),
@@ -1396,12 +1447,18 @@ struct LinuxAppServices::Implementation
         if (started)
         {
             noop_mesh_adapter.setSelfNodeId(self_node_id);
+            raw_lora_mesh_adapter.setSelfNodeId(self_node_id);
             loopback_mesh_adapter.setSelfNodeId(self_node_id);
             return;
         }
 
         noop_mesh_adapter.setSelfNodeId(self_node_id);
+        raw_lora_mesh_adapter.setSelfNodeId(self_node_id);
         loopback_mesh_adapter.setSelfNodeId(self_node_id);
+        if (raw_lora_enabled)
+        {
+            (void)raw_lora_mesh_adapter.begin();
+        }
         node_store.setProtectedNodeChecker(
             [self_node_id](uint32_t node_id)
             {
@@ -1510,6 +1567,11 @@ struct LinuxAppServices::Implementation
             loopback_mesh_adapter.tick();
             return;
         }
+        if (raw_lora_enabled)
+        {
+            raw_lora_mesh_adapter.tick();
+            return;
+        }
         noop_mesh_adapter.tick();
     }
 
@@ -1518,6 +1580,11 @@ struct LinuxAppServices::Implementation
         if (demo_world_enabled)
         {
             return loopback_mesh_adapter.takePendingSendResult(out_msg_id,
+                                                               out_ok);
+        }
+        if (raw_lora_enabled)
+        {
+            return raw_lora_mesh_adapter.takePendingSendResult(out_msg_id,
                                                                out_ok);
         }
         return noop_mesh_adapter.takePendingSendResult(out_msg_id, out_ok);
@@ -1532,7 +1599,9 @@ struct LinuxAppServices::Implementation
     ::chat::contacts::ContactService contact_service;
     ::chat::ChatModel chat_model;
     ::chat::RamStore chat_store;
+    bool raw_lora_enabled = false;
     ::trailmate::cardputer_zero::linux_ui::LinuxNoopMeshAdapter noop_mesh_adapter;
+    LinuxRawLoraMeshAdapter raw_lora_mesh_adapter;
     LinuxLoopbackMeshAdapter loopback_mesh_adapter;
     ::chat::IMeshAdapter& mesh_adapter;
     ::chat::ChatService chat_service;
@@ -1584,6 +1653,8 @@ bool LinuxAppServices::initialize()
     (void)::sys::EventBus::init();
     ensureServicesReady();
     syncLocalIdentity();
+    applyMeshConfig();
+    applyPositionConfig();
     initialized_ = true;
     return true;
 }
@@ -1654,8 +1725,7 @@ void LinuxAppServices::saveConfig()
 void LinuxAppServices::applyMeshConfig()
 {
     ensureServicesReady();
-    ::chat::MeshConfig mesh_config{};
-    impl().mesh_adapter.applyConfig(mesh_config);
+    impl().mesh_adapter.applyConfig(mesh_config_for_protocol(config_));
     impl().chat_service.setActiveProtocol(config_.mesh_protocol);
 }
 

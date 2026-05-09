@@ -25,8 +25,10 @@ struct MapTileItem
 
 struct MapWorkspaceSnapshot
 {
+    bool has_center = false;
     bool has_fix = false;
     bool has_configured_center = false;
+    bool using_default_center = false;
     double lat = 0.0;
     double lon = 0.0;
     double altitude_m = 0.0;

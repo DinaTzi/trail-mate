@@ -21,6 +21,8 @@
 #include <unistd.h>
 #endif
 
+#include "platform/linux/runtime_packet_log.h"
+
 namespace platform::ui::gps
 {
 namespace
@@ -47,6 +49,7 @@ constexpr const char* kGpsFixEnv = "TRAIL_MATE_GPS_FIX";
 constexpr const char* kGpsDeviceEnv = "TRAIL_MATE_GPS_DEVICE";
 constexpr const char* kGpsBaudEnv = "TRAIL_MATE_GPS_BAUD";
 constexpr const char* kGpsNmeaFileEnv = "TRAIL_MATE_GPS_NMEA_FILE";
+constexpr const char* kGpsAutoSerialEnv = "TRAIL_MATE_GPS_AUTO_SERIAL";
 
 constexpr double kDefaultLat = 25.0389;
 constexpr double kDefaultLng = 102.7183;
@@ -161,6 +164,27 @@ int env_int_or_default(const char* name, int fallback)
         return fallback;
     }
     return static_cast<int>(parsed);
+}
+
+bool env_configured(const char* name)
+{
+    const char* value = std::getenv(name);
+    return value != nullptr && value[0] != '\0';
+}
+
+bool auto_serial_probe_enabled()
+{
+    if (env_configured(kGpsAutoSerialEnv))
+    {
+        return env_flag_or_default(kGpsAutoSerialEnv, false);
+    }
+
+#if defined(__linux__)
+    std::error_code ec;
+    return std::filesystem::exists("/dev/spidev4.0", ec) && !ec;
+#else
+    return false;
+#endif
 }
 
 ::gps::GnssFix env_fix_or_default()
@@ -379,6 +403,73 @@ bool verify_checksum(const char* line)
     char* end = nullptr;
     const long expected = std::strtol(text, &end, 16);
     return end != text && checksum == static_cast<uint8_t>(expected & 0xFF);
+}
+
+std::string sentence_checksum_text(const char* line)
+{
+    if (!line)
+    {
+        return {};
+    }
+    const char* star = std::strchr(line, '*');
+    if (!star || !star[1] || !star[2])
+    {
+        return {};
+    }
+    return std::string(star + 1, 2);
+}
+
+void append_nmea_log_locked(const char* sentence, bool checksum_ok)
+{
+    if (!sentence || sentence[0] != '$')
+    {
+        return;
+    }
+
+    const char* star = std::strchr(sentence, '*');
+    const char* comma = std::strchr(sentence, ',');
+    const char* header_end = comma != nullptr ? comma : (star != nullptr ? star : sentence + std::strlen(sentence));
+    std::string header(sentence, static_cast<std::size_t>(header_end - sentence));
+    std::string body{};
+    if (comma != nullptr)
+    {
+        const char* body_end = star != nullptr ? star : sentence + std::strlen(sentence);
+        body.assign(comma + 1, static_cast<std::size_t>(body_end - comma - 1));
+    }
+
+    ::platform::linux_runtime::PacketLogEntry entry{};
+    entry.source = ::platform::linux_runtime::PacketLogSource::Gps;
+    entry.direction = ::platform::linux_runtime::PacketLogDirection::Rx;
+    entry.title = header;
+    entry.summary = checksum_ok ? "NMEA sentence parsed"
+                                : "NMEA checksum failed";
+    entry.raw_hex =
+        ::platform::linux_runtime::hex_bytes(sentence, std::strlen(sentence));
+    entry.segments.push_back({
+        .kind = ::platform::linux_runtime::PacketLogSegmentKind::Header,
+        .label = "head",
+        .text = header,
+    });
+    if (!body.empty())
+    {
+        entry.segments.push_back({
+            .kind = ::platform::linux_runtime::PacketLogSegmentKind::Body,
+            .label = "body",
+            .text = body,
+        });
+    }
+    const std::string checksum = sentence_checksum_text(sentence);
+    if (!checksum.empty())
+    {
+        entry.segments.push_back({
+            .kind = checksum_ok
+                        ? ::platform::linux_runtime::PacketLogSegmentKind::Checksum
+                        : ::platform::linux_runtime::PacketLogSegmentKind::Error,
+            .label = "sum",
+            .text = checksum,
+        });
+    }
+    ::platform::linux_runtime::append_packet_log(std::move(entry));
 }
 
 std::size_t split_fields(char* sentence, std::array<char*, kMaxFields>& fields)
@@ -612,7 +703,12 @@ void parse_gsv_locked(const char* talker, const std::array<char*, kMaxFields>& f
 
 void parse_sentence_locked(const char* sentence, uint32_t ts)
 {
-    if (!sentence || sentence[0] != '$' || !verify_checksum(sentence))
+    const bool checksum_ok = verify_checksum(sentence);
+    if (sentence && sentence[0] == '$')
+    {
+        append_nmea_log_locked(sentence, checksum_ok);
+    }
+    if (!sentence || sentence[0] != '$' || !checksum_ok)
     {
         return;
     }
@@ -717,33 +813,27 @@ std::string requested_source_path(bool* out_is_serial)
     }
 
 #if defined(__linux__)
-    std::error_code ec;
-    const std::filesystem::path serial_by_id("/dev/serial/by-id");
-    if (std::filesystem::exists(serial_by_id, ec) && !ec)
+    if (!auto_serial_probe_enabled())
     {
-        std::vector<std::filesystem::path> candidates{};
-        for (const auto& entry : std::filesystem::directory_iterator(serial_by_id, ec))
+        return {};
+    }
+
+    std::error_code ec;
+    if (std::filesystem::exists("/dev/ttyS0", ec) && !ec)
+    {
+        if (out_is_serial)
         {
-            if (ec)
-            {
-                break;
-            }
-            const std::string name = entry.path().filename().string();
-            if (name.find("ClockworkPI") != std::string::npos &&
-                name.find("uConsole") != std::string::npos)
-            {
-                candidates.push_back(entry.path());
-            }
+            *out_is_serial = true;
         }
-        std::sort(candidates.begin(), candidates.end());
-        if (!candidates.empty())
+        return "/dev/ttyS0";
+    }
+    if (std::filesystem::exists("/dev/serial0", ec) && !ec)
+    {
+        if (out_is_serial)
         {
-            if (out_is_serial)
-            {
-                *out_is_serial = true;
-            }
-            return candidates.front().string();
+            *out_is_serial = true;
         }
+        return "/dev/serial0";
     }
 #endif
 
@@ -796,7 +886,12 @@ bool open_serial_locked(const std::string& path)
     }
 
     cfmakeraw(&tio);
-    const speed_t baud = baud_to_termios(env_int_or_default(kGpsBaudEnv, 38400));
+    const int default_baud =
+        (!env_configured(kGpsBaudEnv) &&
+         (path == "/dev/ttyS0" || path == "/dev/serial0"))
+            ? 9600
+            : 38400;
+    const speed_t baud = baud_to_termios(env_int_or_default(kGpsBaudEnv, default_baud));
     cfsetispeed(&tio, baud);
     cfsetospeed(&tio, baud);
     tio.c_cflag |= (CLOCAL | CREAD);

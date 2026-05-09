@@ -6,10 +6,14 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <mutex>
+#include <string>
 
 #include "platform/linux/capability_status.h"
+#include "platform/linux/runtime_mode.h"
+#include "platform/linux/sx126x_radio.h"
 
 namespace platform::ui::lora
 {
@@ -27,6 +31,7 @@ struct SpectralPeak
 constexpr const char* kNoiseFloorEnv = "TRAIL_MATE_LORA_NOISE_FLOOR_DBM";
 constexpr const char* kPrimaryPeakEnv = "TRAIL_MATE_LORA_PRIMARY_PEAK_MHZ";
 constexpr const char* kSecondaryPeakEnv = "TRAIL_MATE_LORA_SECONDARY_PEAK_MHZ";
+constexpr const char* kSimulatedLoraEnv = "TRAIL_MATE_LORA_SIMULATED";
 
 constexpr std::array<SpectralPeak, 3> kDefaultPeaks{{
     {433.175f, -69.0f},
@@ -40,6 +45,32 @@ bool s_configured = false;
 Clock::time_point s_started_at = Clock::now();
 float s_freq_mhz = 0.0f;
 ReceiveConfig s_config{};
+bool s_real_driver = false;
+std::string s_capability_message{};
+
+bool env_flag_or_default(const char* name, bool fallback)
+{
+    const char* value = std::getenv(name);
+    if (!value || value[0] == '\0')
+    {
+        return fallback;
+    }
+
+    return std::strcmp(value, "1") == 0 || std::strcmp(value, "true") == 0 ||
+           std::strcmp(value, "TRUE") == 0 || std::strcmp(value, "yes") == 0 ||
+           std::strcmp(value, "YES") == 0;
+}
+
+bool simulated_lora_enabled()
+{
+    if (const char* value = std::getenv(kSimulatedLoraEnv);
+        value != nullptr && value[0] != '\0')
+    {
+        return env_flag_or_default(kSimulatedLoraEnv, false);
+    }
+    return ::platform::linux_runtime::resolve_runtime_mode() ==
+           ::platform::linux_runtime::LinuxRuntimeMode::SimulatorDemo;
+}
 
 float env_float_or_default(const char* name, float fallback)
 {
@@ -104,21 +135,51 @@ float current_rssi_locked()
 
 bool is_supported()
 {
-    return true;
+    return ::platform::linux_runtime::Sx126xRadio::hardwareCandidatePresent() ||
+           simulated_lora_enabled();
 }
 
 CapabilityStatus capability_status()
 {
-    return {CapabilityState::Simulated,
-            "Synthetic RSSI generator. No real LoRa radio driver."};
+    std::lock_guard<std::mutex> lock(s_mutex);
+    auto& radio = ::platform::linux_runtime::Sx126xRadio::instance();
+    if (radio.isOnline())
+    {
+        return {CapabilityState::Available,
+                "SX1262 is bound through Linux spidev/gpiochip."};
+    }
+    if (::platform::linux_runtime::Sx126xRadio::hardwareCandidatePresent())
+    {
+        const char* last_error = radio.lastError();
+        s_capability_message = "SX1262 endpoint present; driver not online";
+        if (last_error != nullptr && last_error[0] != '\0')
+        {
+            s_capability_message += ": ";
+            s_capability_message += last_error;
+        }
+        else
+        {
+            s_capability_message += ".";
+        }
+        return {CapabilityState::Degraded, s_capability_message.c_str()};
+    }
+    if (simulated_lora_enabled())
+    {
+        return {CapabilityState::Simulated,
+                "Synthetic RSSI generator. No real LoRa radio driver."};
+    }
+    return {CapabilityState::Unsupported,
+            "No LoRa SPI endpoint is present."};
 }
 
 bool acquire()
 {
     std::lock_guard<std::mutex> lock(s_mutex);
-    s_acquired = true;
+    auto& radio = ::platform::linux_runtime::Sx126xRadio::instance();
+    s_real_driver = radio.acquire();
+    s_acquired = s_real_driver || simulated_lora_enabled();
     s_started_at = Clock::now();
-    return true;
+    return s_acquired;
 }
 
 bool is_online()
@@ -137,12 +198,32 @@ bool configure_receive(float freq_mhz, const ReceiveConfig& config)
     s_freq_mhz = freq_mhz;
     s_config = config;
     s_configured = true;
-    return true;
+    if (s_real_driver)
+    {
+        auto lora_config =
+            ::platform::linux_runtime::Sx126xRadio::
+                defaultLoRaConfigFromEnvironment();
+        lora_config.freq_mhz = freq_mhz;
+        lora_config.bw_khz = config.bw_khz;
+        lora_config.sf = config.sf;
+        lora_config.cr = config.cr;
+        lora_config.tx_power_dbm = config.tx_power;
+        lora_config.preamble_len = config.preamble_len;
+        lora_config.sync_word = config.sync_word;
+        lora_config.crc_len = config.crc_len;
+        return ::platform::linux_runtime::Sx126xRadio::instance()
+            .configureLoRa(lora_config);
+    }
+    return simulated_lora_enabled();
 }
 
 float read_instant_rssi()
 {
     std::lock_guard<std::mutex> lock(s_mutex);
+    if (s_real_driver)
+    {
+        return ::platform::linux_runtime::Sx126xRadio::instance().readRssi();
+    }
     return current_rssi_locked();
 }
 
@@ -151,6 +232,11 @@ void release()
     std::lock_guard<std::mutex> lock(s_mutex);
     s_acquired = false;
     s_configured = false;
+    if (s_real_driver)
+    {
+        ::platform::linux_runtime::Sx126xRadio::instance().release();
+    }
+    s_real_driver = false;
     s_freq_mhz = 0.0f;
 }
 

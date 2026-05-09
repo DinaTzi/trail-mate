@@ -21,6 +21,9 @@ constexpr const char* kMapNamespace = "uconsole_map";
 constexpr const char* kZoomKey = "zoom";
 constexpr int kMinZoom = 1;
 constexpr int kMaxZoom = 18;
+constexpr int kDefaultWorldZoom = 2;
+constexpr double kDefaultWorldLat = 0.0;
+constexpr double kDefaultWorldLon = 0.0;
 
 bool parse_env_double(const char* name, double& out)
 {
@@ -96,7 +99,8 @@ MapWorkspaceSnapshot UConsoleMapWorkspaceModel::snapshot() const
         configured_map_center(configured_lat, configured_lon);
     if (has_configured_center)
     {
-        out.has_fix = true;
+        out.has_center = true;
+        out.has_fix = false;
         out.has_configured_center = true;
         out.lat = configured_lat;
         out.lon = configured_lon;
@@ -107,6 +111,7 @@ MapWorkspaceSnapshot UConsoleMapWorkspaceModel::snapshot() const
         const bool has_external_source = external_gps_source_configured();
         const auto gps = ::platform::ui::gps::get_data();
         out.has_fix = has_external_source && gps.valid;
+        out.has_center = out.has_fix;
         out.lat = gps.lat;
         out.lon = gps.lng;
         out.altitude_m = gps.alt_m;
@@ -114,10 +119,25 @@ MapWorkspaceSnapshot UConsoleMapWorkspaceModel::snapshot() const
         out.speed_mps = gps.speed_mps;
         out.has_speed = gps.has_speed;
         out.satellites = gps.satellites;
-        out.fix_label = out.has_fix ? "GPS fix" : "Waiting for GPS/NMEA";
+        out.fix_label = out.has_fix ? "GPS fix" : "Default map center";
+        if (!out.has_center)
+        {
+            out.has_center = true;
+            out.using_default_center = true;
+            out.zoom = kDefaultWorldZoom;
+            out.lat = kDefaultWorldLat;
+            out.lon = kDefaultWorldLon;
+            out.altitude_m = 0.0;
+            out.has_altitude = false;
+            out.speed_mps = 0.0;
+            out.has_speed = false;
+            out.fix_label =
+                has_external_source ? "GPS waiting; OSM world view"
+                                    : "OSM world view";
+        }
     }
 
-    if (!out.has_fix)
+    if (!out.has_center)
     {
         return out;
     }

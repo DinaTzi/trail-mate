@@ -159,11 +159,11 @@ std::string default_url_template(MapBaseSource source)
     case MapBaseSource::Terrain:
         return "https://tile.opentopomap.org/{z}/{x}/{y}.png";
     case MapBaseSource::Satellite:
-        return "https://services.arcgisonline.com/ArcGIS/rest/services/"
+        return "https://server.arcgisonline.com/ArcGIS/rest/services/"
                "World_Imagery/MapServer/tile/{z}/{y}/{x}";
     case MapBaseSource::Osm:
     default:
-        return "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+        return "https://tile.openstreetmap.de/{z}/{x}/{y}.png";
     }
 }
 

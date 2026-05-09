@@ -16,6 +16,7 @@
 #include <gtk/gtk.h>
 
 #include "app/linux_app_services.h"
+#include "platform/linux/runtime_packet_log.h"
 #include "uconsole/uconsole_chat_workspace_model.h"
 #include "uconsole/uconsole_dashboard_model.h"
 #include "uconsole/uconsole_map_workspace_model.h"
@@ -237,6 +238,48 @@ window {
   background: #d7e8df;
   color: #15251f;
 }
+.log-toolbar {
+  padding: 4px 0;
+}
+.log-entry {
+  background: #ffffff;
+  border: 1px solid #d3d9d2;
+  border-radius: 6px;
+  padding: 8px;
+}
+.log-segments {
+  padding: 3px 0;
+}
+.log-hex {
+  font-family: monospace;
+  color: #34403c;
+  background: #f2f5f0;
+  border-radius: 4px;
+  padding: 5px;
+}
+.log-segment-header {
+  color: #155c8a;
+  font-family: monospace;
+  font-weight: 700;
+}
+.log-segment-body {
+  color: #2b6a34;
+  font-family: monospace;
+}
+.log-segment-checksum {
+  color: #8c4a13;
+  font-family: monospace;
+  font-weight: 700;
+}
+.log-segment-meta {
+  color: #5f6671;
+  font-family: monospace;
+}
+.log-segment-error {
+  color: #9b2f22;
+  font-family: monospace;
+  font-weight: 700;
+}
 button.send {
   border-radius: 6px;
   padding: 8px 14px;
@@ -448,6 +491,7 @@ struct GtkUConsoleAppState
     GtkWidget* nav_map = nullptr;
     GtkWidget* nav_hardware = nullptr;
     GtkWidget* nav_data = nullptr;
+    GtkWidget* nav_logs = nullptr;
     GtkWidget* nav_settings = nullptr;
 
     GtkWidget* status_aio2 = nullptr;
@@ -473,7 +517,12 @@ struct GtkUConsoleAppState
     GtkWidget* capability_box = nullptr;
     GtkWidget* hardware_page_box = nullptr;
     GtkWidget* data_page_box = nullptr;
+    GtkWidget* logs_page_box = nullptr;
+    GtkWidget* logs_source_gps = nullptr;
+    GtkWidget* logs_source_lora = nullptr;
     GtkWidget* settings_page_box = nullptr;
+    ::platform::linux_runtime::PacketLogSource logs_source =
+        ::platform::linux_runtime::PacketLogSource::Lora;
 
     GtkWidget* chat_conversation_list = nullptr;
     GtkWidget* chat_message_list = nullptr;
@@ -541,6 +590,13 @@ void setActiveNav(GtkUConsoleAppState& state, const char* page)
         else
             gtk_widget_remove_css_class(state.nav_data, "nav-button-active");
     }
+    if (state.nav_logs != nullptr)
+    {
+        if (current == "logs")
+            gtk_widget_add_css_class(state.nav_logs, "nav-button-active");
+        else
+            gtk_widget_remove_css_class(state.nav_logs, "nav-button-active");
+    }
     if (state.nav_settings != nullptr)
     {
         if (current == "settings")
@@ -581,6 +637,11 @@ void onHardwareClicked(GtkButton*, gpointer data)
 void onDataClicked(GtkButton*, gpointer data)
 {
     showPage(*static_cast<GtkUConsoleAppState*>(data), "data");
+}
+
+void onLogsClicked(GtkButton*, gpointer data)
+{
+    showPage(*static_cast<GtkUConsoleAppState*>(data), "logs");
 }
 
 void onSettingsClicked(GtkButton*, gpointer data)
@@ -638,6 +699,20 @@ void onMapZoomOutClicked(GtkButton*, gpointer data)
     auto& state = *static_cast<GtkUConsoleAppState*>(data);
     state.map_model.zoomOut();
     state.map_failed_tiles.clear();
+    refreshUi(state);
+}
+
+void onLogsSourceGpsClicked(GtkButton*, gpointer data)
+{
+    auto& state = *static_cast<GtkUConsoleAppState*>(data);
+    state.logs_source = ::platform::linux_runtime::PacketLogSource::Gps;
+    refreshUi(state);
+}
+
+void onLogsSourceLoraClicked(GtkButton*, gpointer data)
+{
+    auto& state = *static_cast<GtkUConsoleAppState*>(data);
+    state.logs_source = ::platform::linux_runtime::PacketLogSource::Lora;
     refreshUi(state);
 }
 
@@ -711,6 +786,12 @@ GtkWidget* buildMenuBar(GtkUConsoleAppState& state)
     g_signal_connect(state.nav_data, "clicked", G_CALLBACK(onDataClicked),
                      &state);
     gtk_box_append(GTK_BOX(bar), state.nav_data);
+
+    state.nav_logs = gtk_button_new_with_label("Logs");
+    gtk_widget_add_css_class(state.nav_logs, "menu-button");
+    g_signal_connect(state.nav_logs, "clicked", G_CALLBACK(onLogsClicked),
+                     &state);
+    gtk_box_append(GTK_BOX(bar), state.nav_logs);
 
     state.nav_settings = gtk_button_new_with_label("Settings");
     gtk_widget_add_css_class(state.nav_settings, "menu-button");
@@ -1012,6 +1093,46 @@ GtkWidget* buildData(GtkUConsoleAppState& state)
         &state.data_page_box);
 }
 
+GtkWidget* buildLogs(GtkUConsoleAppState& state)
+{
+    GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_widget_set_hexpand(root, TRUE);
+    gtk_widget_set_vexpand(root, TRUE);
+    gtk_box_append(GTK_BOX(root), makeLabel("Logs", "workspace-title"));
+    gtk_box_append(GTK_BOX(root),
+                   makeLabel("GPS NMEA and LoRa packet traces.",
+                             "workspace-subtitle"));
+
+    GtkWidget* toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_add_css_class(toolbar, "log-toolbar");
+    state.logs_source_lora = gtk_button_new_with_label("LoRa");
+    gtk_widget_add_css_class(state.logs_source_lora, "nav-button");
+    g_signal_connect(state.logs_source_lora, "clicked",
+                     G_CALLBACK(onLogsSourceLoraClicked), &state);
+    gtk_box_append(GTK_BOX(toolbar), state.logs_source_lora);
+    state.logs_source_gps = gtk_button_new_with_label("GPS");
+    gtk_widget_add_css_class(state.logs_source_gps, "nav-button");
+    g_signal_connect(state.logs_source_gps, "clicked",
+                     G_CALLBACK(onLogsSourceGpsClicked), &state);
+    gtk_box_append(GTK_BOX(toolbar), state.logs_source_gps);
+    gtk_box_append(GTK_BOX(root), toolbar);
+
+    GtkWidget* panel = makePanel();
+    state.logs_page_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_set_hexpand(state.logs_page_box, TRUE);
+    gtk_box_append(GTK_BOX(panel), state.logs_page_box);
+
+    GtkWidget* scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), panel);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                   GTK_POLICY_AUTOMATIC,
+                                   GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_hexpand(scroll, TRUE);
+    gtk_widget_set_vexpand(scroll, TRUE);
+    gtk_box_append(GTK_BOX(root), scroll);
+    return root;
+}
+
 GtkWidget* buildSettings(GtkUConsoleAppState& state)
 {
     return buildDetailsWorkspace(
@@ -1067,6 +1188,7 @@ GtkWidget* buildRoot(GtkUConsoleAppState& state)
     gtk_stack_add_named(GTK_STACK(state.stack), buildHardware(state),
                         "hardware");
     gtk_stack_add_named(GTK_STACK(state.stack), buildData(state), "data");
+    gtk_stack_add_named(GTK_STACK(state.stack), buildLogs(state), "logs");
     gtk_stack_add_named(GTK_STACK(state.stack), buildSettings(state),
                         "settings");
     gtk_box_append(GTK_BOX(body), state.stack);
@@ -1113,14 +1235,10 @@ void refreshLocationMiniMap(GtkUConsoleAppState& state,
                             const MapWorkspaceSnapshot& map_snapshot)
 {
     clearBox(state.overview_location_map);
-    if (!map_snapshot.has_fix)
+    if (!map_snapshot.has_center)
     {
         gtk_box_append(GTK_BOX(state.overview_location_map),
                        makeLabel("No map center", "row-title"));
-        gtk_box_append(GTK_BOX(state.overview_location_map),
-                       makeLabel("GPS/NMEA source is not available.",
-                                 "row-meta",
-                                 true));
         return;
     }
 
@@ -1348,6 +1466,73 @@ void refreshSettingsPage(GtkUConsoleAppState& state,
                                   true));
 }
 
+GtkWidget* buildPacketLogEntry(
+    const ::platform::linux_runtime::PacketLogEntry& entry)
+{
+    GtkWidget* row = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_add_css_class(row, "log-entry");
+    gtk_widget_set_hexpand(row, TRUE);
+
+    const std::string title =
+        std::string(::platform::linux_runtime::packet_log_direction_label(
+            entry.direction)) +
+        " / " + entry.title;
+    gtk_box_append(GTK_BOX(row), makeLabel(title.c_str(), "row-title"));
+    gtk_box_append(GTK_BOX(row),
+                   makeLabel(entry.summary.c_str(), "row-meta", true));
+
+    GtkWidget* segment_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_add_css_class(segment_box, "log-segments");
+    gtk_widget_set_hexpand(segment_box, TRUE);
+    for (const auto& segment : entry.segments)
+    {
+        const std::string text = segment.label.empty()
+                                     ? segment.text
+                                     : segment.label + ": " + segment.text;
+        GtkWidget* label = makeLabel(
+            text.c_str(),
+            ::platform::linux_runtime::packet_log_segment_class(segment.kind));
+        gtk_box_append(GTK_BOX(segment_box), label);
+    }
+    gtk_box_append(GTK_BOX(row), segment_box);
+
+    gtk_box_append(GTK_BOX(row),
+                   makeLabel(entry.raw_hex.c_str(), "log-hex", true));
+    return row;
+}
+
+void refreshLogsPage(GtkUConsoleAppState& state)
+{
+    clearBox(state.logs_page_box);
+    if (state.logs_source == ::platform::linux_runtime::PacketLogSource::Lora)
+    {
+        gtk_widget_add_css_class(state.logs_source_lora,
+                                 "nav-button-active");
+        gtk_widget_remove_css_class(state.logs_source_gps,
+                                    "nav-button-active");
+    }
+    else
+    {
+        gtk_widget_add_css_class(state.logs_source_gps, "nav-button-active");
+        gtk_widget_remove_css_class(state.logs_source_lora,
+                                    "nav-button-active");
+    }
+
+    const auto entries = ::platform::linux_runtime::recent_packet_logs(
+        state.logs_source, 80);
+    if (entries.empty())
+    {
+        gtk_box_append(GTK_BOX(state.logs_page_box),
+                       makeLabel("No packet logs yet.", "empty-state"));
+        return;
+    }
+    for (const auto& entry : entries)
+    {
+        gtk_box_append(GTK_BOX(state.logs_page_box),
+                       buildPacketLogEntry(entry));
+    }
+}
+
 void refreshChat(GtkUConsoleAppState& state)
 {
     ChatWorkspaceSnapshot snapshot =
@@ -1455,7 +1640,7 @@ void maybeStartMapFetch(GtkUConsoleAppState& state,
                         const MapWorkspaceSnapshot& snapshot)
 {
     pollMapFetch(state);
-    if (state.map_fetch_future.valid() || !snapshot.has_fix)
+    if (state.map_fetch_future.valid() || !snapshot.has_center)
     {
         return;
     }
@@ -1546,7 +1731,7 @@ void refreshMap(GtkUConsoleAppState& state)
     title += " / z" + std::to_string(snapshot.zoom);
     setLabel(state.map_title, title);
 
-    if (snapshot.has_fix)
+    if (snapshot.has_center)
     {
         std::string meta = snapshot.fix_label + " / lat " +
                            std::to_string(snapshot.lat) + " / lon " +
@@ -1564,18 +1749,14 @@ void refreshMap(GtkUConsoleAppState& state)
     }
     else
     {
-        setLabel(state.map_meta,
-                 "Waiting for a configured GPS/NMEA source.");
+        setLabel(state.map_meta, "No map center.");
     }
 
     clearGrid(state.map_grid);
-    if (!snapshot.has_fix)
+    if (!snapshot.has_center)
     {
         GtkWidget* empty = makeRowBox();
         gtk_box_append(GTK_BOX(empty), makeLabel("No map center", "row-title"));
-        gtk_box_append(GTK_BOX(empty),
-                       makeLabel("GPS/NMEA source is not available.",
-                                 "row-meta"));
         gtk_grid_attach(GTK_GRID(state.map_grid), empty, 0, 0, 3, 1);
     }
     else
@@ -1624,6 +1805,7 @@ void refreshUi(GtkUConsoleAppState& state)
     refreshCapabilities(state, dashboard);
     refreshHardwarePage(state, dashboard);
     refreshDataPage(state, dashboard, map_snapshot);
+    refreshLogsPage(state);
     refreshSettingsPage(state, dashboard, map_snapshot);
     refreshChat(state);
     refreshMap(state);
