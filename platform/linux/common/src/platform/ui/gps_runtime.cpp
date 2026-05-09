@@ -7,10 +7,12 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #if defined(__linux__)
 #include <cerrno>
@@ -616,7 +618,9 @@ void parse_sentence_locked(const char* sentence, uint32_t ts)
     }
 
     char working[kLineBufferSize] = {};
-    std::strncpy(working, sentence + 1, sizeof(working) - 1);
+    const std::size_t copy_len =
+        std::min<std::size_t>(std::strlen(sentence + 1), sizeof(working) - 1);
+    std::memcpy(working, sentence + 1, copy_len);
     char* star = std::strchr(working, '*');
     if (star)
     {
@@ -711,6 +715,37 @@ std::string requested_source_path(bool* out_is_serial)
     {
         return std::string(file);
     }
+
+#if defined(__linux__)
+    std::error_code ec;
+    const std::filesystem::path serial_by_id("/dev/serial/by-id");
+    if (std::filesystem::exists(serial_by_id, ec) && !ec)
+    {
+        std::vector<std::filesystem::path> candidates{};
+        for (const auto& entry : std::filesystem::directory_iterator(serial_by_id, ec))
+        {
+            if (ec)
+            {
+                break;
+            }
+            const std::string name = entry.path().filename().string();
+            if (name.find("ClockworkPI") != std::string::npos &&
+                name.find("uConsole") != std::string::npos)
+            {
+                candidates.push_back(entry.path());
+            }
+        }
+        std::sort(candidates.begin(), candidates.end());
+        if (!candidates.empty())
+        {
+            if (out_is_serial)
+            {
+                *out_is_serial = true;
+            }
+            return candidates.front().string();
+        }
+    }
+#endif
 
     return {};
 }
@@ -945,11 +980,18 @@ GpsState get_data()
     }
 
     std::lock_guard<std::mutex> lock(s_mutex);
+    bool requested_serial = false;
+    const bool source_requested =
+        !requested_source_path(&requested_serial).empty();
     poll_external_source_locked();
 
     if (external_source_active_locked())
     {
         return make_external_state_locked();
+    }
+    if (source_requested)
+    {
+        return {};
     }
 
     if (s_runtime.last_motion_ms == 0)
@@ -975,6 +1017,9 @@ bool get_gnss_snapshot(GnssSatInfo* out, std::size_t max, std::size_t* out_count
     }
 
     std::lock_guard<std::mutex> lock(s_mutex);
+    bool requested_serial = false;
+    const bool source_requested =
+        !requested_source_path(&requested_serial).empty();
     poll_external_source_locked();
 
     if (external_source_active_locked())
@@ -1012,6 +1057,18 @@ bool get_gnss_snapshot(GnssSatInfo* out, std::size_t max, std::size_t* out_count
             s_runtime.last_motion_ms = now_ms();
         }
         return true;
+    }
+    if (source_requested)
+    {
+        if (out_count)
+        {
+            *out_count = 0;
+        }
+        if (status)
+        {
+            *status = GnssStatus{};
+        }
+        return false;
     }
 
     const auto satellites = default_satellites();

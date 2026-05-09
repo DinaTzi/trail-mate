@@ -133,6 +133,12 @@ window {
   background: #fff0e4;
   border-left-color: #b45c24;
 }
+.detail-grid {
+  padding: 0;
+}
+.detail-panel {
+  min-width: 260px;
+}
 .metric-value {
   font-size: 24px;
   font-weight: 700;
@@ -440,6 +446,9 @@ struct GtkUConsoleAppState
     GtkWidget* nav_overview = nullptr;
     GtkWidget* nav_chat = nullptr;
     GtkWidget* nav_map = nullptr;
+    GtkWidget* nav_hardware = nullptr;
+    GtkWidget* nav_data = nullptr;
+    GtkWidget* nav_settings = nullptr;
 
     GtkWidget* status_aio2 = nullptr;
     GtkWidget* status_lora = nullptr;
@@ -462,6 +471,9 @@ struct GtkUConsoleAppState
     GtkWidget* team_summary = nullptr;
     GtkWidget* team_timeline_box = nullptr;
     GtkWidget* capability_box = nullptr;
+    GtkWidget* hardware_page_box = nullptr;
+    GtkWidget* data_page_box = nullptr;
+    GtkWidget* settings_page_box = nullptr;
 
     GtkWidget* chat_conversation_list = nullptr;
     GtkWidget* chat_message_list = nullptr;
@@ -514,6 +526,29 @@ void setActiveNav(GtkUConsoleAppState& state, const char* page)
         else
             gtk_widget_remove_css_class(state.nav_map, "nav-button-active");
     }
+    if (state.nav_hardware != nullptr)
+    {
+        if (current == "hardware")
+            gtk_widget_add_css_class(state.nav_hardware, "nav-button-active");
+        else
+            gtk_widget_remove_css_class(state.nav_hardware,
+                                        "nav-button-active");
+    }
+    if (state.nav_data != nullptr)
+    {
+        if (current == "data")
+            gtk_widget_add_css_class(state.nav_data, "nav-button-active");
+        else
+            gtk_widget_remove_css_class(state.nav_data, "nav-button-active");
+    }
+    if (state.nav_settings != nullptr)
+    {
+        if (current == "settings")
+            gtk_widget_add_css_class(state.nav_settings, "nav-button-active");
+        else
+            gtk_widget_remove_css_class(state.nav_settings,
+                                        "nav-button-active");
+    }
 }
 
 void showPage(GtkUConsoleAppState& state, const char* page)
@@ -536,6 +571,21 @@ void onChatClicked(GtkButton*, gpointer data)
 void onMapClicked(GtkButton*, gpointer data)
 {
     showPage(*static_cast<GtkUConsoleAppState*>(data), "map");
+}
+
+void onHardwareClicked(GtkButton*, gpointer data)
+{
+    showPage(*static_cast<GtkUConsoleAppState*>(data), "hardware");
+}
+
+void onDataClicked(GtkButton*, gpointer data)
+{
+    showPage(*static_cast<GtkUConsoleAppState*>(data), "data");
+}
+
+void onSettingsClicked(GtkButton*, gpointer data)
+{
+    showPage(*static_cast<GtkUConsoleAppState*>(data), "settings");
 }
 
 void onConversationActivated(GtkListBox*,
@@ -650,14 +700,23 @@ GtkWidget* buildMenuBar(GtkUConsoleAppState& state)
                      &state);
     gtk_box_append(GTK_BOX(bar), state.nav_map);
 
-    const char* reserved[] = {"Hardware", "Data", "Settings"};
-    for (const char* label : reserved)
-    {
-        GtkWidget* button = gtk_button_new_with_label(label);
-        gtk_widget_add_css_class(button, "menu-button");
-        gtk_widget_set_sensitive(button, FALSE);
-        gtk_box_append(GTK_BOX(bar), button);
-    }
+    state.nav_hardware = gtk_button_new_with_label("Hardware");
+    gtk_widget_add_css_class(state.nav_hardware, "menu-button");
+    g_signal_connect(state.nav_hardware, "clicked",
+                     G_CALLBACK(onHardwareClicked), &state);
+    gtk_box_append(GTK_BOX(bar), state.nav_hardware);
+
+    state.nav_data = gtk_button_new_with_label("Data");
+    gtk_widget_add_css_class(state.nav_data, "menu-button");
+    g_signal_connect(state.nav_data, "clicked", G_CALLBACK(onDataClicked),
+                     &state);
+    gtk_box_append(GTK_BOX(bar), state.nav_data);
+
+    state.nav_settings = gtk_button_new_with_label("Settings");
+    gtk_widget_add_css_class(state.nav_settings, "menu-button");
+    g_signal_connect(state.nav_settings, "clicked",
+                     G_CALLBACK(onSettingsClicked), &state);
+    gtk_box_append(GTK_BOX(bar), state.nav_settings);
 
     GtkWidget* spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_set_hexpand(spacer, TRUE);
@@ -910,6 +969,57 @@ GtkWidget* buildMap(GtkUConsoleAppState& state)
     return root;
 }
 
+GtkWidget* buildDetailsWorkspace(const char* title,
+                                 const char* subtitle,
+                                 GtkWidget** out_box)
+{
+    GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_widget_set_hexpand(root, TRUE);
+    gtk_widget_set_vexpand(root, TRUE);
+    gtk_box_append(GTK_BOX(root), makeLabel(title, "workspace-title"));
+    gtk_box_append(GTK_BOX(root), makeLabel(subtitle, "workspace-subtitle"));
+
+    GtkWidget* panel = makePanel();
+    gtk_widget_add_css_class(panel, "detail-panel");
+    *out_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_set_hexpand(*out_box, TRUE);
+    gtk_box_append(GTK_BOX(panel), *out_box);
+
+    GtkWidget* scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), panel);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                   GTK_POLICY_AUTOMATIC,
+                                   GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_hexpand(scroll, TRUE);
+    gtk_widget_set_vexpand(scroll, TRUE);
+    gtk_box_append(GTK_BOX(root), scroll);
+    return root;
+}
+
+GtkWidget* buildHardware(GtkUConsoleAppState& state)
+{
+    return buildDetailsWorkspace(
+        "Hardware",
+        "uConsole/AIO2 endpoints and current driver binding state.",
+        &state.hardware_page_box);
+}
+
+GtkWidget* buildData(GtkUConsoleAppState& state)
+{
+    return buildDetailsWorkspace(
+        "Data",
+        "Local SQLite state, message/contact counts, and map cache.",
+        &state.data_page_box);
+}
+
+GtkWidget* buildSettings(GtkUConsoleAppState& state)
+{
+    return buildDetailsWorkspace(
+        "Settings",
+        "Current read-only runtime configuration for this build.",
+        &state.settings_page_box);
+}
+
 GtkWidget* buildStatusBar(GtkUConsoleAppState& state)
 {
     GtkWidget* bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -954,6 +1064,11 @@ GtkWidget* buildRoot(GtkUConsoleAppState& state)
                         "overview");
     gtk_stack_add_named(GTK_STACK(state.stack), buildChat(state), "chat");
     gtk_stack_add_named(GTK_STACK(state.stack), buildMap(state), "map");
+    gtk_stack_add_named(GTK_STACK(state.stack), buildHardware(state),
+                        "hardware");
+    gtk_stack_add_named(GTK_STACK(state.stack), buildData(state), "data");
+    gtk_stack_add_named(GTK_STACK(state.stack), buildSettings(state),
+                        "settings");
     gtk_box_append(GTK_BOX(body), state.stack);
 
     gtk_box_append(GTK_BOX(root), body);
@@ -1130,6 +1245,107 @@ void refreshCapabilities(GtkUConsoleAppState& state,
         gtk_box_append(GTK_BOX(state.capability_box),
                        makeLabel(line.c_str(), "row-meta", true));
     }
+}
+
+GtkWidget* buildDetailRow(const std::string& title,
+                          const std::string& detail,
+                          bool attention = false)
+{
+    GtkWidget* row = makeRowBox();
+    if (attention)
+    {
+        gtk_widget_add_css_class(row, "hardware-card-alert");
+    }
+    gtk_box_append(GTK_BOX(row), makeLabel(title.c_str(), "row-title"));
+    gtk_box_append(GTK_BOX(row), makeLabel(detail.c_str(), "row-meta", true));
+    return row;
+}
+
+void refreshHardwarePage(GtkUConsoleAppState& state,
+                         const UConsoleDashboardSnapshot& snapshot)
+{
+    clearBox(state.hardware_page_box);
+    for (const auto& item : snapshot.hardware)
+    {
+        gtk_box_append(GTK_BOX(state.hardware_page_box),
+                       buildDetailRow(item.name + " / " + item.state,
+                                      item.detail,
+                                      item.attention));
+    }
+    gtk_box_append(GTK_BOX(state.hardware_page_box),
+                   buildDetailRow("Driver boundary",
+                                  "Detected Linux endpoints only prove that the hardware is present. LoRa/GPS protocol drivers still report separately when they are bound and producing data.",
+                                  false));
+}
+
+void refreshDataPage(GtkUConsoleAppState& state,
+                     const UConsoleDashboardSnapshot& dashboard,
+                     const MapWorkspaceSnapshot& map_snapshot)
+{
+    clearBox(state.data_page_box);
+    gtk_box_append(GTK_BOX(state.data_page_box),
+                   buildDetailRow("SQLite database",
+                                  map_snapshot.cache_stats.database.string()));
+    gtk_box_append(GTK_BOX(state.data_page_box),
+                   buildDetailRow("Messages",
+                                  std::to_string(dashboard.conversation_count) +
+                                      " threads / " +
+                                      std::to_string(dashboard.unread_count) +
+                                      " unread"));
+    gtk_box_append(GTK_BOX(state.data_page_box),
+                   buildDetailRow("Contacts",
+                                  std::to_string(dashboard.contact_count) +
+                                      " saved / " +
+                                      std::to_string(dashboard.nearby_count) +
+                                      " nearby / " +
+                                      std::to_string(dashboard.ignored_count) +
+                                      " ignored"));
+    gtk_box_append(GTK_BOX(state.data_page_box),
+                   buildDetailRow("Map cache",
+                                  std::to_string(
+                                      map_snapshot.cache_stats.cached_tiles) +
+                                      " cached / " +
+                                      std::to_string(
+                                          map_snapshot.cache_stats.failed_tiles) +
+                                      " failed / " +
+                                      formatBytes(
+                                          map_snapshot.cache_stats.total_bytes)));
+    gtk_box_append(GTK_BOX(state.data_page_box),
+                   buildDetailRow("Map cache root",
+                                  map_snapshot.cache_stats.root.string()));
+}
+
+void refreshSettingsPage(GtkUConsoleAppState& state,
+                         const UConsoleDashboardSnapshot& dashboard,
+                         const MapWorkspaceSnapshot& map_snapshot)
+{
+    clearBox(state.settings_page_box);
+    const auto& config = state.services.config();
+    gtk_box_append(GTK_BOX(state.settings_page_box),
+                   buildDetailRow("Identity",
+                                  std::string(config.node_name) + " / " +
+                                      config.short_name + " / node " +
+                                      dashboard.self_node));
+    gtk_box_append(GTK_BOX(state.settings_page_box),
+                   buildDetailRow("Mesh protocol", dashboard.mesh_protocol));
+    gtk_box_append(GTK_BOX(state.settings_page_box),
+                   buildDetailRow("GPS",
+                                  std::string(config.gps_enabled ? "enabled"
+                                                                 : "disabled") +
+                                      " / interval " +
+                                      std::to_string(config.gps_interval_ms) +
+                                      " ms"));
+    gtk_box_append(GTK_BOX(state.settings_page_box),
+                   buildDetailRow("Map",
+                                  map_snapshot.source_label + " / z" +
+                                      std::to_string(map_snapshot.zoom)));
+    gtk_box_append(GTK_BOX(state.settings_page_box),
+                   buildDetailRow("BLE",
+                                  "not used on Linux/uConsole"));
+    gtk_box_append(GTK_BOX(state.settings_page_box),
+                   buildDetailRow("Settings surface",
+                                  "Read-only for this slice. Editable controls will be added when the corresponding Linux runtime actions are wired.",
+                                  true));
 }
 
 void refreshChat(GtkUConsoleAppState& state)
@@ -1406,6 +1622,9 @@ void refreshUi(GtkUConsoleAppState& state)
              "Unread: " + std::to_string(dashboard.unread_count));
     refreshOverview(state, dashboard, map_snapshot);
     refreshCapabilities(state, dashboard);
+    refreshHardwarePage(state, dashboard);
+    refreshDataPage(state, dashboard, map_snapshot);
+    refreshSettingsPage(state, dashboard, map_snapshot);
     refreshChat(state);
     refreshMap(state);
 }

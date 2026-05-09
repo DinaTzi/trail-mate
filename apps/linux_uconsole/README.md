@@ -14,6 +14,8 @@ primary uConsole interface.
 - central operational workspace
 - Overview workspace with location/map context, hardware state, message status,
   team activity timeline, and runtime details
+- Hardware, Data, and Settings workspaces are clickable and show current
+  read-only runtime state until their edit/control actions are wired
 - SQLite-backed Linux local state
 - online XYZ map tile fetch with local file cache
 
@@ -94,6 +96,12 @@ or an NMEA file with:
 TRAIL_MATE_GPS_DEVICE=/dev/ttyUSB0 trailmate-uconsole
 TRAIL_MATE_GPS_NMEA_FILE=/path/to/feed.nmea trailmate-uconsole
 ```
+
+On uConsole, the GTK shell also auto-detects the ClockworkPI uConsole CDC ACM
+serial endpoint under `/dev/serial/by-id/usb-ClockworkPI_uConsole_*` and treats
+it as the default GPS/NMEA candidate. If that endpoint exists but no valid NMEA
+fix has arrived yet, the UI reports the endpoint instead of claiming that GPS is
+missing.
 
 For bench testing without a GPS receiver, provide an explicit map center:
 

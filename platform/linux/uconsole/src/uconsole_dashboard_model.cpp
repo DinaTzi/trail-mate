@@ -21,6 +21,7 @@
 #include "platform/ui/team_ui_store_runtime.h"
 #include "sys/clock.h"
 #include "team/protocol/team_chat.h"
+#include "uconsole/uconsole_hardware_probe.h"
 
 namespace trailmate::uconsole
 {
@@ -129,11 +130,13 @@ namespace
 
 [[nodiscard]] bool gpsSourceConfigured()
 {
+    std::string auto_path{};
     return envConfigured("TRAIL_MATE_GPS_DEVICE") ||
            envConfigured("TRAIL_MATE_GPS_NMEA_FILE") ||
            envConfigured("TRAIL_MATE_GPS_VALID") ||
            envConfigured("TRAIL_MATE_GPS_LAT") ||
-           envConfigured("TRAIL_MATE_GPS_LNG");
+           envConfigured("TRAIL_MATE_GPS_LNG") ||
+           uconsoleAutoGpsSerialPath(auto_path);
 }
 
 [[nodiscard]] bool parseEnvDouble(const char* name, double& out)
@@ -414,6 +417,7 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
     auto& chat_service = services_.chat();
     auto& contact_service = services_.contacts();
     const auto* mesh_adapter = services_.meshAdapter();
+    const UConsoleHardwareProbe hardware_probe = probeUConsoleHardware();
 
     std::size_t conversation_total = 0;
     const auto conversations =
@@ -471,8 +475,18 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
     if (mesh_adapter == nullptr)
     {
         mesh_line += " transport unavailable";
-        lora_status.state = "Unavailable";
-        lora_status.detail = "No mesh transport adapter is attached.";
+        if (hardware_probe.lora_spi_detected)
+        {
+            lora_status.state = "Endpoint";
+            lora_status.detail = "SPI radio endpoint present at " +
+                                 hardware_probe.lora_spi_path +
+                                 "; Trail Mate LoRa transport driver is not bound yet.";
+        }
+        else
+        {
+            lora_status.state = "Unavailable";
+            lora_status.detail = "No LoRa SPI endpoint or mesh transport adapter is attached.";
+        }
         lora_status.attention = true;
     }
     else
@@ -482,10 +496,23 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
         mesh_transport_ready = capabilities.supports_unicast_text;
         mesh_line += mesh_transport_ready ? " transport ready"
                                           : " transport not connected";
-        lora_status.state = mesh_transport_ready ? "Ready" : "Offline";
-        lora_status.detail = mesh_transport_ready
-                                 ? "Mesh text transport is available."
-                                 : "AIO2/LoRa transport is not connected.";
+        if (mesh_transport_ready)
+        {
+            lora_status.state = "Ready";
+            lora_status.detail = "Mesh text transport is available.";
+        }
+        else if (hardware_probe.lora_spi_detected)
+        {
+            lora_status.state = "Endpoint";
+            lora_status.detail = "SPI radio endpoint present at " +
+                                 hardware_probe.lora_spi_path +
+                                 "; protocol transport is not bound yet.";
+        }
+        else
+        {
+            lora_status.state = "Offline";
+            lora_status.detail = "AIO2/LoRa transport is not connected.";
+        }
         lora_status.attention = !mesh_transport_ready;
     }
 
@@ -494,9 +521,18 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
 
     HardwareStatusItem aio2_status{};
     aio2_status.name = "AIO2";
-    aio2_status.state = "Not detected";
-    aio2_status.detail = "No Linux AIO2 adapter runtime is connected.";
-    aio2_status.attention = true;
+    if (hardware_probe.aio2_detected)
+    {
+        aio2_status.state = "Detected";
+        aio2_status.detail = hardware_probe.summary;
+        aio2_status.attention = false;
+    }
+    else
+    {
+        aio2_status.state = "Not detected";
+        aio2_status.detail = "No uConsole/AIO2 Linux endpoint was found.";
+        aio2_status.attention = true;
+    }
 
     HardwareStatusItem gps_status{};
     gps_status.name = "GPS";
@@ -515,16 +551,30 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
     else if (!gpsSourceConfigured())
     {
         gps_status.state = "No source";
-        gps_status.detail = "No GPS serial device or NMEA file configured.";
+        gps_status.detail = "No GPS serial endpoint or NMEA file configured.";
         gps_status.attention = true;
     }
     else
     {
         const auto gps = ::platform::ui::gps::get_data();
-        gps_status.state = gps.valid ? "Fix" : "No fix";
-        gps_status.detail =
-            gps.valid ? "Configured GPS/NMEA source has a valid fix."
-                      : "GPS/NMEA source is present but no valid fix yet.";
+        if (gps.valid)
+        {
+            gps_status.state = "Fix";
+            gps_status.detail = "GPS/NMEA source has a valid fix.";
+        }
+        else if (hardware_probe.gps_serial_detected)
+        {
+            gps_status.state = "Endpoint";
+            gps_status.detail = "Serial endpoint present at " +
+                                hardware_probe.gps_serial_path +
+                                "; waiting for valid NMEA fix.";
+        }
+        else
+        {
+            gps_status.state = "No fix";
+            gps_status.detail =
+                "GPS/NMEA source is present but no valid fix yet.";
+        }
         gps_status.attention = !gps.valid;
     }
 
@@ -575,7 +625,7 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
     {
         out.location.state = "No location source";
         out.location.coordinates = "No coordinates";
-        out.location.detail = "No GPS serial device or NMEA file configured.";
+        out.location.detail = "No GPS serial endpoint or NMEA file configured.";
         out.location.attention = true;
     }
     else
@@ -587,6 +637,12 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
         out.location.detail =
             gps.valid ? "Configured GPS/NMEA source is reporting position."
                       : "GPS/NMEA source is present but has no valid fix.";
+        if (!gps.valid && hardware_probe.gps_serial_detected)
+        {
+            out.location.detail = "AIO2 serial endpoint present at " +
+                                  hardware_probe.gps_serial_path +
+                                  "; waiting for NMEA fix.";
+        }
         if (gps.valid && gps.has_speed)
         {
             out.location.detail += " Speed " + formatSpeed(gps.speed_mps) + ".";

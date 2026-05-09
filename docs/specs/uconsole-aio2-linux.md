@@ -393,6 +393,9 @@ Expected characteristics:
   work state
 - stable side panels or in-workspace panels for team, device, or capability
   details when they add useful density
+- menu-bar workspaces must be real navigation targets. Hardware, Data, and
+  Settings may start as read-only state surfaces, but they must not be disabled
+  placeholder buttons.
 - Overview, if present, is an operational dashboard: compact location/map
   context, current hardware state, message status, team activity timeline, and
   runtime details. It must not become a decorative landing page.
@@ -562,6 +565,10 @@ statements are becoming true:
 - Overview/dashboard surfaces show stored or runtime-backed data only. Empty
   location, hardware, message, and team states are valid product states, not
   placeholders to hide with mock data.
+- Hardware state distinguishes endpoint presence from driver readiness. A
+  detected uConsole/AIO2 serial, SPI, or I2C endpoint must not be reported as
+  missing merely because Trail Mate has not bound the GPS or LoRa protocol
+  driver yet.
 - Replacing the uConsole UI toolkit does not require rewriting app services or
   presentation models.
 - The uConsole Linux app can be installed through a standard `.deb` package, not

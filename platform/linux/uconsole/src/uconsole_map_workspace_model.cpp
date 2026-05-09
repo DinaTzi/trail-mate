@@ -10,6 +10,7 @@
 #include "platform/linux/env_config.h"
 #include "platform/ui/gps_runtime.h"
 #include "platform/ui/settings_store.h"
+#include "uconsole/uconsole_hardware_probe.h"
 
 namespace trailmate::uconsole
 {
@@ -59,7 +60,8 @@ bool external_gps_source_configured()
             return true;
         }
     }
-    return false;
+    std::string auto_path{};
+    return uconsoleAutoGpsSerialPath(auto_path);
 }
 
 bool configured_map_center(double& lat, double& lon)
