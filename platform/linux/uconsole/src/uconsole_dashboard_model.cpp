@@ -1,8 +1,11 @@
 #include "uconsole/uconsole_dashboard_model.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,7 +17,10 @@
 #include "chat/usecase/contact_service.h"
 #include "platform/linux/map_tile_cache.h"
 #include "platform/linux/runtime_paths.h"
+#include "platform/ui/gps_runtime.h"
+#include "platform/ui/team_ui_store_runtime.h"
 #include "sys/clock.h"
+#include "team/protocol/team_chat.h"
 
 namespace trailmate::uconsole
 {
@@ -115,6 +121,284 @@ namespace
     return preview;
 }
 
+[[nodiscard]] bool envConfigured(const char* name)
+{
+    const char* value = std::getenv(name);
+    return value != nullptr && value[0] != '\0';
+}
+
+[[nodiscard]] bool gpsSourceConfigured()
+{
+    return envConfigured("TRAIL_MATE_GPS_DEVICE") ||
+           envConfigured("TRAIL_MATE_GPS_NMEA_FILE") ||
+           envConfigured("TRAIL_MATE_GPS_VALID") ||
+           envConfigured("TRAIL_MATE_GPS_LAT") ||
+           envConfigured("TRAIL_MATE_GPS_LNG");
+}
+
+[[nodiscard]] bool parseEnvDouble(const char* name, double& out)
+{
+    const char* value = std::getenv(name);
+    if (value == nullptr || value[0] == '\0')
+    {
+        return false;
+    }
+
+    char* end = nullptr;
+    const double parsed = std::strtod(value, &end);
+    if (end == value || (end != nullptr && *end != '\0') ||
+        !std::isfinite(parsed))
+    {
+        return false;
+    }
+
+    out = parsed;
+    return true;
+}
+
+[[nodiscard]] bool configuredMapCenter(double& lat, double& lon)
+{
+    return parseEnvDouble("TRAIL_MATE_MAP_LAT", lat) &&
+           parseEnvDouble("TRAIL_MATE_MAP_LNG", lon);
+}
+
+[[nodiscard]] std::string compactStoragePath()
+{
+    return ::platform::linux_runtime::sqlite_database_path().string();
+}
+
+[[nodiscard]] std::string formatCoordinate(double lat, double lon)
+{
+    char buffer[64] = {};
+    std::snprintf(buffer, sizeof(buffer), "%.5f, %.5f", lat, lon);
+    return buffer;
+}
+
+[[nodiscard]] std::string formatSpeed(double speed_mps)
+{
+    char buffer[32] = {};
+    std::snprintf(buffer, sizeof(buffer), "%.1f m/s", speed_mps);
+    return buffer;
+}
+
+[[nodiscard]] std::string teamIdLabel(const ::team::TeamId& id)
+{
+    char buffer[17] = {};
+    for (std::size_t index = 0; index < 8U && index < id.size(); ++index)
+    {
+        std::snprintf(buffer + (index * 2U), 3, "%02X",
+                      static_cast<unsigned>(id[index]));
+    }
+    return buffer;
+}
+
+[[nodiscard]] std::string cleanPayloadText(const std::vector<std::uint8_t>& payload)
+{
+    std::string text{};
+    text.reserve(std::min<std::size_t>(payload.size(), 80U));
+    for (const std::uint8_t byte : payload)
+    {
+        if (text.size() >= 80U)
+        {
+            text += "...";
+            break;
+        }
+        const unsigned char ch = static_cast<unsigned char>(byte);
+        text += std::isprint(ch) ? static_cast<char>(ch) : '.';
+    }
+    return text;
+}
+
+struct TimelineCandidate
+{
+    std::uint32_t timestamp = 0;
+    TeamTimelineItem item{};
+};
+
+void pushTimeline(std::vector<TimelineCandidate>& out,
+                  std::uint32_t timestamp,
+                  std::string title,
+                  std::string detail,
+                  bool attention = false)
+{
+    if (timestamp == 0 && title.empty() && detail.empty())
+    {
+        return;
+    }
+
+    out.push_back(TimelineCandidate{.timestamp = timestamp,
+                                    .item = {.title = std::move(title),
+                                             .detail = std::move(detail),
+                                             .attention = attention}});
+}
+
+[[nodiscard]] std::string memberDisplayName(
+    const ::team::ui::TeamMemberUi& member)
+{
+    if (!member.name.empty())
+    {
+        return member.name;
+    }
+    return formatNodeId(member.node_id);
+}
+
+void buildTeamOverview(UConsoleDashboardSnapshot& out)
+{
+    ::team::ui::TeamUiSnapshot team_snapshot{};
+    if (!::team::ui::team_ui_get_store().load(team_snapshot))
+    {
+        out.team_summary = "No team state stored locally.";
+        return;
+    }
+
+    if (team_snapshot.in_team)
+    {
+        out.team_summary =
+            "Team: " +
+            (team_snapshot.team_name.empty() ? std::string("unnamed")
+                                             : team_snapshot.team_name) +
+            (team_snapshot.self_is_leader ? " / leader" : " / member") +
+            " / members " + std::to_string(team_snapshot.members.size()) +
+            " / unread " + std::to_string(team_snapshot.team_chat_unread);
+    }
+    else if (team_snapshot.pending_join)
+    {
+        out.team_summary = "Team join is pending.";
+    }
+    else if (team_snapshot.kicked_out)
+    {
+        out.team_summary = "Last team state: kicked out.";
+    }
+    else
+    {
+        out.team_summary = "Not in a team.";
+    }
+
+    std::vector<TimelineCandidate> timeline{};
+
+    if (team_snapshot.pending_join)
+    {
+        pushTimeline(timeline,
+                     team_snapshot.pending_join_started_s,
+                     "Join pending",
+                     formatLastSeen(team_snapshot.pending_join_started_s),
+                     true);
+    }
+    if (team_snapshot.kicked_out)
+    {
+        pushTimeline(timeline,
+                     team_snapshot.last_update_s,
+                     "Kicked out",
+                     formatLastSeen(team_snapshot.last_update_s),
+                     true);
+    }
+    if (team_snapshot.last_update_s != 0)
+    {
+        std::string detail = formatLastSeen(team_snapshot.last_update_s);
+        if (team_snapshot.has_team_id)
+        {
+            detail += " / team " + teamIdLabel(team_snapshot.team_id);
+        }
+        pushTimeline(timeline,
+                     team_snapshot.last_update_s,
+                     "Team state updated",
+                     detail);
+    }
+
+    for (const auto& member : team_snapshot.members)
+    {
+        if (member.last_seen_s == 0)
+        {
+            continue;
+        }
+        std::string detail = formatLastSeen(member.last_seen_s);
+        detail += member.online ? " / online" : " / offline";
+        if (member.leader)
+        {
+            detail += " / leader";
+        }
+        pushTimeline(timeline,
+                     member.last_seen_s,
+                     memberDisplayName(member) + " seen",
+                     detail);
+    }
+
+    if (team_snapshot.has_team_id)
+    {
+        std::vector<::team::ui::TeamChatLogEntry> chat_log{};
+        if (::team::ui::team_ui_chatlog_load_recent(
+                team_snapshot.team_id, 4U, chat_log))
+        {
+            for (const auto& entry : chat_log)
+            {
+                std::string detail = formatLastSeen(entry.ts) + " / " +
+                                     formatNodeId(entry.peer_id);
+                if (entry.type == ::team::proto::TeamChatType::Text)
+                {
+                    const std::string text = cleanPayloadText(entry.payload);
+                    if (!text.empty())
+                    {
+                        detail += " / " + text;
+                    }
+                }
+                else
+                {
+                    detail += " / structured team message";
+                }
+                pushTimeline(timeline,
+                             entry.ts,
+                             entry.incoming ? "Team chat received"
+                                            : "Team chat sent",
+                             detail);
+            }
+        }
+
+        std::vector<::team::ui::TeamPosSample> positions{};
+        if (::team::ui::team_ui_posring_load_latest(team_snapshot.team_id,
+                                                    positions))
+        {
+            std::sort(positions.begin(),
+                      positions.end(),
+                      [](const auto& left, const auto& right)
+                      {
+                          return left.ts > right.ts;
+                      });
+            const std::size_t count =
+                std::min<std::size_t>(positions.size(), 4U);
+            for (std::size_t index = 0; index < count; ++index)
+            {
+                const auto& position = positions[index];
+                const double lat =
+                    static_cast<double>(position.lat_e7) / 10000000.0;
+                const double lon =
+                    static_cast<double>(position.lon_e7) / 10000000.0;
+                std::string detail = formatLastSeen(position.ts) + " / " +
+                                     formatCoordinate(lat, lon) + " / alt " +
+                                     std::to_string(position.alt_m) + " m";
+                pushTimeline(timeline,
+                             position.ts,
+                             formatNodeId(position.member_id) +
+                                 " position update",
+                             detail);
+            }
+        }
+    }
+
+    std::sort(timeline.begin(),
+              timeline.end(),
+              [](const auto& left, const auto& right)
+              {
+                  return left.timestamp > right.timestamp;
+              });
+
+    const std::size_t count = std::min<std::size_t>(timeline.size(), 7U);
+    out.team_timeline.reserve(count);
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        out.team_timeline.push_back(std::move(timeline[index].item));
+    }
+}
+
 } // namespace
 
 UConsoleDashboardModel::UConsoleDashboardModel(
@@ -181,25 +465,162 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
 
     std::string mesh_line = "Mesh: ";
     mesh_line += out.mesh_protocol;
+    HardwareStatusItem lora_status{};
+    lora_status.name = "LoRa";
+    bool mesh_transport_ready = false;
     if (mesh_adapter == nullptr)
     {
         mesh_line += " transport unavailable";
+        lora_status.state = "Unavailable";
+        lora_status.detail = "No mesh transport adapter is attached.";
+        lora_status.attention = true;
     }
     else
     {
         const ::chat::MeshCapabilities capabilities =
             mesh_adapter->getCapabilities();
-        mesh_line += capabilities.supports_unicast_text
-                         ? " transport ready"
-                         : " transport not connected";
+        mesh_transport_ready = capabilities.supports_unicast_text;
+        mesh_line += mesh_transport_ready ? " transport ready"
+                                          : " transport not connected";
+        lora_status.state = mesh_transport_ready ? "Ready" : "Offline";
+        lora_status.detail = mesh_transport_ready
+                                 ? "Mesh text transport is available."
+                                 : "AIO2/LoRa transport is not connected.";
+        lora_status.attention = !mesh_transport_ready;
     }
 
     const ::platform::linux_runtime::MapTileCache tile_cache;
     const auto tile_stats = tile_cache.stats();
+
+    HardwareStatusItem aio2_status{};
+    aio2_status.name = "AIO2";
+    aio2_status.state = "Not detected";
+    aio2_status.detail = "No Linux AIO2 adapter runtime is connected.";
+    aio2_status.attention = true;
+
+    HardwareStatusItem gps_status{};
+    gps_status.name = "GPS";
+    if (!::platform::ui::gps::is_enabled())
+    {
+        gps_status.state = "Disabled";
+        gps_status.detail = "GPS runtime is disabled.";
+        gps_status.attention = true;
+    }
+    else if (!::platform::ui::gps::is_powered())
+    {
+        gps_status.state = "Power off";
+        gps_status.detail = "GPS runtime reports receiver power off.";
+        gps_status.attention = true;
+    }
+    else if (!gpsSourceConfigured())
+    {
+        gps_status.state = "No source";
+        gps_status.detail = "No GPS serial device or NMEA file configured.";
+        gps_status.attention = true;
+    }
+    else
+    {
+        const auto gps = ::platform::ui::gps::get_data();
+        gps_status.state = gps.valid ? "Fix" : "No fix";
+        gps_status.detail =
+            gps.valid ? "Configured GPS/NMEA source has a valid fix."
+                      : "GPS/NMEA source is present but no valid fix yet.";
+        gps_status.attention = !gps.valid;
+    }
+
+    HardwareStatusItem storage_status{};
+    storage_status.name = "Storage";
+    storage_status.state = "SQLite";
+    storage_status.detail = compactStoragePath();
+    storage_status.attention = false;
+
+    HardwareStatusItem map_status{};
+    map_status.name = "Map";
+    map_status.state = std::to_string(tile_stats.cached_tiles) + " tiles";
+    map_status.detail = tile_stats.root.string();
+    map_status.attention = false;
+
+    double configured_lat = 0.0;
+    double configured_lon = 0.0;
+    const auto map_source = ::platform::linux_runtime::sanitize_map_base_source(
+        services_.config().map_source);
+    out.location.map_meta =
+        std::string(::platform::linux_runtime::map_base_source_label(
+            map_source)) +
+        " / " + std::to_string(tile_stats.cached_tiles) + " cached tiles";
+    if (configuredMapCenter(configured_lat, configured_lon))
+    {
+        out.location.state = "Map center";
+        out.location.coordinates =
+            formatCoordinate(configured_lat, configured_lon);
+        out.location.detail =
+            "Using explicit map center from TRAIL_MATE_MAP_LAT/LNG.";
+        out.location.attention = false;
+    }
+    else if (!::platform::ui::gps::is_enabled())
+    {
+        out.location.state = "GPS disabled";
+        out.location.coordinates = "No coordinates";
+        out.location.detail = "GPS runtime is disabled.";
+        out.location.attention = true;
+    }
+    else if (!::platform::ui::gps::is_powered())
+    {
+        out.location.state = "GPS power off";
+        out.location.coordinates = "No coordinates";
+        out.location.detail = "GPS receiver is not powered.";
+        out.location.attention = true;
+    }
+    else if (!gpsSourceConfigured())
+    {
+        out.location.state = "No location source";
+        out.location.coordinates = "No coordinates";
+        out.location.detail = "No GPS serial device or NMEA file configured.";
+        out.location.attention = true;
+    }
+    else
+    {
+        const auto gps = ::platform::ui::gps::get_data();
+        out.location.state = gps.valid ? "GPS fix" : "Waiting for fix";
+        out.location.coordinates =
+            gps.valid ? formatCoordinate(gps.lat, gps.lng) : "No coordinates";
+        out.location.detail =
+            gps.valid ? "Configured GPS/NMEA source is reporting position."
+                      : "GPS/NMEA source is present but has no valid fix.";
+        if (gps.valid && gps.has_speed)
+        {
+            out.location.detail += " Speed " + formatSpeed(gps.speed_mps) + ".";
+        }
+        out.location.attention = !gps.valid;
+    }
+
+    out.messages.title = conversation_total == 0U
+                             ? "No stored messages"
+                             : std::to_string(conversation_total) + " threads";
+    out.messages.detail =
+        std::to_string(out.unread_count) + " unread / " +
+        (mesh_transport_ready ? "mesh transport ready"
+                              : "LoRa transport offline");
+    out.messages.latest =
+        out.conversations.empty() ? "No messages are stored locally."
+                                  : out.conversations.front().title + " - " +
+                                        out.conversations.front().preview;
+    out.messages.attention = out.unread_count > 0 || !mesh_transport_ready;
+
+    buildTeamOverview(out);
+
+    out.hardware = {aio2_status, lora_status, gps_status, storage_status,
+                    map_status};
+    out.bottom_status =
+        "AIO2: " + aio2_status.state + " | LoRa: " + lora_status.state +
+        " | GPS: " + gps_status.state + " | Node: " + out.self_node +
+        " | Unread: " + std::to_string(out.unread_count);
+
     out.capability_lines = {
         "Mode: Linux desktop-class handheld",
-        "AIO2: no adapter connected",
+        "AIO2: " + aio2_status.state + " - " + aio2_status.detail,
         mesh_line,
+        "GPS: " + gps_status.state + " - " + gps_status.detail,
         "BLE: not used on Linux",
         "Storage: SQLite " +
             ::platform::linux_runtime::sqlite_database_path().string(),

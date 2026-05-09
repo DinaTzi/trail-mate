@@ -9,10 +9,11 @@ UI-independent presentation models. The older LVGL path remains available
 through explicit SDL or raw Linux framebuffer fallbacks, but it is no longer the
 primary uConsole interface.
 
-- top runtime/status bar
-- left navigation rail
+- compact menu bar for primary workspaces
+- bottom status bar for AIO2/LoRa/GPS/storage state
 - central operational workspace
-- right capability/contact panel
+- Overview workspace with location/map context, hardware state, message status,
+  team activity timeline, and runtime details
 - SQLite-backed Linux local state
 - online XYZ map tile fetch with local file cache
 
@@ -20,8 +21,10 @@ The uConsole UI consumes Linux app services through `LinuxAppServices` and
 UI-independent presentation models. GTK is the production Linux UI direction;
 LVGL is retained for bring-up/fallback. AIO2 support belongs below
 platform/runtime adapters and must be reported through honest capability state;
-it should not become a UI layout concept. Linux does not expose BLE as a product
-capability.
+it should not become a UI layout concept. Overview panels must show real stored
+or runtime state only; empty hardware, message, location, and team states should
+remain explicit instead of being filled with demo data. Linux does not expose
+BLE as a product capability.
 
 ## Build
 

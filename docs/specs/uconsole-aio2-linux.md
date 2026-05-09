@@ -388,7 +388,14 @@ Expected characteristics:
 - multi-pane layouts where useful
 - keyboard-first interaction paths
 - dense but readable information hierarchy
-- stable side panels for status, team, device, or capability details
+- compact menu-bar navigation instead of a large hero/header region
+- persistent bottom status bar for AIO2, LoRa, GPS, storage, and background
+  work state
+- stable side panels or in-workspace panels for team, device, or capability
+  details when they add useful density
+- Overview, if present, is an operational dashboard: compact location/map
+  context, current hardware state, message status, team activity timeline, and
+  runtime details. It must not become a decorative landing page.
 - long-running task visibility for imports, sync, indexing, diagnostics, or
   package management
 - workflows that assume larger local storage and richer local datasets
@@ -419,6 +426,7 @@ Non-goals:
 
 - marketing-style landing screens
 - oversized hero pages
+- large header/status regions that consume the uConsole vertical workspace
 - decorative dashboard cards that reduce operational density
 - forcing every page into the current compact 12-entry app menu model
 
@@ -551,6 +559,9 @@ statements are becoming true:
   express scale, indexing, background jobs, and desktop-class workflows.
 - Capability state is honest: unsupported, simulated, and real hardware-backed
   behavior are distinguishable.
+- Overview/dashboard surfaces show stored or runtime-backed data only. Empty
+  location, hardware, message, and team states are valid product states, not
+  placeholders to hide with mock data.
 - Replacing the uConsole UI toolkit does not require rewriting app services or
   presentation models.
 - The uConsole Linux app can be installed through a standard `.deb` package, not

@@ -28,6 +28,38 @@ struct ContactPreview
     std::string protocol{};
 };
 
+struct HardwareStatusItem
+{
+    std::string name{};
+    std::string state{};
+    std::string detail{};
+    bool attention = false;
+};
+
+struct LocationOverview
+{
+    std::string state{};
+    std::string coordinates{};
+    std::string detail{};
+    std::string map_meta{};
+    bool attention = false;
+};
+
+struct MessageOverview
+{
+    std::string title{};
+    std::string detail{};
+    std::string latest{};
+    bool attention = false;
+};
+
+struct TeamTimelineItem
+{
+    std::string title{};
+    std::string detail{};
+    bool attention = false;
+};
+
 struct UConsoleDashboardSnapshot
 {
     std::size_t conversation_count = 0;
@@ -37,8 +69,14 @@ struct UConsoleDashboardSnapshot
     std::size_t ignored_count = 0;
     std::string mesh_protocol{};
     std::string self_node{};
+    std::string bottom_status{};
+    std::string team_summary{};
+    LocationOverview location{};
+    MessageOverview messages{};
     std::vector<ConversationPreview> conversations{};
     std::vector<ContactPreview> contacts{};
+    std::vector<HardwareStatusItem> hardware{};
+    std::vector<TeamTimelineItem> team_timeline{};
     std::vector<std::string> capability_lines{};
 };
 

@@ -33,28 +33,31 @@ window {
   background: #ecefea;
   color: #1f2523;
 }
-.topbar {
+.menu-bar {
   background: #202426;
   color: #f7f8f4;
-  padding: 10px 16px;
+  padding: 4px 8px;
+  min-height: 30px;
 }
-.app-title {
+.menu-title {
   color: #f7f8f4;
-  font-size: 20px;
   font-weight: 700;
+  padding: 0 8px;
 }
-.app-subtitle {
-  color: #aab2af;
-  font-size: 12px;
+.menu-button {
+  background: transparent;
+  color: #d7ded9;
+  border-radius: 4px;
+  padding: 4px 9px;
 }
 .chip {
   border-radius: 6px;
-  padding: 6px 10px;
+  padding: 4px 8px;
   color: #ecf4ef;
   background: #315f5e;
 }
 .body {
-  padding: 14px;
+  padding: 8px;
 }
 .sidebar {
   background: #252a29;
@@ -69,7 +72,7 @@ window {
   background: #303635;
   color: #d7ded9;
   border-radius: 6px;
-  padding: 9px 10px;
+  padding: 7px 10px;
 }
 .nav-button-active {
   background: #d7e8df;
@@ -87,7 +90,48 @@ window {
   background: #ffffff;
   border: 1px solid #d3d9d2;
   border-radius: 6px;
-  padding: 12px;
+  padding: 10px;
+}
+.panel-attention {
+  background: #fff8ec;
+  border-color: #d18d3d;
+}
+.overview-grid {
+  padding: 0;
+}
+.overview-panel-title {
+  color: #25302c;
+  font-weight: 700;
+}
+.summary-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+.summary-detail {
+  color: #53625d;
+  font-size: 12px;
+}
+.location-map {
+  background: #dce3dd;
+  border: 1px solid #b8c4ba;
+  border-radius: 5px;
+  padding: 6px;
+}
+.location-picture {
+  border-radius: 4px;
+}
+.timeline-list {
+  padding: 0;
+}
+.timeline-row {
+  background: #f6f8f5;
+  border-left: 3px solid #3e6f67;
+  border-radius: 5px;
+  padding: 7px 8px;
+}
+.timeline-row-alert {
+  background: #fff0e4;
+  border-left-color: #b45c24;
 }
 .metric-value {
   font-size: 24px;
@@ -125,6 +169,45 @@ window {
 .empty-state {
   color: #66716e;
   padding: 16px;
+}
+.hardware-grid {
+  padding: 0;
+}
+.hardware-card {
+  background: #f7f8f4;
+  border: 1px solid #c7d1c8;
+  border-radius: 6px;
+  padding: 8px;
+}
+.hardware-card-alert {
+  background: #fff3e1;
+  border-color: #d18d3d;
+}
+.hardware-state {
+  font-size: 18px;
+  font-weight: 700;
+}
+.hardware-state-alert {
+  color: #8b3f00;
+}
+.statusbar {
+  background: #202426;
+  color: #e8ede8;
+  padding: 5px 8px;
+}
+.status-chip {
+  border-radius: 4px;
+  padding: 3px 7px;
+  background: #303635;
+  color: #d7ded9;
+}
+.status-alert {
+  background: #6b3426;
+  color: #fff4ed;
+}
+.status-ok {
+  background: #315f5e;
+  color: #ecf4ef;
 }
 .map-controls {
   padding: 4px 0;
@@ -254,11 +337,6 @@ GtkWidget* makeListRow(GtkWidget* child, std::size_t index)
     return row;
 }
 
-std::string countText(std::size_t value)
-{
-    return std::to_string(value);
-}
-
 std::string tileKey(const ::platform::linux_runtime::MapTileId& tile)
 {
     std::ostringstream out;
@@ -278,6 +356,63 @@ std::string formatBytes(std::uint64_t bytes)
         return std::to_string(bytes / 1024ULL) + " KB";
     }
     return std::to_string(bytes) + " B";
+}
+
+const HardwareStatusItem* findHardware(const UConsoleDashboardSnapshot& snapshot,
+                                       const char* name)
+{
+    for (const auto& item : snapshot.hardware)
+    {
+        if (item.name == name)
+        {
+            return &item;
+        }
+    }
+    return nullptr;
+}
+
+std::string hardwareText(const HardwareStatusItem* item)
+{
+    if (item == nullptr)
+    {
+        return "-";
+    }
+    return item->name + ": " + item->state;
+}
+
+void setStatusChip(GtkWidget* label, const HardwareStatusItem* item)
+{
+    if (label == nullptr)
+    {
+        return;
+    }
+    setLabel(label, hardwareText(item));
+    gtk_widget_remove_css_class(label, "status-alert");
+    gtk_widget_remove_css_class(label, "status-ok");
+    if (item != nullptr && item->attention)
+    {
+        gtk_widget_add_css_class(label, "status-alert");
+    }
+    else
+    {
+        gtk_widget_add_css_class(label, "status-ok");
+    }
+}
+
+void setAttentionClass(GtkWidget* widget, bool attention)
+{
+    if (widget == nullptr)
+    {
+        return;
+    }
+    if (attention)
+    {
+        gtk_widget_add_css_class(widget, "panel-attention");
+    }
+    else
+    {
+        gtk_widget_remove_css_class(widget, "panel-attention");
+    }
 }
 
 struct GtkUConsoleAppState
@@ -301,20 +436,31 @@ struct GtkUConsoleAppState
     UConsoleMapWorkspaceModel map_model;
 
     GtkWidget* window = nullptr;
-    GtkWidget* mesh_chip = nullptr;
-    GtkWidget* node_chip = nullptr;
-    GtkWidget* unread_chip = nullptr;
     GtkWidget* stack = nullptr;
     GtkWidget* nav_overview = nullptr;
     GtkWidget* nav_chat = nullptr;
     GtkWidget* nav_map = nullptr;
 
-    GtkWidget* metric_threads = nullptr;
-    GtkWidget* metric_unread = nullptr;
-    GtkWidget* metric_contacts = nullptr;
-    GtkWidget* metric_nearby = nullptr;
+    GtkWidget* status_aio2 = nullptr;
+    GtkWidget* status_lora = nullptr;
+    GtkWidget* status_gps = nullptr;
+    GtkWidget* status_node = nullptr;
+    GtkWidget* status_unread = nullptr;
+
+    GtkWidget* overview_location_panel = nullptr;
+    GtkWidget* overview_location_state = nullptr;
+    GtkWidget* overview_location_coordinates = nullptr;
+    GtkWidget* overview_location_detail = nullptr;
+    GtkWidget* overview_location_map_meta = nullptr;
+    GtkWidget* overview_location_map = nullptr;
+    GtkWidget* overview_messages_panel = nullptr;
+    GtkWidget* overview_messages_title = nullptr;
+    GtkWidget* overview_messages_detail = nullptr;
+    GtkWidget* overview_messages_latest = nullptr;
+    GtkWidget* hardware_box = nullptr;
     GtkWidget* overview_conversations = nullptr;
-    GtkWidget* overview_contacts = nullptr;
+    GtkWidget* team_summary = nullptr;
+    GtkWidget* team_timeline_box = nullptr;
     GtkWidget* capability_box = nullptr;
 
     GtkWidget* chat_conversation_list = nullptr;
@@ -478,126 +624,151 @@ void installCss()
     g_object_unref(provider);
 }
 
-GtkWidget* buildTopBar(GtkUConsoleAppState& state)
+GtkWidget* buildMenuBar(GtkUConsoleAppState& state)
 {
     GtkWidget* bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    gtk_widget_add_css_class(bar, "topbar");
+    gtk_widget_add_css_class(bar, "menu-bar");
     gtk_widget_set_hexpand(bar, TRUE);
 
-    GtkWidget* title_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-    gtk_widget_set_hexpand(title_box, TRUE);
-    gtk_box_append(GTK_BOX(title_box),
-                   makeLabel("Trail Mate uConsole", "app-title"));
-    gtk_box_append(GTK_BOX(title_box),
-                   makeLabel("Linux desktop-class target", "app-subtitle"));
-    gtk_box_append(GTK_BOX(bar), title_box);
-
-    state.mesh_chip = makeLabel("Mesh: -", "chip");
-    state.node_chip = makeLabel("Node: -", "chip");
-    state.unread_chip = makeLabel("Unread: 0", "chip");
-    gtk_box_append(GTK_BOX(bar), state.mesh_chip);
-    gtk_box_append(GTK_BOX(bar), state.node_chip);
-    gtk_box_append(GTK_BOX(bar), state.unread_chip);
-    return bar;
-}
-
-GtkWidget* buildSidebar(GtkUConsoleAppState& state)
-{
-    GtkWidget* sidebar = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_widget_add_css_class(sidebar, "sidebar");
-    gtk_widget_set_size_request(sidebar, 210, -1);
-    gtk_widget_set_vexpand(sidebar, TRUE);
-
-    gtk_box_append(GTK_BOX(sidebar), makeLabel("Workspace", "nav-title"));
+    gtk_box_append(GTK_BOX(bar), makeLabel("Trail Mate", "menu-title"));
 
     state.nav_overview = gtk_button_new_with_label("Overview");
-    gtk_widget_add_css_class(state.nav_overview, "nav-button");
+    gtk_widget_add_css_class(state.nav_overview, "menu-button");
     g_signal_connect(state.nav_overview, "clicked",
                      G_CALLBACK(onOverviewClicked), &state);
-    gtk_box_append(GTK_BOX(sidebar), state.nav_overview);
+    gtk_box_append(GTK_BOX(bar), state.nav_overview);
 
     state.nav_chat = gtk_button_new_with_label("Chat");
-    gtk_widget_add_css_class(state.nav_chat, "nav-button");
+    gtk_widget_add_css_class(state.nav_chat, "menu-button");
     g_signal_connect(state.nav_chat, "clicked", G_CALLBACK(onChatClicked),
                      &state);
-    gtk_box_append(GTK_BOX(sidebar), state.nav_chat);
+    gtk_box_append(GTK_BOX(bar), state.nav_chat);
 
     state.nav_map = gtk_button_new_with_label("Map");
-    gtk_widget_add_css_class(state.nav_map, "nav-button");
+    gtk_widget_add_css_class(state.nav_map, "menu-button");
     g_signal_connect(state.nav_map, "clicked", G_CALLBACK(onMapClicked),
                      &state);
-    gtk_box_append(GTK_BOX(sidebar), state.nav_map);
+    gtk_box_append(GTK_BOX(bar), state.nav_map);
 
-    const char* reserved[] = {"Contacts", "Team", "Data", "Diagnostics",
-                              "Settings"};
+    const char* reserved[] = {"Hardware", "Data", "Settings"};
     for (const char* label : reserved)
     {
         GtkWidget* button = gtk_button_new_with_label(label);
-        gtk_widget_add_css_class(button, "nav-button");
+        gtk_widget_add_css_class(button, "menu-button");
         gtk_widget_set_sensitive(button, FALSE);
-        gtk_box_append(GTK_BOX(sidebar), button);
+        gtk_box_append(GTK_BOX(bar), button);
     }
-    return sidebar;
-}
 
-GtkWidget* buildMetric(GtkWidget** value_label,
-                       const char* label,
-                       const char* initial)
-{
-    GtkWidget* panel = makePanel();
-    *value_label = makeLabel(initial, "metric-value");
-    gtk_box_append(GTK_BOX(panel), *value_label);
-    gtk_box_append(GTK_BOX(panel), makeLabel(label, "metric-label"));
-    return panel;
+    GtkWidget* spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer, TRUE);
+    gtk_box_append(GTK_BOX(bar), spacer);
+
+    GtkWidget* hint = makeLabel("uConsole Linux", "chip");
+    gtk_box_append(GTK_BOX(bar), hint);
+    return bar;
 }
 
 GtkWidget* buildOverview(GtkUConsoleAppState& state)
 {
-    GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_hexpand(root, TRUE);
     gtk_widget_set_vexpand(root, TRUE);
 
-    gtk_box_append(GTK_BOX(root),
-                   makeLabel("Operational workspace", "workspace-title"));
-    gtk_box_append(GTK_BOX(root),
-                   makeLabel("Live service snapshot for the Linux handheld.",
-                             "workspace-subtitle"));
+    GtkWidget* grid = gtk_grid_new();
+    gtk_widget_add_css_class(grid, "overview-grid");
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 10);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 10);
+    gtk_widget_set_hexpand(grid, TRUE);
+    gtk_widget_set_vexpand(grid, TRUE);
 
-    GtkWidget* metrics = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    gtk_widget_set_hexpand(metrics, TRUE);
-    gtk_box_append(GTK_BOX(metrics),
-                   buildMetric(&state.metric_threads, "Threads", "0"));
-    gtk_box_append(GTK_BOX(metrics),
-                   buildMetric(&state.metric_unread, "Unread", "0"));
-    gtk_box_append(GTK_BOX(metrics),
-                   buildMetric(&state.metric_contacts, "Contacts", "0"));
-    gtk_box_append(GTK_BOX(metrics),
-                   buildMetric(&state.metric_nearby, "Nearby", "0"));
-    gtk_box_append(GTK_BOX(root), metrics);
+    state.overview_location_panel = makePanel();
+    gtk_widget_set_size_request(state.overview_location_panel, 250, -1);
+    gtk_box_append(GTK_BOX(state.overview_location_panel),
+                   makeLabel("Location", "overview-panel-title"));
+    state.overview_location_map = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_widget_add_css_class(state.overview_location_map, "location-map");
+    gtk_widget_set_size_request(state.overview_location_map, 170, 132);
+    gtk_widget_set_hexpand(state.overview_location_map, TRUE);
+    gtk_box_append(GTK_BOX(state.overview_location_panel),
+                   state.overview_location_map);
+    state.overview_location_state = makeLabel("", "summary-title");
+    state.overview_location_coordinates = makeLabel("", "row-title");
+    state.overview_location_detail = makeLabel("", "summary-detail", true);
+    state.overview_location_map_meta = makeLabel("", "row-meta", true);
+    gtk_box_append(GTK_BOX(state.overview_location_panel),
+                   state.overview_location_state);
+    gtk_box_append(GTK_BOX(state.overview_location_panel),
+                   state.overview_location_coordinates);
+    gtk_box_append(GTK_BOX(state.overview_location_panel),
+                   state.overview_location_detail);
+    gtk_box_append(GTK_BOX(state.overview_location_panel),
+                   state.overview_location_map_meta);
+    gtk_grid_attach(GTK_GRID(grid), state.overview_location_panel, 0, 0, 1, 1);
 
-    GtkWidget* lists = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    gtk_widget_set_hexpand(lists, TRUE);
-    gtk_widget_set_vexpand(lists, TRUE);
+    GtkWidget* hardware_panel = makePanel();
+    gtk_widget_set_vexpand(hardware_panel, FALSE);
+    gtk_box_append(GTK_BOX(hardware_panel),
+                   makeLabel("Hardware state", "overview-panel-title"));
+    state.hardware_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_add_css_class(state.hardware_box, "hardware-grid");
+    gtk_widget_set_hexpand(state.hardware_box, TRUE);
+    gtk_box_append(GTK_BOX(hardware_panel), state.hardware_box);
+    gtk_grid_attach(GTK_GRID(grid), hardware_panel, 1, 0, 2, 1);
 
-    GtkWidget* conversations_panel = makePanel();
-    gtk_widget_set_vexpand(conversations_panel, TRUE);
-    gtk_box_append(GTK_BOX(conversations_panel),
-                   makeLabel("Conversations", "row-title"));
+    state.overview_messages_panel = makePanel();
+    gtk_widget_set_vexpand(state.overview_messages_panel, TRUE);
+    gtk_box_append(GTK_BOX(state.overview_messages_panel),
+                   makeLabel("Messages", "overview-panel-title"));
+    state.overview_messages_title = makeLabel("", "summary-title");
+    state.overview_messages_detail = makeLabel("", "summary-detail", true);
+    state.overview_messages_latest = makeLabel("", nullptr, true);
+    gtk_box_append(GTK_BOX(state.overview_messages_panel),
+                   state.overview_messages_title);
+    gtk_box_append(GTK_BOX(state.overview_messages_panel),
+                   state.overview_messages_detail);
+    gtk_box_append(GTK_BOX(state.overview_messages_panel),
+                   state.overview_messages_latest);
     state.overview_conversations = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_vexpand(state.overview_conversations, TRUE);
-    gtk_box_append(GTK_BOX(conversations_panel), state.overview_conversations);
-    gtk_box_append(GTK_BOX(lists), conversations_panel);
+    GtkWidget* message_scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(message_scroll),
+                                  state.overview_conversations);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(message_scroll),
+                                   GTK_POLICY_NEVER,
+                                   GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_vexpand(message_scroll, TRUE);
+    gtk_box_append(GTK_BOX(state.overview_messages_panel), message_scroll);
+    gtk_grid_attach(GTK_GRID(grid), state.overview_messages_panel, 0, 1, 1, 1);
 
-    GtkWidget* contacts_panel = makePanel();
-    gtk_widget_set_vexpand(contacts_panel, TRUE);
-    gtk_box_append(GTK_BOX(contacts_panel),
-                   makeLabel("Contacts and nearby nodes", "row-title"));
-    state.overview_contacts = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_widget_set_vexpand(state.overview_contacts, TRUE);
-    gtk_box_append(GTK_BOX(contacts_panel), state.overview_contacts);
-    gtk_box_append(GTK_BOX(lists), contacts_panel);
+    GtkWidget* team_panel = makePanel();
+    gtk_widget_set_vexpand(team_panel, TRUE);
+    gtk_box_append(GTK_BOX(team_panel),
+                   makeLabel("Team activity", "overview-panel-title"));
+    state.team_summary = makeLabel("", "summary-detail", true);
+    gtk_box_append(GTK_BOX(team_panel), state.team_summary);
+    state.team_timeline_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 7);
+    gtk_widget_add_css_class(state.team_timeline_box, "timeline-list");
+    gtk_widget_set_vexpand(state.team_timeline_box, TRUE);
+    GtkWidget* team_scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(team_scroll),
+                                  state.team_timeline_box);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(team_scroll),
+                                   GTK_POLICY_NEVER,
+                                   GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_vexpand(team_scroll, TRUE);
+    gtk_box_append(GTK_BOX(team_panel), team_scroll);
+    gtk_grid_attach(GTK_GRID(grid), team_panel, 1, 1, 1, 1);
 
-    gtk_box_append(GTK_BOX(root), lists);
+    GtkWidget* runtime_panel = makePanel();
+    gtk_widget_set_vexpand(runtime_panel, TRUE);
+    gtk_widget_set_size_request(runtime_panel, 300, -1);
+    gtk_box_append(GTK_BOX(runtime_panel),
+                   makeLabel("Runtime", "overview-panel-title"));
+    state.capability_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 7);
+    gtk_box_append(GTK_BOX(runtime_panel), state.capability_box);
+    gtk_grid_attach(GTK_GRID(grid), runtime_panel, 2, 1, 1, 1);
+
+    gtk_box_append(GTK_BOX(root), grid);
     return root;
 }
 
@@ -739,16 +910,29 @@ GtkWidget* buildMap(GtkUConsoleAppState& state)
     return root;
 }
 
-GtkWidget* buildStatusPanel(GtkUConsoleAppState& state)
+GtkWidget* buildStatusBar(GtkUConsoleAppState& state)
 {
-    GtkWidget* panel = makePanel();
-    gtk_widget_set_size_request(panel, 300, -1);
-    gtk_widget_set_vexpand(panel, TRUE);
-    gtk_box_append(GTK_BOX(panel),
-                   makeLabel("Runtime and capabilities", "row-title"));
-    state.capability_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 7);
-    gtk_box_append(GTK_BOX(panel), state.capability_box);
-    return panel;
+    GtkWidget* bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_add_css_class(bar, "statusbar");
+    gtk_widget_set_hexpand(bar, TRUE);
+
+    state.status_aio2 = makeLabel("AIO2: -", "status-chip");
+    state.status_lora = makeLabel("LoRa: -", "status-chip");
+    state.status_gps = makeLabel("GPS: -", "status-chip");
+    state.status_node = makeLabel("Node: -", "status-chip");
+    state.status_unread = makeLabel("Unread: 0", "status-chip");
+
+    gtk_box_append(GTK_BOX(bar), state.status_aio2);
+    gtk_box_append(GTK_BOX(bar), state.status_lora);
+    gtk_box_append(GTK_BOX(bar), state.status_gps);
+
+    GtkWidget* spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer, TRUE);
+    gtk_box_append(GTK_BOX(bar), spacer);
+
+    gtk_box_append(GTK_BOX(bar), state.status_node);
+    gtk_box_append(GTK_BOX(bar), state.status_unread);
+    return bar;
 }
 
 GtkWidget* buildRoot(GtkUConsoleAppState& state)
@@ -756,13 +940,12 @@ GtkWidget* buildRoot(GtkUConsoleAppState& state)
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_set_hexpand(root, TRUE);
     gtk_widget_set_vexpand(root, TRUE);
-    gtk_box_append(GTK_BOX(root), buildTopBar(state));
+    gtk_box_append(GTK_BOX(root), buildMenuBar(state));
 
-    GtkWidget* body = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 14);
+    GtkWidget* body = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_add_css_class(body, "body");
     gtk_widget_set_hexpand(body, TRUE);
     gtk_widget_set_vexpand(body, TRUE);
-    gtk_box_append(GTK_BOX(body), buildSidebar(state));
 
     state.stack = gtk_stack_new();
     gtk_widget_set_hexpand(state.stack, TRUE);
@@ -772,20 +955,139 @@ GtkWidget* buildRoot(GtkUConsoleAppState& state)
     gtk_stack_add_named(GTK_STACK(state.stack), buildChat(state), "chat");
     gtk_stack_add_named(GTK_STACK(state.stack), buildMap(state), "map");
     gtk_box_append(GTK_BOX(body), state.stack);
-    gtk_box_append(GTK_BOX(body), buildStatusPanel(state));
 
     gtk_box_append(GTK_BOX(root), body);
+    gtk_box_append(GTK_BOX(root), buildStatusBar(state));
     showPage(state, "overview");
     return root;
 }
 
-void refreshOverview(GtkUConsoleAppState& state,
+GtkWidget* buildHardwareCard(const HardwareStatusItem& item)
+{
+    GtkWidget* card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    gtk_widget_add_css_class(card, "hardware-card");
+    if (item.attention)
+    {
+        gtk_widget_add_css_class(card, "hardware-card-alert");
+    }
+    gtk_widget_set_hexpand(card, TRUE);
+
+    gtk_box_append(GTK_BOX(card), makeLabel(item.name.c_str(), "metric-label"));
+    GtkWidget* state_label = makeLabel(item.state.c_str(), "hardware-state");
+    if (item.attention)
+    {
+        gtk_widget_add_css_class(state_label, "hardware-state-alert");
+    }
+    gtk_box_append(GTK_BOX(card), state_label);
+    gtk_box_append(GTK_BOX(card),
+                   makeLabel(item.detail.c_str(), "row-meta", true));
+    return card;
+}
+
+void refreshHardware(GtkUConsoleAppState& state,
                      const UConsoleDashboardSnapshot& snapshot)
 {
-    setLabel(state.metric_threads, countText(snapshot.conversation_count));
-    setLabel(state.metric_unread, std::to_string(snapshot.unread_count));
-    setLabel(state.metric_contacts, countText(snapshot.contact_count));
-    setLabel(state.metric_nearby, countText(snapshot.nearby_count));
+    clearBox(state.hardware_box);
+    for (const auto& item : snapshot.hardware)
+    {
+        gtk_box_append(GTK_BOX(state.hardware_box), buildHardwareCard(item));
+    }
+}
+
+void refreshLocationMiniMap(GtkUConsoleAppState& state,
+                            const MapWorkspaceSnapshot& map_snapshot)
+{
+    clearBox(state.overview_location_map);
+    if (!map_snapshot.has_fix)
+    {
+        gtk_box_append(GTK_BOX(state.overview_location_map),
+                       makeLabel("No map center", "row-title"));
+        gtk_box_append(GTK_BOX(state.overview_location_map),
+                       makeLabel("GPS/NMEA source is not available.",
+                                 "row-meta",
+                                 true));
+        return;
+    }
+
+    const MapTileItem* center_tile = nullptr;
+    if (map_snapshot.tiles.size() > 4U)
+    {
+        center_tile = &map_snapshot.tiles[4U];
+    }
+
+    if (center_tile != nullptr && center_tile->available)
+    {
+        GtkWidget* picture =
+            gtk_picture_new_for_filename(center_tile->path.string().c_str());
+        gtk_widget_add_css_class(picture, "location-picture");
+        gtk_picture_set_content_fit(GTK_PICTURE(picture),
+                                    GTK_CONTENT_FIT_COVER);
+        gtk_widget_set_size_request(picture, 160, 112);
+        gtk_widget_set_hexpand(picture, TRUE);
+        gtk_widget_set_vexpand(picture, TRUE);
+        gtk_box_append(GTK_BOX(state.overview_location_map), picture);
+    }
+    else
+    {
+        gtk_box_append(GTK_BOX(state.overview_location_map),
+                       makeLabel("Tile pending", "row-title"));
+        gtk_box_append(GTK_BOX(state.overview_location_map),
+                       makeLabel("Center tile is not cached yet.",
+                                 "row-meta",
+                                 true));
+    }
+
+    if (center_tile != nullptr)
+    {
+        const std::string tile_meta =
+            "z" + std::to_string(center_tile->id.z) + " " +
+            std::to_string(center_tile->id.x) + "/" +
+            std::to_string(center_tile->id.y);
+        gtk_box_append(GTK_BOX(state.overview_location_map),
+                       makeLabel(tile_meta.c_str(), "row-meta"));
+    }
+}
+
+GtkWidget* buildTimelineRow(const TeamTimelineItem& item)
+{
+    GtkWidget* row = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    gtk_widget_add_css_class(row, "timeline-row");
+    if (item.attention)
+    {
+        gtk_widget_add_css_class(row, "timeline-row-alert");
+    }
+    gtk_widget_set_hexpand(row, TRUE);
+    gtk_box_append(GTK_BOX(row), makeLabel(item.title.c_str(), "row-title"));
+    gtk_box_append(GTK_BOX(row),
+                   makeLabel(item.detail.c_str(), "row-meta", true));
+    return row;
+}
+
+void refreshOverview(GtkUConsoleAppState& state,
+                     const UConsoleDashboardSnapshot& snapshot,
+                     const MapWorkspaceSnapshot& map_snapshot)
+{
+    setAttentionClass(state.overview_location_panel,
+                      snapshot.location.attention);
+    setAttentionClass(state.overview_messages_panel,
+                      snapshot.messages.attention);
+    setLabel(state.overview_location_state, snapshot.location.state);
+    setLabel(state.overview_location_coordinates,
+             snapshot.location.coordinates);
+    setLabel(state.overview_location_detail, snapshot.location.detail);
+    const std::string map_meta =
+        map_snapshot.source_label + " / z" + std::to_string(map_snapshot.zoom) +
+        " / " + std::to_string(map_snapshot.cache_stats.cached_tiles) +
+        " cached tiles";
+    setLabel(state.overview_location_map_meta,
+             map_meta.empty() ? snapshot.location.map_meta : map_meta);
+    refreshLocationMiniMap(state, map_snapshot);
+
+    refreshHardware(state, snapshot);
+
+    setLabel(state.overview_messages_title, snapshot.messages.title);
+    setLabel(state.overview_messages_detail, snapshot.messages.detail);
+    setLabel(state.overview_messages_latest, snapshot.messages.latest);
 
     clearBox(state.overview_conversations);
     if (snapshot.conversations.empty())
@@ -804,20 +1106,18 @@ void refreshOverview(GtkUConsoleAppState& state,
         gtk_box_append(GTK_BOX(state.overview_conversations), row);
     }
 
-    clearBox(state.overview_contacts);
-    if (snapshot.contacts.empty())
+    setLabel(state.team_summary, snapshot.team_summary);
+    clearBox(state.team_timeline_box);
+    if (snapshot.team_timeline.empty())
     {
-        gtk_box_append(GTK_BOX(state.overview_contacts),
-                       makeLabel("No contacts or nearby nodes.", "empty-state"));
+        gtk_box_append(GTK_BOX(state.team_timeline_box),
+                       makeLabel("No team activity stored locally.",
+                                 "empty-state"));
     }
-    for (const auto& item : snapshot.contacts)
+    for (const auto& item : snapshot.team_timeline)
     {
-        GtkWidget* row = makeRowBox();
-        gtk_box_append(GTK_BOX(row), makeLabel(item.name.c_str(), "row-title"));
-        const std::string meta =
-            item.node_id + " / " + item.protocol + " / " + item.status;
-        gtk_box_append(GTK_BOX(row), makeLabel(meta.c_str(), "row-meta"));
-        gtk_box_append(GTK_BOX(state.overview_contacts), row);
+        gtk_box_append(GTK_BOX(state.team_timeline_box),
+                       buildTimelineRow(item));
     }
 }
 
@@ -1097,11 +1397,14 @@ void refreshMap(GtkUConsoleAppState& state)
 void refreshUi(GtkUConsoleAppState& state)
 {
     const UConsoleDashboardSnapshot dashboard = state.dashboard_model.snapshot();
-    setLabel(state.mesh_chip, "Mesh: " + dashboard.mesh_protocol);
-    setLabel(state.node_chip, "Node: " + dashboard.self_node);
-    setLabel(state.unread_chip,
+    const MapWorkspaceSnapshot map_snapshot = state.map_model.snapshot();
+    setStatusChip(state.status_aio2, findHardware(dashboard, "AIO2"));
+    setStatusChip(state.status_lora, findHardware(dashboard, "LoRa"));
+    setStatusChip(state.status_gps, findHardware(dashboard, "GPS"));
+    setLabel(state.status_node, "Node: " + dashboard.self_node);
+    setLabel(state.status_unread,
              "Unread: " + std::to_string(dashboard.unread_count));
-    refreshOverview(state, dashboard);
+    refreshOverview(state, dashboard, map_snapshot);
     refreshCapabilities(state, dashboard);
     refreshChat(state);
     refreshMap(state);
