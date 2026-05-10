@@ -2,6 +2,7 @@
 
 #include "chat/domain/contact_types.h"
 #include "chat/infra/meshtastic/mt_codec_pb.h"
+#include "chat/infra/meshtastic/mt_node_payload.h"
 #include "chat/infra/meshtastic/mt_packet_wire.h"
 #include "chat/infra/meshtastic/mt_pki_crypto.h"
 #include "chat/infra/meshtastic/mt_protocol_helpers.h"
@@ -1231,216 +1232,61 @@ void MeshtasticRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
         decoded.payload.size > 0 &&
         (node_store_ || contact_service_))
     {
-        meshtastic_NodeInfo node = meshtastic_NodeInfo_init_default;
-        pb_istream_t nstream = pb_istream_from_buffer(decoded.payload.bytes, decoded.payload.size);
+        ::chat::meshtastic::NodePayloadDecodeContext context{};
+        context.fallback_node_id = header.from;
+        context.snr = last_rx_snr_;
+        context.rssi = last_rx_rssi_;
+        context.timestamp = nowSeconds();
+        context.hops_away = ::chat::meshtastic::computeHopsAway(header.flags);
+        context.channel = static_cast<uint8_t>(channel);
+        context.via_mqtt =
+            (header.flags & ::chat::meshtastic::PACKET_FLAGS_VIA_MQTT_MASK) != 0;
 
-        if (pb_decode(&nstream, meshtastic_NodeInfo_fields, &node))
+        ::chat::meshtastic::DecodedNodePayload node{};
+        if (::chat::meshtastic::decodeNodeInfoPayload(decoded, context, &node))
         {
-            const ::chat::NodeId effective_node_id = header.from;
-
-            if (node.num != 0 && node.num != header.from)
+            if (node.node_id != 0 && node.node_id != header.from)
             {
                 logMeshtasticRx("[gat562][mt] reject nodeinfo mismatch from=%08lX claimed=%08lX\n",
                                 static_cast<unsigned long>(header.from),
-                                static_cast<unsigned long>(node.num));
-            }
-            else if (effective_node_id == node_id_ && header.from != node_id_)
-            {
-                logMeshtasticRx("[gat562][mt] reject foreign nodeinfo targeting self from=%08lX\n",
-                                static_cast<unsigned long>(header.from));
+                                static_cast<unsigned long>(node.node_id));
             }
             else
             {
-                const float snr = std::isnan(last_rx_snr_) ? node.snr : last_rx_snr_;
-                const uint8_t hops_away =
-                    node.has_hops_away ? node.hops_away
-                                       : ::chat::meshtastic::computeHopsAway(header.flags);
-
-                ::chat::contacts::NodeUpdate update{};
-                update.has_last_seen = true;
-                update.last_seen = nowSeconds();
-                update.has_snr = !std::isnan(snr);
-                update.snr = snr;
-                update.has_rssi = !std::isnan(last_rx_rssi_);
-                update.rssi = last_rx_rssi_;
-                update.has_protocol = true;
-                update.protocol = static_cast<uint8_t>(::chat::contacts::NodeProtocolType::Meshtastic);
-                update.has_hops_away = true;
-                update.hops_away = hops_away;
-                update.has_channel = true;
-                update.channel = static_cast<uint8_t>(channel);
-                update.has_via_mqtt = true;
-                update.via_mqtt = node.via_mqtt ||
-                                  ((header.flags & ::chat::meshtastic::PACKET_FLAGS_VIA_MQTT_MASK) != 0);
-                update.has_is_ignored = true;
-                update.is_ignored = node.is_ignored;
-                if (node.has_position && ::chat::meshtastic::hasValidPosition(node.position))
-                {
-                    update.has_position = true;
-                    update.position.valid = true;
-                    update.position.latitude_i = node.position.latitude_i;
-                    update.position.longitude_i = node.position.longitude_i;
-                    update.position.has_altitude = node.position.has_altitude;
-                    update.position.altitude = node.position.altitude;
-                    update.position.timestamp =
-                        node.position.timestamp != 0 ? node.position.timestamp : node.position.time;
-                    update.position.precision_bits = node.position.precision_bits;
-                    update.position.pdop = node.position.PDOP;
-                    update.position.hdop = node.position.HDOP;
-                    update.position.vdop = node.position.VDOP;
-                    update.position.gps_accuracy_mm = node.position.gps_accuracy;
-                }
-                if (node.has_device_metrics)
-                {
-                    update.has_device_metrics = true;
-                    update.device_metrics.has_battery_level = node.device_metrics.has_battery_level;
-                    update.device_metrics.battery_level = node.device_metrics.battery_level;
-                    update.device_metrics.has_voltage = node.device_metrics.has_voltage;
-                    update.device_metrics.voltage = node.device_metrics.voltage;
-                    update.device_metrics.has_channel_utilization = node.device_metrics.has_channel_utilization;
-                    update.device_metrics.channel_utilization = node.device_metrics.channel_utilization;
-                    update.device_metrics.has_air_util_tx = node.device_metrics.has_air_util_tx;
-                    update.device_metrics.air_util_tx = node.device_metrics.air_util_tx;
-                    update.device_metrics.has_uptime_seconds = node.device_metrics.has_uptime_seconds;
-                    update.device_metrics.uptime_seconds = node.device_metrics.uptime_seconds;
-                }
-
-                if (node.has_user)
-                {
-                    if (node.user.short_name[0] != '\0')
-                    {
-                        update.short_name = node.user.short_name;
-                    }
-                    if (node.user.long_name[0] != '\0')
-                    {
-                        update.long_name = node.user.long_name;
-                    }
-                    update.has_role = true;
-                    update.role = static_cast<uint8_t>(node.user.role);
-                    if (node.user.hw_model != meshtastic_HardwareModel_UNSET)
-                    {
-                        update.has_hw_model = true;
-                        update.hw_model = static_cast<uint8_t>(node.user.hw_model);
-                    }
-
-                    bool has_macaddr = false;
-                    for (std::size_t idx = 0; idx < sizeof(update.macaddr); ++idx)
-                    {
-                        if (node.user.macaddr[idx] != 0)
-                        {
-                            has_macaddr = true;
-                            break;
-                        }
-                    }
-                    if (has_macaddr)
-                    {
-                        update.has_macaddr = true;
-                        std::memcpy(update.macaddr, node.user.macaddr, sizeof(update.macaddr));
-                    }
-
-                    update.has_public_key = true;
-                    update.public_key_present = (node.user.public_key.size > 0);
-                }
-
+                const ::chat::contacts::NodeUpdate update = node.toNodeUpdate();
                 if (!duplicate || history.was_fallback)
                 {
-                    apply_observed_node_update(effective_node_id, update);
+                    apply_observed_node_update(node.node_id, update);
+                    if (node.has_public_key)
+                    {
+                        savePkiNodeKey(node.node_id,
+                                       node.public_key.data(),
+                                       node.public_key.size());
+                    }
                 }
-                nodeinfo_last_seen_ms_[effective_node_id] = millis();
+                nodeinfo_last_seen_ms_[node.node_id] = millis();
 
-                if (node.has_user)
+                if (!node.short_name.empty() || !node.long_name.empty())
                 {
                     logMeshtasticRx("[gat562][mt] nodeinfo observed from=%08lX owner=%08lX short=\"%s\" long=\"%s\"\n",
                                     static_cast<unsigned long>(header.from),
-                                    static_cast<unsigned long>(effective_node_id),
-                                    node.user.short_name,
-                                    node.user.long_name);
+                                    static_cast<unsigned long>(node.node_id),
+                                    node.short_name.c_str(),
+                                    node.long_name.c_str());
                 }
                 else
                 {
                     logMeshtasticRx("[gat562][mt] nodeinfo observed from=%08lX owner=%08lX\n",
                                     static_cast<unsigned long>(header.from),
-                                    static_cast<unsigned long>(effective_node_id));
+                                    static_cast<unsigned long>(node.node_id));
                 }
             }
         }
         else
         {
-            meshtastic_User user = meshtastic_User_init_default;
-            pb_istream_t ustream = pb_istream_from_buffer(decoded.payload.bytes, decoded.payload.size);
-            if (pb_decode(&ustream, meshtastic_User_fields, &user))
-            {
-                const ::chat::NodeId effective_node_id = header.from;
-
-                if (effective_node_id == node_id_ && header.from != node_id_)
-                {
-                    logMeshtasticRx("[gat562][mt] reject foreign user payload targeting self from=%08lX\n",
-                                    static_cast<unsigned long>(header.from));
-                }
-                else
-                {
-                    ::chat::contacts::NodeUpdate update{};
-                    if (user.short_name[0] != '\0')
-                    {
-                        update.short_name = user.short_name;
-                    }
-                    if (user.long_name[0] != '\0')
-                    {
-                        update.long_name = user.long_name;
-                    }
-                    update.has_last_seen = true;
-                    update.last_seen = nowSeconds();
-                    update.has_snr = !std::isnan(last_rx_snr_);
-                    update.snr = last_rx_snr_;
-                    update.has_rssi = !std::isnan(last_rx_rssi_);
-                    update.rssi = last_rx_rssi_;
-                    update.has_protocol = true;
-                    update.protocol = static_cast<uint8_t>(::chat::contacts::NodeProtocolType::Meshtastic);
-                    update.has_hops_away = true;
-                    update.hops_away = ::chat::meshtastic::computeHopsAway(header.flags);
-                    update.has_channel = true;
-                    update.channel = static_cast<uint8_t>(channel);
-                    update.has_via_mqtt = true;
-                    update.via_mqtt = ((header.flags & ::chat::meshtastic::PACKET_FLAGS_VIA_MQTT_MASK) != 0);
-                    update.has_role = true;
-                    update.role = static_cast<uint8_t>(user.role);
-                    if (user.hw_model != meshtastic_HardwareModel_UNSET)
-                    {
-                        update.has_hw_model = true;
-                        update.hw_model = static_cast<uint8_t>(user.hw_model);
-                    }
-
-                    bool has_macaddr = false;
-                    for (std::size_t idx = 0; idx < sizeof(update.macaddr); ++idx)
-                    {
-                        if (user.macaddr[idx] != 0)
-                        {
-                            has_macaddr = true;
-                            break;
-                        }
-                    }
-                    if (has_macaddr)
-                    {
-                        update.has_macaddr = true;
-                        std::memcpy(update.macaddr, user.macaddr, sizeof(update.macaddr));
-                    }
-
-                    update.has_public_key = true;
-                    update.public_key_present = (user.public_key.size > 0);
-
-                    if (!duplicate || history.was_fallback)
-                    {
-                        apply_observed_node_update(effective_node_id, update);
-                    }
-                    nodeinfo_last_seen_ms_[effective_node_id] = millis();
-
-                    logMeshtasticRx("[gat562][mt] user observed from=%08lX owner=%08lX short=\"%s\" long=\"%s\"\n",
-                                    static_cast<unsigned long>(header.from),
-                                    static_cast<unsigned long>(effective_node_id),
-                                    user.short_name,
-                                    user.long_name);
-                }
-            }
+            logMeshtasticRx("[gat562][mt] nodeinfo decode fail from=%08lX payload=%u\n",
+                            static_cast<unsigned long>(header.from),
+                            static_cast<unsigned>(decoded.payload.size));
         }
     }
 
@@ -1449,24 +1295,19 @@ void MeshtasticRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
         decoded.payload.size > 0 &&
         contact_service_)
     {
-        meshtastic_Position position_pb = meshtastic_Position_init_zero;
-        pb_istream_t pstream = pb_istream_from_buffer(decoded.payload.bytes, decoded.payload.size);
-        if (pb_decode(&pstream, meshtastic_Position_fields, &position_pb) &&
-            ::chat::meshtastic::hasValidPosition(position_pb))
+        ::chat::meshtastic::DecodedPositionPayload position{};
+        if (::chat::meshtastic::decodePositionPayload(decoded,
+                                                      header.from,
+                                                      nowSeconds(),
+                                                      &position))
         {
-            ::chat::contacts::NodePosition pos{};
-            pos.valid = true;
-            pos.latitude_i = position_pb.latitude_i;
-            pos.longitude_i = position_pb.longitude_i;
-            pos.has_altitude = position_pb.has_altitude;
-            pos.altitude = position_pb.altitude;
-            pos.timestamp = position_pb.timestamp != 0 ? position_pb.timestamp : position_pb.time;
-            pos.precision_bits = position_pb.precision_bits;
-            pos.pdop = position_pb.PDOP;
-            pos.hdop = position_pb.HDOP;
-            pos.vdop = position_pb.VDOP;
-            pos.gps_accuracy_mm = position_pb.gps_accuracy;
-            contact_service_->updateNodePosition(header.from, pos);
+            contact_service_->updateNodePosition(position.node_id, position.position);
+        }
+        else
+        {
+            logMeshtasticRx("[gat562][mt] position decode fail from=%08lX payload=%u\n",
+                            static_cast<unsigned long>(header.from),
+                            static_cast<unsigned>(decoded.payload.size));
         }
     }
 

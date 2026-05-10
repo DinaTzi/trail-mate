@@ -9,6 +9,8 @@
 #include "../domain/chat_types.h"
 #include "../ports/i_chat_store.h"
 #include "../ports/i_mesh_adapter.h"
+#include <cstddef>
+#include <deque>
 #include <vector>
 
 namespace chat
@@ -155,6 +157,26 @@ class ChatService
     }
 
   private:
+    struct IncomingIdentity
+    {
+        MeshProtocol protocol = MeshProtocol::Meshtastic;
+        ChannelId channel = ChannelId::PRIMARY;
+        NodeId from = 0;
+        NodeId peer = 0;
+        MessageId msg_id = 0;
+
+        bool operator==(const IncomingIdentity& other) const
+        {
+            return protocol == other.protocol &&
+                   channel == other.channel &&
+                   from == other.from &&
+                   peer == other.peer &&
+                   msg_id == other.msg_id;
+        }
+    };
+
+    static constexpr std::size_t kRecentIncomingLimit = 256;
+
     ChatModel& model_;
     IMeshAdapter& adapter_;
     IChatStore& store_;
@@ -162,11 +184,15 @@ class ChatService
     bool model_enabled_ = true;
     MeshProtocol active_protocol_ = MeshProtocol::Meshtastic;
     mutable ChatMessage store_lookup_cache_{};
+    std::deque<IncomingIdentity> recent_incoming_{};
 
     std::vector<IncomingTextObserver*> incoming_text_observers_;
     std::vector<IncomingMessageObserver*> incoming_message_observers_;
     std::vector<OutgoingTextObserver*> outgoing_text_observers_;
     std::vector<IncomingDataObserver*> incoming_data_observers_;
+
+    [[nodiscard]] bool isDuplicateIncoming(const ChatMessage& msg) const;
+    void rememberIncoming(const ChatMessage& msg);
 };
 
 } // namespace chat

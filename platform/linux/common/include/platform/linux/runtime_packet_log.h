@@ -12,6 +12,7 @@ enum class PacketLogSource
 {
     Gps,
     Lora,
+    Mqtt,
 };
 
 enum class PacketLogDirection

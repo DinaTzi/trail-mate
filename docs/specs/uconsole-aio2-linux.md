@@ -179,6 +179,19 @@ The following cuts are explicitly invalid:
 - Linux/uConsole map base tiles may be fetched online and cached locally using
   the existing `maps/base/{osm,terrain,satellite}/{z}/{x}/{y}` layout, with
   cache metadata stored in SQLite.
+- Linux/uConsole contour lines are a map overlay, not a base map source. The
+  GTK map shell must read transparent PNG contour tiles from
+  `maps/contour/{major|minor}-{interval}/{z}/{x}/{y}.png`, with the same zoom
+  profile selection used by Trail Mate Center (`z8 major-500`, `z9 major-200`,
+  `z10 major-500/minor-100`, `z11 major-200/minor-50`,
+  `z12 major-100/minor-50`, `z13..14 major-100/minor-20`,
+  `z15..16 major-50/minor-10`, and `z17+ major-25` plus optional `minor-5`).
+- Earthdata credentials are Linux/uConsole map data-source credentials. They
+  are persisted in SQLite settings, not in the cross-target `AppConfig` blob,
+  and must not be presented as a rendering toggle.
+- A missing contour generation backend must be visible as missing cached
+  contour tiles or missing Earthdata credentials. The UI must not imply that
+  contour generation is working when only cached overlay rendering exists.
 - BLE is not a Linux/uConsole product capability; Linux shells must report it
   as unused/unsupported rather than exposing a disabled fake toggle.
 - A future uConsole shell should depend on presentation models/actions, not on
@@ -303,6 +316,19 @@ Responsibilities:
 - report honest capability status
 - keep driver/device concerns below the app service and presentation layers
 
+Current AIO2 LoRa binding facts:
+
+- The HackerGadgets AIO2 SX1262 path is a board-level binding, not generic
+  Linux SPI auto-detect.
+- The LoRa power gate is `GPIO16`; GPS power is `GPIO27`.
+- The SX1262 control lines are `Reset=GPIO25`, `Busy=GPIO24`, and
+  `IRQ/DIO1=GPIO26`.
+- The radio requires `DIO2_AS_RF_SWITCH=true` and `DIO3_TCXO_VOLTAGE=1.8`.
+- The expected SPI endpoint is `spidev1.0`, which requires the
+  `dtoverlay=spi1-1cs` boot overlay. Treating an unrelated visible spidev node
+  such as `spidev4.0` as the LoRa endpoint is invalid unless the board overlay
+  explicitly proves that wiring.
+
 Forbidden ownership:
 
 - screen composition
@@ -376,6 +402,13 @@ Rules:
 - Shared core should hold common domain truth. Linux-native modules should hold
   Linux-only scale, indexing, background work, integration, and workflow
   extensions.
+- Inbound chat message identity is shared domain truth. A platform adapter may
+  suppress repeated RF frames as a transport optimization, but it must not be
+  the only owner of "this chat message was already received" behavior. The
+  `ChatService` ingress boundary is responsible for preventing duplicate
+  `(protocol, channel, sender, peer, message id)` text messages from entering
+  the model/store, and unread aggregation must derive from shared conversation
+  metadata rather than toolkit-local state.
 
 ## 8. uConsole UI Product Rules
 
@@ -432,6 +465,129 @@ Non-goals:
 - large header/status regions that consume the uConsole vertical workspace
 - decorative dashboard cards that reduce operational density
 - forcing every page into the current compact 12-entry app menu model
+
+### GTK Workbench Information Architecture
+
+The production uConsole GTK shell uses a workbench layout, not independent
+small-screen pages stacked into a larger window.
+
+Global surfaces:
+
+- the top menu bar is only for app identity and workspace navigation;
+- the bottom status bar is only for live runtime state that should remain
+  visible everywhere;
+- workspace bodies must not repeat large page titles, subtitles, or tutorial
+  prose;
+- each workspace must express its primary task through one dominant pane plus
+  secondary rails or inspectors when useful.
+
+Normative GTK layout geometry:
+
+- Layout numbers are product constraints, not incidental implementation
+  guesses. GTK page code must reference the named constants in
+  `apps/linux_uconsole/src/platform/gtk/gtk_uconsole_layout_spec.h` instead of
+  inventing local hard-coded pane widths.
+- Long runtime strings must never determine pane width. Coordinates, tile
+  status, cache counters, paths, failures, and protocol facts must wrap,
+  split into separate data rows, truncate, or move secondary detail to a
+  tooltip/log surface.
+- The bottom status bar is a global surface and must remain visible on every
+  workspace. Workspace bodies reserve status-bar space; no page-level layout may
+  push the status bar below the visible window.
+- Overview is three columns: compact GPS/location rail, dominant center column,
+  compact activity timeline rail. The center column is the only horizontally
+  expanding column.
+- Overview GPS/location rail width is `208px`. The GPS/location rail must not
+  render page headers, prose, coordinate summaries, or cache summaries above the
+  map. The rail starts with compact location map context, then skyplot, then
+  satellite list.
+- Overview location map maximum viewport is `200x128px` today and must remain
+  within a `200x200px` product envelope unless this specification is explicitly
+  changed first.
+- Overview timeline rail width is `252px`. Timeline badges and event text must
+  wrap inside this rail rather than increasing the rail width.
+- Chat is three columns: narrow conversation rail, dominant transcript/composer
+  column, narrow node/contact inspector rail. Conversation rail is `216px`; node
+  inspector rail is `220px`; only the transcript/composer column expands.
+- Map is canvas-first. Left map controls rail and right map tools rail are equal
+  narrow rails at `152px` each. The left rail must never be wider than the
+  right rail. The map canvas is the only horizontally expanding area.
+- Map side rails own their vertical overflow. If controls, tile status, contour
+  status, cache status, or tools exceed the visible height, the rail scrolls
+  internally at its fixed width; content must not disappear behind the bottom
+  status bar or force the global window/body to scroll.
+- The map tile viewport must fill the available canvas. Fixed-aspect frames,
+  letterboxing, permanent grey bands, or any other decorative area between the
+  side rails and the rendered tile surface are invalid. Grey may appear only as
+  a transient missing/loading tile placeholder inside the tile grid.
+- Map coordinates must be displayed as separate rows, such as `lat:` and `lon:`,
+  not as a single sentence. Tile/cache/download status must be rendered as
+  short multi-row data items, not as one long prose line.
+- If a label, switch, button, or status field needs more room than its rail,
+  the fix is wrapping, a tooltip, or moving secondary detail to Logs/Data.
+  Shortening established domain labels such as `Terrain`, `Satellite`, region
+  codes, protocol names, or radio parameter names is invalid unless the
+  abbreviation is already standard in that domain. Increasing the rail width is
+  invalid without updating this specification first.
+- The default uConsole GTK shell is designed for a landscape desktop-class
+  handheld workspace. Changes that make side rails visually dominate the map,
+  transcript, or overview center column are specification drift.
+
+Workspace rules:
+
+- Overview is an operational dashboard. It prioritizes location/map context,
+  hardware state, message state, team activity, and runtime details in that
+  order. It must not become a decorative landing page.
+- Map is a canvas-first workspace. The map should fill the body, with compact
+  overlays for source/layer tools and status. Tile borders, card-like tile cells,
+  and large control panels are invalid. The map view has its own user-controlled
+  center; drag/pan changes the map view center and must recalculate tiles and
+  overlays from the model rather than moving only GTK widgets. Pointer-context
+  actions such as right-click "center here" and "zoom here" operate on the
+  coordinate under the pointer, not on the global map center.
+- Chat is a four-part workbench: narrow thread rail, dominant transcript,
+  node/contact inspector, and compact compose surface. The inspector projects
+  real `ContactService` node facts such as NodeInfo names, source, signal, and
+  Position. It must not derive its own node model from chat rows.
+- Hardware is a status matrix plus capability/driver detail surface. It must
+  distinguish hardware endpoint presence, driver binding, and runtime readiness.
+- Data is a storage and cache operations surface. Counts and cache health are
+  primary; paths and roots are secondary details.
+- Logs is a diagnostics surface. Packet direction, parsed fields, and raw hex
+  must be visually distinct without forcing the user to read long prose.
+- Settings is a control plane. It uses grouped navigation and compact aligned
+  rows; it must not be a single long embedded-device settings scroll. Protocol
+  settings must be conditional: Meshtastic, MeshCore, and raw LoRa/RNode/LXMF
+  controls are not simultaneously valid user surfaces. Meshtastic region and
+  modem preset controls must use their protocol labels such as `CN`, `EU_433`,
+  `ANZ`, and `LongFast`; exposing their stored enum integers as the primary UI
+  is invalid. Region-specific radio constraints, such as TX power limits, must
+  be applied from the protocol region table rather than duplicated in the GTK
+  view.
+- On Linux, the SX126x driver is platform-specific, but Meshtastic RF parameter
+  derivation is not. Frequency, bandwidth, spreading factor, coding rate,
+  preamble, sync word, and TX power limits must come from the same shared
+  Meshtastic radio-configuration helper used by the ESP environment. Linux may
+  map that shared result into `Sx126xLoRaConfig`, but it must not maintain a
+  separate Meshtastic RF model.
+- Meshtastic node-fact parsing is shared protocol semantics. `NODEINFO_APP`,
+  legacy `User`, embedded `Position`, standalone `POSITION_APP`, `via_mqtt`,
+  device metrics, and public-key presence must be decoded by `core_chat`
+  helpers and then projected into platform events or `ContactService`.
+  Platform adapters may supply transport context such as sender, channel, RSSI,
+  SNR, and hop count, but they must not fork their own incompatible NodeInfo
+  parser.
+
+Visual hierarchy rules:
+
+- repeated cards are allowed only for repeated records such as messages, log
+  entries, hardware units, or timeline items;
+- page sections are panes or rails, not nested decorative cards;
+- controls use compact toolbars, grouped rows, and fixed control widths so the
+  layout does not jump as data refreshes;
+- status colors should mark severity or source, not decorate every surface;
+- empty, disabled, unsupported, and unbound states are honest product states and
+  must remain visible without mock data.
 
 ## 9. UI Technology Assessment
 

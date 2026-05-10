@@ -1,0 +1,691 @@
+#include "chat/linux_sqlite_chat_store.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <filesystem>
+#include <string>
+#include <utility>
+
+#include <sqlite3.h>
+
+#include "platform/linux/runtime_paths.h"
+
+namespace trailmate::linux_app
+{
+namespace
+{
+
+sqlite3* openDatabase()
+{
+    const std::filesystem::path db_path =
+        ::platform::linux_runtime::sqlite_database_path();
+    if (!::platform::linux_runtime::ensure_directory(db_path.parent_path()))
+    {
+        return nullptr;
+    }
+
+    sqlite3* db = nullptr;
+    const int rc = sqlite3_open_v2(db_path.string().c_str(),
+                                   &db,
+                                   SQLITE_OPEN_READWRITE |
+                                       SQLITE_OPEN_CREATE |
+                                       SQLITE_OPEN_FULLMUTEX,
+                                   nullptr);
+    if (rc != SQLITE_OK)
+    {
+        if (db != nullptr)
+        {
+            sqlite3_close(db);
+        }
+        return nullptr;
+    }
+
+    sqlite3_busy_timeout(db, 5000);
+    return db;
+}
+
+bool execSql(sqlite3* db, const char* sql)
+{
+    if (db == nullptr || sql == nullptr)
+    {
+        return false;
+    }
+
+    char* error = nullptr;
+    const int rc = sqlite3_exec(db, sql, nullptr, nullptr, &error);
+    if (error != nullptr)
+    {
+        sqlite3_free(error);
+    }
+    return rc == SQLITE_OK;
+}
+
+bool ensureSchema(sqlite3* db)
+{
+    return execSql(db, "PRAGMA busy_timeout=5000;") &&
+           execSql(db, "PRAGMA journal_mode=WAL;") &&
+           execSql(db,
+                   "CREATE TABLE IF NOT EXISTS chat_messages ("
+                   "sequence INTEGER PRIMARY KEY AUTOINCREMENT,"
+                   "protocol INTEGER NOT NULL,"
+                   "channel INTEGER NOT NULL,"
+                   "peer INTEGER NOT NULL,"
+                   "from_node INTEGER NOT NULL,"
+                   "msg_id INTEGER NOT NULL,"
+                   "timestamp INTEGER NOT NULL,"
+                   "text TEXT NOT NULL,"
+                   "team_location_icon INTEGER NOT NULL DEFAULT 0,"
+                   "has_geo INTEGER NOT NULL DEFAULT 0,"
+                   "geo_lat_e7 INTEGER NOT NULL DEFAULT 0,"
+                   "geo_lon_e7 INTEGER NOT NULL DEFAULT 0,"
+                   "status INTEGER NOT NULL"
+                   ");") &&
+           execSql(db,
+                   "CREATE UNIQUE INDEX IF NOT EXISTS "
+                   "chat_messages_unique_incoming "
+                   "ON chat_messages(protocol, channel, peer, from_node, "
+                   "msg_id) "
+                   "WHERE status=0 AND msg_id != 0;") &&
+           execSql(db,
+                   "CREATE INDEX IF NOT EXISTS "
+                   "chat_messages_conversation_idx "
+                   "ON chat_messages(protocol, channel, peer, sequence);") &&
+           execSql(db,
+                   "CREATE INDEX IF NOT EXISTS chat_messages_msg_id_idx "
+                   "ON chat_messages(msg_id, from_node, sequence);") &&
+           execSql(db,
+                   "CREATE TABLE IF NOT EXISTS chat_unread ("
+                   "protocol INTEGER NOT NULL,"
+                   "channel INTEGER NOT NULL,"
+                   "peer INTEGER NOT NULL,"
+                   "unread INTEGER NOT NULL DEFAULT 0,"
+                   "PRIMARY KEY(protocol, channel, peer)"
+                   ");");
+}
+
+struct DatabaseHandle
+{
+    sqlite3* db = nullptr;
+
+    DatabaseHandle()
+    {
+        db = openDatabase();
+        if (db != nullptr && !ensureSchema(db))
+        {
+            sqlite3_close(db);
+            db = nullptr;
+        }
+    }
+
+    ~DatabaseHandle()
+    {
+        if (db != nullptr)
+        {
+            sqlite3_close(db);
+        }
+    }
+
+    DatabaseHandle(const DatabaseHandle&) = delete;
+    DatabaseHandle& operator=(const DatabaseHandle&) = delete;
+
+    explicit operator bool() const noexcept
+    {
+        return db != nullptr;
+    }
+};
+
+int protocolValue(::chat::MeshProtocol protocol)
+{
+    return static_cast<int>(protocol);
+}
+
+int channelValue(::chat::ChannelId channel)
+{
+    return static_cast<int>(channel);
+}
+
+int statusValue(::chat::MessageStatus status)
+{
+    return static_cast<int>(status);
+}
+
+::chat::MeshProtocol protocolFromInt(int value)
+{
+    switch (value)
+    {
+    case static_cast<int>(::chat::MeshProtocol::MeshCore):
+        return ::chat::MeshProtocol::MeshCore;
+    case static_cast<int>(::chat::MeshProtocol::RNode):
+        return ::chat::MeshProtocol::RNode;
+    case static_cast<int>(::chat::MeshProtocol::LXMF):
+        return ::chat::MeshProtocol::LXMF;
+    case static_cast<int>(::chat::MeshProtocol::Meshtastic):
+    default:
+        return ::chat::MeshProtocol::Meshtastic;
+    }
+}
+
+::chat::ChannelId channelFromInt(int value)
+{
+    switch (value)
+    {
+    case static_cast<int>(::chat::ChannelId::SECONDARY):
+        return ::chat::ChannelId::SECONDARY;
+    case static_cast<int>(::chat::ChannelId::PRIMARY):
+    default:
+        return ::chat::ChannelId::PRIMARY;
+    }
+}
+
+::chat::MessageStatus statusFromInt(int value)
+{
+    switch (value)
+    {
+    case static_cast<int>(::chat::MessageStatus::Queued):
+        return ::chat::MessageStatus::Queued;
+    case static_cast<int>(::chat::MessageStatus::Sent):
+        return ::chat::MessageStatus::Sent;
+    case static_cast<int>(::chat::MessageStatus::Failed):
+        return ::chat::MessageStatus::Failed;
+    case static_cast<int>(::chat::MessageStatus::Incoming):
+    default:
+        return ::chat::MessageStatus::Incoming;
+    }
+}
+
+bool bindConversation(sqlite3_stmt* stmt,
+                      int first_index,
+                      const ::chat::ConversationId& conv)
+{
+    return sqlite3_bind_int(stmt, first_index, protocolValue(conv.protocol)) ==
+               SQLITE_OK &&
+           sqlite3_bind_int(stmt,
+                            first_index + 1,
+                            channelValue(conv.channel)) == SQLITE_OK &&
+           sqlite3_bind_int64(stmt,
+                              first_index + 2,
+                              static_cast<sqlite3_int64>(conv.peer)) ==
+               SQLITE_OK;
+}
+
+bool bindMessage(sqlite3_stmt* stmt, const ::chat::ChatMessage& msg)
+{
+    return sqlite3_bind_int(stmt, 1, protocolValue(msg.protocol)) ==
+               SQLITE_OK &&
+           sqlite3_bind_int(stmt, 2, channelValue(msg.channel)) == SQLITE_OK &&
+           sqlite3_bind_int64(stmt,
+                              3,
+                              static_cast<sqlite3_int64>(msg.peer)) ==
+               SQLITE_OK &&
+           sqlite3_bind_int64(stmt,
+                              4,
+                              static_cast<sqlite3_int64>(msg.from)) ==
+               SQLITE_OK &&
+           sqlite3_bind_int64(stmt,
+                              5,
+                              static_cast<sqlite3_int64>(msg.msg_id)) ==
+               SQLITE_OK &&
+           sqlite3_bind_int64(stmt,
+                              6,
+                              static_cast<sqlite3_int64>(msg.timestamp)) ==
+               SQLITE_OK &&
+           sqlite3_bind_text(stmt,
+                             7,
+                             msg.text.c_str(),
+                             -1,
+                             SQLITE_TRANSIENT) == SQLITE_OK &&
+           sqlite3_bind_int(stmt, 8, msg.team_location_icon) == SQLITE_OK &&
+           sqlite3_bind_int(stmt, 9, msg.has_geo ? 1 : 0) == SQLITE_OK &&
+           sqlite3_bind_int64(stmt,
+                              10,
+                              static_cast<sqlite3_int64>(msg.geo_lat_e7)) ==
+               SQLITE_OK &&
+           sqlite3_bind_int64(stmt,
+                              11,
+                              static_cast<sqlite3_int64>(msg.geo_lon_e7)) ==
+               SQLITE_OK &&
+           sqlite3_bind_int(stmt, 12, statusValue(msg.status)) == SQLITE_OK;
+}
+
+::chat::ChatMessage readMessage(sqlite3_stmt* stmt, int first_column)
+{
+    ::chat::ChatMessage msg{};
+    msg.protocol = protocolFromInt(sqlite3_column_int(stmt, first_column));
+    msg.channel = channelFromInt(sqlite3_column_int(stmt, first_column + 1));
+    msg.peer = static_cast<::chat::NodeId>(
+        sqlite3_column_int64(stmt, first_column + 2));
+    msg.from = static_cast<::chat::NodeId>(
+        sqlite3_column_int64(stmt, first_column + 3));
+    msg.msg_id = static_cast<::chat::MessageId>(
+        sqlite3_column_int64(stmt, first_column + 4));
+    msg.timestamp = static_cast<std::uint32_t>(
+        sqlite3_column_int64(stmt, first_column + 5));
+    const unsigned char* text = sqlite3_column_text(stmt, first_column + 6);
+    msg.text = text != nullptr
+                   ? reinterpret_cast<const char*>(text)
+                   : "";
+    msg.team_location_icon =
+        static_cast<std::uint8_t>(sqlite3_column_int(stmt, first_column + 7));
+    msg.has_geo = sqlite3_column_int(stmt, first_column + 8) != 0;
+    msg.geo_lat_e7 = static_cast<std::int32_t>(
+        sqlite3_column_int64(stmt, first_column + 9));
+    msg.geo_lon_e7 = static_cast<std::int32_t>(
+        sqlite3_column_int64(stmt, first_column + 10));
+    msg.status = statusFromInt(sqlite3_column_int(stmt, first_column + 11));
+    return msg;
+}
+
+std::string conversationName(const ::chat::ConversationId& conv)
+{
+    if (conv.peer == 0)
+    {
+        return "Broadcast";
+    }
+
+    char buffer[16] = {};
+    std::snprintf(buffer,
+                  sizeof(buffer),
+                  "%04lX",
+                  static_cast<unsigned long>(conv.peer & 0xFFFFU));
+    return buffer;
+}
+
+} // namespace
+
+LinuxSqliteChatStore::LinuxSqliteChatStore() = default;
+
+LinuxSqliteChatStore::~LinuxSqliteChatStore() = default;
+
+void LinuxSqliteChatStore::append(const ::chat::ChatMessage& msg)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    DatabaseHandle handle;
+    if (!handle)
+    {
+        return;
+    }
+
+    (void)execSql(handle.db, "BEGIN IMMEDIATE;");
+    sqlite3_stmt* stmt = nullptr;
+    constexpr const char* kSql =
+        "INSERT OR IGNORE INTO chat_messages("
+        "protocol, channel, peer, from_node, msg_id, timestamp, text, "
+        "team_location_icon, has_geo, geo_lat_e7, geo_lon_e7, status) "
+        "VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12);";
+    bool inserted = false;
+    if (sqlite3_prepare_v2(handle.db, kSql, -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        inserted =
+            bindMessage(stmt, msg) && sqlite3_step(stmt) == SQLITE_DONE &&
+            sqlite3_changes(handle.db) > 0;
+    }
+    sqlite3_finalize(stmt);
+
+    if (inserted && msg.status == ::chat::MessageStatus::Incoming)
+    {
+        const ::chat::ConversationId conv(msg.channel, msg.peer, msg.protocol);
+        constexpr const char* kUnreadSql =
+            "INSERT INTO chat_unread(protocol, channel, peer, unread) "
+            "VALUES(?1, ?2, ?3, 1) "
+            "ON CONFLICT(protocol, channel, peer) DO UPDATE SET "
+            "unread=chat_unread.unread + 1;";
+        if (sqlite3_prepare_v2(handle.db,
+                               kUnreadSql,
+                               -1,
+                               &stmt,
+                               nullptr) == SQLITE_OK)
+        {
+            (void)(bindConversation(stmt, 1, conv) &&
+                   sqlite3_step(stmt) == SQLITE_DONE);
+        }
+        sqlite3_finalize(stmt);
+    }
+
+    (void)execSql(handle.db, "COMMIT;");
+}
+
+std::vector<::chat::ChatMessage> LinuxSqliteChatStore::loadRecent(
+    const ::chat::ConversationId& conv,
+    std::size_t n)
+{
+    if (n == 0U)
+    {
+        return {};
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    DatabaseHandle handle;
+    if (!handle)
+    {
+        return {};
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    constexpr const char* kSql =
+        "SELECT protocol, channel, peer, from_node, msg_id, timestamp, text, "
+        "team_location_icon, has_geo, geo_lat_e7, geo_lon_e7, status "
+        "FROM chat_messages "
+        "WHERE protocol=?1 AND channel=?2 AND peer=?3 "
+        "ORDER BY sequence DESC LIMIT ?4;";
+    if (sqlite3_prepare_v2(handle.db, kSql, -1, &stmt, nullptr) != SQLITE_OK)
+    {
+        return {};
+    }
+
+    std::vector<::chat::ChatMessage> result;
+    if (bindConversation(stmt, 1, conv) &&
+        sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(n)) ==
+            SQLITE_OK)
+    {
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            result.push_back(readMessage(stmt, 0));
+        }
+    }
+    sqlite3_finalize(stmt);
+    std::reverse(result.begin(), result.end());
+    return result;
+}
+
+std::vector<::chat::ConversationMeta> LinuxSqliteChatStore::loadConversationPage(
+    std::size_t offset,
+    std::size_t limit,
+    std::size_t* total)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    DatabaseHandle handle;
+    if (!handle)
+    {
+        if (total != nullptr)
+        {
+            *total = 0;
+        }
+        return {};
+    }
+
+    if (total != nullptr)
+    {
+        sqlite3_stmt* count_stmt = nullptr;
+        constexpr const char* kCountSql =
+            "SELECT COUNT(*) FROM ("
+            "SELECT 1 FROM chat_messages GROUP BY protocol, channel, peer"
+            ");";
+        *total = 0;
+        if (sqlite3_prepare_v2(handle.db,
+                               kCountSql,
+                               -1,
+                               &count_stmt,
+                               nullptr) == SQLITE_OK &&
+            sqlite3_step(count_stmt) == SQLITE_ROW)
+        {
+            *total = static_cast<std::size_t>(
+                std::max<sqlite3_int64>(0, sqlite3_column_int64(count_stmt, 0)));
+        }
+        sqlite3_finalize(count_stmt);
+    }
+
+    std::string sql =
+        "WITH latest AS ("
+        "SELECT protocol, channel, peer, MAX(sequence) AS sequence "
+        "FROM chat_messages GROUP BY protocol, channel, peer"
+        ") "
+        "SELECT m.protocol, m.channel, m.peer, m.text, m.timestamp, "
+        "COALESCE(u.unread, 0), m.sequence "
+        "FROM latest l "
+        "JOIN chat_messages m ON m.sequence=l.sequence "
+        "LEFT JOIN chat_unread u ON u.protocol=m.protocol "
+        "AND u.channel=m.channel AND u.peer=m.peer "
+        "ORDER BY m.timestamp DESC, m.sequence DESC";
+    if (limit != 0U)
+    {
+        sql += " LIMIT ?1 OFFSET ?2";
+    }
+    else if (offset != 0U)
+    {
+        sql += " LIMIT -1 OFFSET ?1";
+    }
+    sql += ";";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(handle.db, sql.c_str(), -1, &stmt, nullptr) !=
+        SQLITE_OK)
+    {
+        return {};
+    }
+
+    bool ok = true;
+    if (limit != 0U)
+    {
+        ok = sqlite3_bind_int64(stmt,
+                                1,
+                                static_cast<sqlite3_int64>(limit)) ==
+                 SQLITE_OK &&
+             sqlite3_bind_int64(stmt,
+                                2,
+                                static_cast<sqlite3_int64>(offset)) ==
+                 SQLITE_OK;
+    }
+    else if (offset != 0U)
+    {
+        ok = sqlite3_bind_int64(stmt,
+                                1,
+                                static_cast<sqlite3_int64>(offset)) ==
+             SQLITE_OK;
+    }
+
+    std::vector<::chat::ConversationMeta> list;
+    if (ok)
+    {
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            ::chat::ConversationMeta meta{};
+            meta.id.protocol = protocolFromInt(sqlite3_column_int(stmt, 0));
+            meta.id.channel = channelFromInt(sqlite3_column_int(stmt, 1));
+            meta.id.peer = static_cast<::chat::NodeId>(
+                sqlite3_column_int64(stmt, 2));
+            const unsigned char* preview = sqlite3_column_text(stmt, 3);
+            meta.preview = preview != nullptr
+                               ? reinterpret_cast<const char*>(preview)
+                               : "";
+            meta.last_timestamp = static_cast<std::uint32_t>(
+                sqlite3_column_int64(stmt, 4));
+            meta.unread = sqlite3_column_int(stmt, 5);
+            meta.name = conversationName(meta.id);
+            list.push_back(std::move(meta));
+        }
+    }
+    sqlite3_finalize(stmt);
+    return list;
+}
+
+void LinuxSqliteChatStore::setUnread(const ::chat::ConversationId& conv,
+                                     int unread)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    DatabaseHandle handle;
+    if (!handle)
+    {
+        return;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    constexpr const char* kSql =
+        "INSERT INTO chat_unread(protocol, channel, peer, unread) "
+        "VALUES(?1, ?2, ?3, ?4) "
+        "ON CONFLICT(protocol, channel, peer) DO UPDATE SET "
+        "unread=excluded.unread;";
+    if (sqlite3_prepare_v2(handle.db, kSql, -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        (void)(bindConversation(stmt, 1, conv) &&
+               sqlite3_bind_int(stmt, 4, std::max(0, unread)) == SQLITE_OK &&
+               sqlite3_step(stmt) == SQLITE_DONE);
+    }
+    sqlite3_finalize(stmt);
+}
+
+int LinuxSqliteChatStore::getUnread(
+    const ::chat::ConversationId& conv) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    DatabaseHandle handle;
+    if (!handle)
+    {
+        return 0;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    constexpr const char* kSql =
+        "SELECT unread FROM chat_unread "
+        "WHERE protocol=?1 AND channel=?2 AND peer=?3;";
+    int unread = 0;
+    if (sqlite3_prepare_v2(handle.db, kSql, -1, &stmt, nullptr) == SQLITE_OK &&
+        bindConversation(stmt, 1, conv) &&
+        sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        unread = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    return std::max(0, unread);
+}
+
+void LinuxSqliteChatStore::clearConversation(
+    const ::chat::ConversationId& conv)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    DatabaseHandle handle;
+    if (!handle)
+    {
+        return;
+    }
+
+    (void)execSql(handle.db, "BEGIN IMMEDIATE;");
+    sqlite3_stmt* stmt = nullptr;
+    constexpr const char* kDeleteMessages =
+        "DELETE FROM chat_messages "
+        "WHERE protocol=?1 AND channel=?2 AND peer=?3;";
+    if (sqlite3_prepare_v2(handle.db,
+                           kDeleteMessages,
+                           -1,
+                           &stmt,
+                           nullptr) == SQLITE_OK)
+    {
+        (void)(bindConversation(stmt, 1, conv) &&
+               sqlite3_step(stmt) == SQLITE_DONE);
+    }
+    sqlite3_finalize(stmt);
+
+    constexpr const char* kDeleteUnread =
+        "DELETE FROM chat_unread "
+        "WHERE protocol=?1 AND channel=?2 AND peer=?3;";
+    if (sqlite3_prepare_v2(handle.db,
+                           kDeleteUnread,
+                           -1,
+                           &stmt,
+                           nullptr) == SQLITE_OK)
+    {
+        (void)(bindConversation(stmt, 1, conv) &&
+               sqlite3_step(stmt) == SQLITE_DONE);
+    }
+    sqlite3_finalize(stmt);
+    (void)execSql(handle.db, "COMMIT;");
+}
+
+void LinuxSqliteChatStore::clearAll()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    DatabaseHandle handle;
+    if (!handle)
+    {
+        return;
+    }
+
+    (void)execSql(handle.db, "BEGIN IMMEDIATE;");
+    (void)execSql(handle.db, "DELETE FROM chat_messages;");
+    (void)execSql(handle.db, "DELETE FROM chat_unread;");
+    (void)execSql(handle.db,
+                  "DELETE FROM sqlite_sequence WHERE name='chat_messages';");
+    (void)execSql(handle.db, "COMMIT;");
+}
+
+bool LinuxSqliteChatStore::updateMessageStatus(
+    ::chat::MessageId msg_id,
+    ::chat::MessageStatus status)
+{
+    if (msg_id == 0)
+    {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    DatabaseHandle handle;
+    if (!handle)
+    {
+        return false;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    constexpr const char* kSql =
+        "UPDATE chat_messages SET status=?1 "
+        "WHERE sequence=("
+        "SELECT sequence FROM chat_messages "
+        "WHERE msg_id=?2 AND from_node=0 "
+        "ORDER BY sequence DESC LIMIT 1"
+        ");";
+    bool ok = false;
+    if (sqlite3_prepare_v2(handle.db, kSql, -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        ok = sqlite3_bind_int(stmt, 1, statusValue(status)) == SQLITE_OK &&
+             sqlite3_bind_int64(stmt,
+                                2,
+                                static_cast<sqlite3_int64>(msg_id)) ==
+                 SQLITE_OK &&
+             sqlite3_step(stmt) == SQLITE_DONE &&
+             sqlite3_changes(handle.db) > 0;
+    }
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
+bool LinuxSqliteChatStore::getMessage(::chat::MessageId msg_id,
+                                      ::chat::ChatMessage* out) const
+{
+    if (msg_id == 0)
+    {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    DatabaseHandle handle;
+    if (!handle)
+    {
+        return false;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    constexpr const char* kSql =
+        "SELECT protocol, channel, peer, from_node, msg_id, timestamp, text, "
+        "team_location_icon, has_geo, geo_lat_e7, geo_lon_e7, status "
+        "FROM chat_messages "
+        "WHERE msg_id=?1 ORDER BY sequence DESC LIMIT 1;";
+    bool found = false;
+    if (sqlite3_prepare_v2(handle.db, kSql, -1, &stmt, nullptr) == SQLITE_OK &&
+        sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(msg_id)) ==
+            SQLITE_OK &&
+        sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        if (out != nullptr)
+        {
+            *out = readMessage(stmt, 0);
+        }
+        found = true;
+    }
+    sqlite3_finalize(stmt);
+    return found;
+}
+
+void LinuxSqliteChatStore::flush()
+{
+}
+
+} // namespace trailmate::linux_app

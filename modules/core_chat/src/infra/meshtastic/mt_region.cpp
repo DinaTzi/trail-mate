@@ -85,10 +85,12 @@ const char* presetDisplayName(meshtastic_Config_LoRaConfig_ModemPreset preset)
     {
     case meshtastic_Config_LoRaConfig_ModemPreset_LONG_FAST:
         return "LongFast";
+    case meshtastic_Config_LoRaConfig_ModemPreset_VERY_LONG_SLOW:
+        return "VeryLongSlow";
     case meshtastic_Config_LoRaConfig_ModemPreset_LONG_TURBO:
         return "LongTurbo";
     case meshtastic_Config_LoRaConfig_ModemPreset_LONG_MODERATE:
-        return "LongMod";
+        return "LongModerate";
     case meshtastic_Config_LoRaConfig_ModemPreset_LONG_SLOW:
         return "LongSlow";
     case meshtastic_Config_LoRaConfig_ModemPreset_MEDIUM_SLOW:
@@ -103,6 +105,63 @@ const char* presetDisplayName(meshtastic_Config_LoRaConfig_ModemPreset preset)
         return "ShortTurbo";
     default:
         return "Invalid";
+    }
+}
+
+void modemPresetToParams(meshtastic_Config_LoRaConfig_ModemPreset preset,
+                         bool wide_lora,
+                         float& bw_khz,
+                         uint8_t& sf,
+                         uint8_t& cr_denom)
+{
+    switch (preset)
+    {
+    case meshtastic_Config_LoRaConfig_ModemPreset_SHORT_TURBO:
+        bw_khz = wide_lora ? 1625.0f : 500.0f;
+        cr_denom = 5;
+        sf = 7;
+        break;
+    case meshtastic_Config_LoRaConfig_ModemPreset_SHORT_FAST:
+        bw_khz = wide_lora ? 812.5f : 250.0f;
+        cr_denom = 5;
+        sf = 7;
+        break;
+    case meshtastic_Config_LoRaConfig_ModemPreset_SHORT_SLOW:
+        bw_khz = wide_lora ? 812.5f : 250.0f;
+        cr_denom = 5;
+        sf = 8;
+        break;
+    case meshtastic_Config_LoRaConfig_ModemPreset_MEDIUM_FAST:
+        bw_khz = wide_lora ? 812.5f : 250.0f;
+        cr_denom = 5;
+        sf = 9;
+        break;
+    case meshtastic_Config_LoRaConfig_ModemPreset_MEDIUM_SLOW:
+        bw_khz = wide_lora ? 812.5f : 250.0f;
+        cr_denom = 5;
+        sf = 10;
+        break;
+    case meshtastic_Config_LoRaConfig_ModemPreset_LONG_TURBO:
+        bw_khz = wide_lora ? 1625.0f : 500.0f;
+        cr_denom = 8;
+        sf = 11;
+        break;
+    case meshtastic_Config_LoRaConfig_ModemPreset_LONG_MODERATE:
+        bw_khz = wide_lora ? 406.25f : 125.0f;
+        cr_denom = 8;
+        sf = 11;
+        break;
+    case meshtastic_Config_LoRaConfig_ModemPreset_LONG_SLOW:
+        bw_khz = wide_lora ? 406.25f : 125.0f;
+        cr_denom = 8;
+        sf = 12;
+        break;
+    case meshtastic_Config_LoRaConfig_ModemPreset_LONG_FAST:
+    default:
+        bw_khz = wide_lora ? 812.5f : 250.0f;
+        cr_denom = 5;
+        sf = 11;
+        break;
     }
 }
 
@@ -142,37 +201,9 @@ float estimateFrequencyMhz(uint8_t region_code, uint8_t modem_preset)
         static_cast<meshtastic_Config_LoRaConfig_ModemPreset>(modem_preset);
 
     float bw_khz = 250.0f;
-    switch (preset)
-    {
-    case meshtastic_Config_LoRaConfig_ModemPreset_SHORT_TURBO:
-        bw_khz = info->wide_lora ? 1625.0f : 500.0f;
-        break;
-    case meshtastic_Config_LoRaConfig_ModemPreset_SHORT_FAST:
-        bw_khz = info->wide_lora ? 812.5f : 250.0f;
-        break;
-    case meshtastic_Config_LoRaConfig_ModemPreset_SHORT_SLOW:
-        bw_khz = info->wide_lora ? 812.5f : 250.0f;
-        break;
-    case meshtastic_Config_LoRaConfig_ModemPreset_MEDIUM_FAST:
-        bw_khz = info->wide_lora ? 812.5f : 250.0f;
-        break;
-    case meshtastic_Config_LoRaConfig_ModemPreset_MEDIUM_SLOW:
-        bw_khz = info->wide_lora ? 812.5f : 250.0f;
-        break;
-    case meshtastic_Config_LoRaConfig_ModemPreset_LONG_MODERATE:
-        bw_khz = info->wide_lora ? 406.25f : 125.0f;
-        break;
-    case meshtastic_Config_LoRaConfig_ModemPreset_LONG_SLOW:
-        bw_khz = info->wide_lora ? 406.25f : 125.0f;
-        break;
-    case meshtastic_Config_LoRaConfig_ModemPreset_LONG_TURBO:
-        bw_khz = info->wide_lora ? 1625.0f : 500.0f;
-        break;
-    case meshtastic_Config_LoRaConfig_ModemPreset_LONG_FAST:
-    default:
-        bw_khz = info->wide_lora ? 812.5f : 250.0f;
-        break;
-    }
+    uint8_t sf = 11;
+    uint8_t cr_denom = 5;
+    modemPresetToParams(preset, info->wide_lora, bw_khz, sf, cr_denom);
 
     const char* channel_name = presetDisplayName(preset);
     return computeFrequencyMhz(info, bw_khz, channel_name);

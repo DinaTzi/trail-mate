@@ -181,7 +181,7 @@ bool auto_serial_probe_enabled()
 
 #if defined(__linux__)
     std::error_code ec;
-    return std::filesystem::exists("/dev/spidev4.0", ec) && !ec;
+    return std::filesystem::exists("/dev/spidev1.0", ec) && !ec;
 #else
     return false;
 #endif

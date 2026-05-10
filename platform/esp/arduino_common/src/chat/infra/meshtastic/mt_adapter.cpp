@@ -25,7 +25,9 @@
 #include "../../internal/blob_store_io.h"
 #include "board/TLoRaPagerTypes.h"
 #include "chat/infra/meshtastic/mt_pki_crypto.h"
+#include "chat/infra/meshtastic/mt_node_payload.h"
 #include "chat/infra/meshtastic/mt_protocol_helpers.h"
+#include "chat/infra/meshtastic/mt_radio_config.h"
 #include "chat/infra/meshtastic/mt_region.h"
 #include "meshtastic/config.pb.h"
 #include "meshtastic/mqtt.pb.h"
@@ -51,8 +53,6 @@ namespace
 {
 constexpr uint8_t kDefaultPskIndex = 1;
 constexpr const char* kSecondaryChannelName = "Squad";
-constexpr uint8_t kLoraSyncWord = 0x2b;
-constexpr uint16_t kLoraPreambleLen = 16;
 constexpr uint8_t kBitfieldWantResponseMask = 0x02;
 constexpr size_t kMaxMqttProxyQueue = 12;
 constexpr uint32_t kBroadcastNodeId = 0xFFFFFFFFu;
@@ -62,14 +62,12 @@ using chat::meshtastic::appendTraceRouteNodeAndSnr;
 using chat::meshtastic::computeHopsAway;
 using chat::meshtastic::computeKeyVerificationHashes;
 using chat::meshtastic::decryptPkiAesCcm;
-using chat::meshtastic::djb2HashText;
 using chat::meshtastic::encryptPkiAesCcm;
 using chat::meshtastic::fillDecodedPacketCommon;
 using chat::meshtastic::hashSharedKey;
 using chat::meshtastic::initPkiNonce;
 using chat::meshtastic::insertTraceRouteUnknownHops;
 using chat::meshtastic::makeEncryptedPacketFromWire;
-using chat::meshtastic::modemPresetToParams;
 using chat::meshtastic::readPbString;
 using chat::meshtastic::shouldSetAirWantAck;
 
@@ -234,30 +232,27 @@ static bool build_self_position_payload(uint8_t* out_buf, size_t* out_len)
     return true;
 }
 
-static void publishPositionEvent(uint32_t node_id, const meshtastic_Position& pos)
+static void publishPositionEvent(uint32_t node_id,
+                                 const chat::contacts::NodePosition& pos)
 {
-    if (node_id == 0 || !hasValidPosition(pos))
+    if (node_id == 0 || !pos.valid)
     {
         return;
     }
 
-    bool has_altitude = pos.has_altitude || pos.has_altitude_hae;
-    int32_t altitude = pos.has_altitude ? pos.altitude : (pos.has_altitude_hae ? pos.altitude_hae : 0);
-    uint32_t ts = pos.timestamp ? pos.timestamp : pos.time;
-
-    sys::NodePositionUpdateEvent* event = new sys::NodePositionUpdateEvent(
-        node_id,
-        pos.latitude_i,
-        pos.longitude_i,
-        has_altitude,
-        altitude,
-        ts,
-        pos.precision_bits,
-        pos.PDOP,
-        pos.HDOP,
-        pos.VDOP,
-        pos.gps_accuracy);
-    sys::EventBus::publish(event, 0);
+    sys::EventBus::publish(
+        new sys::NodePositionUpdateEvent(node_id,
+                                         pos.latitude_i,
+                                         pos.longitude_i,
+                                         pos.has_altitude,
+                                         pos.altitude,
+                                         pos.timestamp,
+                                         pos.precision_bits,
+                                         pos.pdop,
+                                         pos.hdop,
+                                         pos.vdop,
+                                         pos.gps_accuracy_mm),
+        0);
 }
 
 } // namespace
@@ -1795,6 +1790,7 @@ void MtAdapter::processReceivedPacket(const uint8_t* data, size_t size)
         {
             channel_index = 1;
         }
+        const uint32_t packet_timestamp = static_cast<uint32_t>(time(nullptr));
         auto publish_link_stats = [&](uint32_t node_id)
         {
             float snr = last_rx_snr_;
@@ -1804,9 +1800,8 @@ void MtAdapter::processReceivedPacket(const uint8_t* data, size_t size)
             {
                 return;
             }
-            uint32_t now_secs = time(nullptr);
             sys::NodeInfoUpdateEvent* event = new sys::NodeInfoUpdateEvent(
-                node_id, "", "", snr, rssi, now_secs, 0,
+                node_id, "", "", snr, rssi, packet_timestamp, 0,
                 chat::contacts::kNodeRoleUnknown,
                 hops_away, 0, channel_index);
             sys::EventBus::publish(event, 0);
@@ -1814,178 +1809,94 @@ void MtAdapter::processReceivedPacket(const uint8_t* data, size_t size)
 
         if (decoded.portnum == meshtastic_PortNum_NODEINFO_APP && decoded.payload.size > 0)
         {
-            meshtastic_NodeInfo node = meshtastic_NodeInfo_init_default;
-            pb_istream_t nstream = pb_istream_from_buffer(decoded.payload.bytes, decoded.payload.size);
-            if (pb_decode(&nstream, meshtastic_NodeInfo_fields, &node))
+            chat::meshtastic::NodePayloadDecodeContext context{};
+            context.fallback_node_id = header.from;
+            context.snr = last_rx_snr_;
+            context.rssi = last_rx_rssi_;
+            context.timestamp = packet_timestamp;
+            context.hops_away = computeHopsAway(header.flags);
+            context.channel = channel_index;
+            context.via_mqtt =
+                (header.flags & chat::meshtastic::PACKET_FLAGS_VIA_MQTT_MASK) != 0;
+
+            chat::meshtastic::DecodedNodePayload node{};
+            if (chat::meshtastic::decodeNodeInfoPayload(decoded, context, &node))
             {
-                uint32_t node_id = node.num ? node.num : header.from;
-                const char* short_name = node.has_user ? node.user.short_name : "";
-                const char* long_name = node.has_user ? node.user.long_name : "";
-                uint8_t role = chat::contacts::kNodeRoleUnknown;
-                if (node.has_user && node.user.role <= meshtastic_Config_DeviceConfig_Role_CLIENT_BASE)
-                {
-                    role = static_cast<uint8_t>(node.user.role);
-                }
-
-                float snr = last_rx_snr_;
-                if (std::isnan(snr))
-                {
-                    snr = node.snr;
-                }
-                float rssi = last_rx_rssi_;
-                uint8_t hops_away = node.has_hops_away ? node.hops_away : computeHopsAway(header.flags);
-
                 LORA_LOG("[LORA] RX NodeInfo from %08lX short='%s' long='%s' snr=%.1f\n",
-                         (unsigned long)node_id, short_name, long_name, snr);
+                         (unsigned long)node.node_id,
+                         node.short_name.c_str(),
+                         node.long_name.c_str(),
+                         node.snr);
 
-                if (long_name[0])
+                if (!node.long_name.empty())
                 {
-                    node_long_names_[node_id] = long_name;
+                    node_long_names_[node.node_id] = node.long_name;
                 }
-                if (node.has_user && node.user.public_key.size == 32)
+                if (node.has_public_key)
                 {
-                    std::array<uint8_t, 32> key{};
-                    memcpy(key.data(), node.user.public_key.bytes, 32);
-                    node_public_keys_[node_id] = key;
-                    savePkiNodeKey(node_id, key.data(), key.size());
-                    std::string key_fp = toHex(key.data(), key.size(), 8);
+                    node_public_keys_[node.node_id] = node.public_key;
+                    savePkiNodeKey(node.node_id,
+                                   node.public_key.data(),
+                                   node.public_key.size());
+                    std::string key_fp =
+                        toHex(node.public_key.data(), node.public_key.size(), 8);
                     LORA_LOG("[LORA] PKI key stored for %08lX fp=%s\n",
-                             (unsigned long)node_id, key_fp.c_str());
+                             (unsigned long)node.node_id, key_fp.c_str());
                     LORA_LOG("[LORA] PKI key updated for %08lX\n",
-                             (unsigned long)node_id);
+                             (unsigned long)node.node_id);
                 }
 
-                uint32_t now_secs = time(nullptr);
-                chat::contacts::NodeDeviceMetrics metrics{};
-                const bool has_metrics = node.has_device_metrics;
-                if (has_metrics)
-                {
-                    metrics.has_battery_level = node.device_metrics.has_battery_level;
-                    metrics.battery_level = node.device_metrics.battery_level;
-                    metrics.has_voltage = node.device_metrics.has_voltage;
-                    metrics.voltage = node.device_metrics.voltage;
-                    metrics.has_channel_utilization = node.device_metrics.has_channel_utilization;
-                    metrics.channel_utilization = node.device_metrics.channel_utilization;
-                    metrics.has_air_util_tx = node.device_metrics.has_air_util_tx;
-                    metrics.air_util_tx = node.device_metrics.air_util_tx;
-                    metrics.has_uptime_seconds = node.device_metrics.has_uptime_seconds;
-                    metrics.uptime_seconds = node.device_metrics.uptime_seconds;
-                }
                 sys::NodeInfoUpdateEvent* event = new sys::NodeInfoUpdateEvent(
-                    node_id, short_name, long_name, snr, rssi, now_secs,
-                    static_cast<uint8_t>(chat::contacts::NodeProtocolType::Meshtastic), role,
-                    hops_away, static_cast<uint8_t>(node.user.hw_model), channel_index,
-                    node.has_user, node.has_user ? node.user.macaddr : nullptr,
-                    node.via_mqtt || ((header.flags & chat::meshtastic::PACKET_FLAGS_VIA_MQTT_MASK) != 0),
+                    node.node_id,
+                    node.short_name.c_str(),
+                    node.long_name.c_str(),
+                    node.snr,
+                    node.rssi,
+                    node.timestamp,
+                    node.protocol,
+                    node.role,
+                    node.hops_away,
+                    node.hw_model,
+                    node.channel,
+                    node.has_macaddr,
+                    node.has_macaddr ? node.macaddr.data() : nullptr,
+                    node.via_mqtt,
                     node.is_ignored,
-                    node.has_user && node.user.public_key.size == 32,
-                    node.is_key_manually_verified,
-                    has_metrics, has_metrics ? &metrics : nullptr);
+                    node.has_public_key,
+                    node.key_manually_verified,
+                    node.has_device_metrics,
+                    node.has_device_metrics ? &node.device_metrics : nullptr);
                 bool published = sys::EventBus::publish(event, 0);
                 if (published)
                 {
                     mt_diag_log("[MT][RX_NODEINFO] from=%08lX node=%08lX mode=nodeinfo published=1\n",
                                 static_cast<unsigned long>(header.from),
-                                static_cast<unsigned long>(node_id));
+                                static_cast<unsigned long>(node.node_id));
                     LORA_LOG("[LORA] NodeInfo event published node=%08lX\n",
-                             (unsigned long)node_id);
+                             (unsigned long)node.node_id);
                 }
                 else
                 {
                     mt_diag_dropf(&header,
                                   "nodeinfo_event_drop",
                                   "node=%08lX pending=%u",
-                                  static_cast<unsigned long>(node_id),
+                                  static_cast<unsigned long>(node.node_id),
                                   static_cast<unsigned>(sys::EventBus::pendingCount()));
                     LORA_LOG("[LORA] NodeInfo event dropped node=%08lX pending=%u\n",
-                             (unsigned long)node_id,
+                             (unsigned long)node.node_id,
                              static_cast<unsigned>(sys::EventBus::pendingCount()));
                 }
                 if (node.has_position)
                 {
-                    publishPositionEvent(node_id, node.position);
+                    publishPositionEvent(node.node_id, node.position);
                 }
                 nodeinfo_decoded = true;
             }
             else
             {
-                meshtastic_User user = meshtastic_User_init_default;
-                pb_istream_t ustream = pb_istream_from_buffer(decoded.payload.bytes, decoded.payload.size);
-                if (pb_decode(&ustream, meshtastic_User_fields, &user))
-                {
-                    const uint32_t node_id = header.from;
-                    const char* short_name = user.short_name[0] ? user.short_name : "";
-                    const char* long_name = user.long_name[0] ? user.long_name : "";
-                    uint8_t role = chat::contacts::kNodeRoleUnknown;
-                    if (user.role <= meshtastic_Config_DeviceConfig_Role_CLIENT_BASE)
-                    {
-                        role = static_cast<uint8_t>(user.role);
-                    }
-                    LORA_LOG("[LORA] RX User from %08lX id='%s' short='%s' long='%s'\n",
-                             (unsigned long)node_id, user.id, short_name, long_name);
-                    if (long_name[0])
-                    {
-                        node_long_names_[node_id] = long_name;
-                    }
-                    if (user.public_key.size == 32)
-                    {
-                        std::array<uint8_t, 32> key{};
-                        memcpy(key.data(), user.public_key.bytes, 32);
-                        node_public_keys_[node_id] = key;
-                        savePkiNodeKey(node_id, key.data(), key.size());
-                        std::string key_fp = toHex(key.data(), key.size(), 8);
-                        LORA_LOG("[LORA] PKI key stored for %08lX fp=%s\n",
-                                 (unsigned long)node_id, key_fp.c_str());
-                        LORA_LOG("[LORA] PKI key updated for %08lX\n",
-                                 (unsigned long)node_id);
-                    }
-
-                    float snr = last_rx_snr_;
-                    float rssi = last_rx_rssi_;
-                    uint8_t hops_away = computeHopsAway(header.flags);
-
-                    uint32_t now_secs = time(nullptr);
-                    sys::NodeInfoUpdateEvent* event = new sys::NodeInfoUpdateEvent(
-                        node_id, short_name, long_name, snr, rssi, now_secs,
-                        static_cast<uint8_t>(chat::contacts::NodeProtocolType::Meshtastic), role,
-                        hops_away, static_cast<uint8_t>(user.hw_model), channel_index,
-                        true, user.macaddr,
-                        ((header.flags & chat::meshtastic::PACKET_FLAGS_VIA_MQTT_MASK) != 0),
-                        false,
-                        user.public_key.size == 32,
-                        false,
-                        false, nullptr);
-                    bool published = sys::EventBus::publish(event, 0);
-                    if (published)
-                    {
-                        mt_diag_log("[MT][RX_NODEINFO] from=%08lX node=%08lX mode=user published=1\n",
-                                    static_cast<unsigned long>(header.from),
-                                    static_cast<unsigned long>(node_id));
-                        LORA_LOG("[LORA] NodeInfo event published node=%08lX\n",
-                                 (unsigned long)node_id);
-                    }
-                    else
-                    {
-                        mt_diag_dropf(&header,
-                                      "user_event_drop",
-                                      "node=%08lX pending=%u",
-                                      static_cast<unsigned long>(node_id),
-                                      static_cast<unsigned>(sys::EventBus::pendingCount()));
-                        LORA_LOG("[LORA] NodeInfo event dropped node=%08lX pending=%u\n",
-                                 (unsigned long)node_id,
-                                 static_cast<unsigned>(sys::EventBus::pendingCount()));
-                    }
-                    nodeinfo_decoded = true;
-                }
-                else
-                {
-                    LORA_LOG("[LORA] RX NodeInfo decode fail from=%08lX err=%s\n",
-                             (unsigned long)header.from,
-                             PB_GET_ERROR(&nstream));
-                    LORA_LOG("[LORA] RX User decode fail from=%08lX err=%s\n",
-                             (unsigned long)header.from,
-                             PB_GET_ERROR(&ustream));
-                }
+                mt_diag_dropf(&header, "nodeinfo_decode_fail");
+                LORA_LOG("[LORA] RX NodeInfo decode fail from=%08lX\n",
+                         (unsigned long)header.from);
             }
         }
 
@@ -1996,23 +1907,24 @@ void MtAdapter::processReceivedPacket(const uint8_t* data, size_t size)
 
         if (decoded.portnum == meshtastic_PortNum_POSITION_APP && decoded.payload.size > 0)
         {
-            meshtastic_Position pos = meshtastic_Position_init_default;
-            pb_istream_t pstream =
-                pb_istream_from_buffer(decoded.payload.bytes, decoded.payload.size);
-            if (pb_decode(&pstream, meshtastic_Position_fields, &pos))
+            chat::meshtastic::DecodedPositionPayload position{};
+            if (chat::meshtastic::decodePositionPayload(
+                    decoded,
+                    header.from,
+                    packet_timestamp,
+                    &position))
             {
                 mt_diag_log("[MT][RX_POSITION] from=%08lX id=%08lX payload=%u\n",
                             static_cast<unsigned long>(header.from),
                             static_cast<unsigned long>(header.id),
                             static_cast<unsigned>(decoded.payload.size));
-                publishPositionEvent(header.from, pos);
+                publishPositionEvent(position.node_id, position.position);
             }
             else
             {
                 mt_diag_dropf(&header, "position_decode_fail");
-                LORA_LOG("[LORA] RX Position decode fail from=%08lX err=%s\n",
-                         (unsigned long)header.from,
-                         PB_GET_ERROR(&pstream));
+                LORA_LOG("[LORA] RX Position decode fail from=%08lX\n",
+                         (unsigned long)header.from);
             }
         }
 
@@ -2544,9 +2456,7 @@ bool MtAdapter::sendPacket(const PendingSend& pending)
     const char* channel_name = kSecondaryChannelName;
     if (channel != ChannelId::SECONDARY)
     {
-        auto preset =
-            static_cast<meshtastic_Config_LoRaConfig_ModemPreset>(config_.modem_preset);
-        channel_name = config_.use_preset ? chat::meshtastic::presetDisplayName(preset) : "Custom";
+        channel_name = chat::meshtastic::primaryChannelName(config_);
     }
     LORA_LOG("[LORA] TX channel name='%s' hash=0x%02X psk=%u pki=%u dest=%08lX\n",
              channel_name,
@@ -2897,129 +2807,30 @@ void MtAdapter::configureRadio()
         return;
     }
 
-    meshtastic_Config_LoRaConfig_RegionCode region_code =
-        static_cast<meshtastic_Config_LoRaConfig_RegionCode>(config_.region);
-    if (region_code == meshtastic_Config_LoRaConfig_RegionCode_UNSET)
+    const chat::meshtastic::RadioConfig radio =
+        chat::meshtastic::deriveRadioConfig(config_);
+    if (radio.using_preset != config_.use_preset ||
+        config_.modem_preset != static_cast<uint8_t>(radio.modem_preset))
     {
-        region_code = meshtastic_Config_LoRaConfig_RegionCode_CN;
+        config_.use_preset = radio.using_preset;
+        config_.modem_preset = static_cast<uint8_t>(radio.modem_preset);
     }
-    const chat::meshtastic::RegionInfo* region = chat::meshtastic::findRegion(region_code);
+    config_.tx_power = radio.tx_power_dbm;
 
-    meshtastic_Config_LoRaConfig_ModemPreset preset =
-        static_cast<meshtastic_Config_LoRaConfig_ModemPreset>(config_.modem_preset);
-
-    float bw_khz = 250.0f;
-    uint8_t sf = 11;
-    uint8_t cr_denom = 5;
-    bool using_preset = config_.use_preset;
-    if (using_preset)
-    {
-        modemPresetToParams(preset, region->wide_lora, bw_khz, sf, cr_denom);
-    }
-    else
-    {
-        bw_khz = config_.bandwidth_khz;
-        sf = config_.spread_factor;
-        cr_denom = config_.coding_rate;
-
-        if (bw_khz == 31.0f) bw_khz = 31.25f;
-        if (bw_khz == 62.0f) bw_khz = 62.5f;
-        if (bw_khz == 200.0f) bw_khz = 203.125f;
-        if (bw_khz == 400.0f) bw_khz = 406.25f;
-        if (bw_khz == 800.0f) bw_khz = 812.5f;
-        if (bw_khz == 1600.0f) bw_khz = 1625.0f;
-
-        if (bw_khz < 7.0f) bw_khz = 7.8f;
-        if (!region->wide_lora && bw_khz > 500.0f) bw_khz = 500.0f;
-        if (region->wide_lora && bw_khz > 1625.0f) bw_khz = 1625.0f;
-        if (sf < 5) sf = 5;
-        if (sf > 12) sf = 12;
-        if (cr_denom < 5) cr_denom = 5;
-        if (cr_denom > 8) cr_denom = 8;
-    }
-
-    const float region_span_khz = (region->freq_end_mhz - region->freq_start_mhz) * 1000.0f;
-    if (region_span_khz < bw_khz)
-    {
-        using_preset = true;
-        preset = meshtastic_Config_LoRaConfig_ModemPreset_LONG_FAST;
-        modemPresetToParams(preset, region->wide_lora, bw_khz, sf, cr_denom);
-        config_.use_preset = true;
-        config_.modem_preset = static_cast<uint8_t>(preset);
-    }
-
-    const char* channel_name =
-        using_preset ? chat::meshtastic::presetDisplayName(preset) : "Custom";
-
-    float span_mhz = region->freq_end_mhz - region->freq_start_mhz;
-    float spacing_mhz = region->spacing_khz / 1000.0f;
-    float bw_mhz = bw_khz / 1000.0f;
-    uint32_t num_channels = static_cast<uint32_t>(floor(span_mhz / (spacing_mhz + bw_mhz)));
-    if (num_channels < 1)
-    {
-        num_channels = 1;
-    }
-
-    uint32_t channel_slot = 0;
-    if (config_.channel_num > 0)
-    {
-        channel_slot = static_cast<uint32_t>((config_.channel_num - 1) % num_channels);
-    }
-    else
-    {
-        channel_slot = djb2HashText(channel_name) % num_channels;
-    }
-
-    float freq_mhz = region->freq_start_mhz + (bw_khz / 2000.0f) + (channel_slot * bw_mhz);
-    if (config_.override_frequency_mhz > 0.0f)
-    {
-        freq_mhz = config_.override_frequency_mhz;
-    }
-    freq_mhz += config_.frequency_offset_mhz;
-
-    if (config_.override_frequency_mhz <= 0.0f)
-    {
-        float min_center = region->freq_start_mhz + (bw_khz / 2000.0f);
-        float max_center = region->freq_end_mhz - (bw_khz / 2000.0f);
-        if (min_center > max_center)
-        {
-            min_center = region->freq_start_mhz;
-            max_center = region->freq_end_mhz;
-        }
-        if (freq_mhz < min_center) freq_mhz = min_center;
-        if (freq_mhz > max_center) freq_mhz = max_center;
-    }
-
-    int8_t tx_power = config_.tx_power;
-    if (region->power_limit_dbm > 0)
-    {
-        if (tx_power == 0)
-        {
-            tx_power = static_cast<int8_t>(region->power_limit_dbm);
-        }
-        if (tx_power > static_cast<int8_t>(region->power_limit_dbm))
-        {
-            tx_power = static_cast<int8_t>(region->power_limit_dbm);
-        }
-    }
-    if (tx_power == 0)
-    {
-        tx_power = 17;
-    }
-    if (tx_power < -9)
-    {
-        tx_power = -9;
-    }
-    config_.tx_power = tx_power;
-
-    radio_freq_hz_ = static_cast<uint32_t>(std::lround(freq_mhz * 1000000.0f));
-    radio_bw_hz_ = static_cast<uint32_t>(std::lround(bw_khz * 1000.0f));
-    radio_sf_ = sf;
-    radio_cr_ = cr_denom;
+    radio_freq_hz_ = static_cast<uint32_t>(std::lround(radio.freq_mhz * 1000000.0f));
+    radio_bw_hz_ = static_cast<uint32_t>(std::lround(radio.bw_khz * 1000.0f));
+    radio_sf_ = radio.sf;
+    radio_cr_ = radio.cr_denom;
 
 #if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280)
-    board_.configureLoraRadio(freq_mhz, bw_khz, sf, cr_denom, tx_power,
-                              kLoraPreambleLen, kLoraSyncWord, 2);
+    board_.configureLoraRadio(radio.freq_mhz,
+                              radio.bw_khz,
+                              radio.sf,
+                              radio.cr_denom,
+                              radio.tx_power_dbm,
+                              radio.preamble_len,
+                              radio.sync_word,
+                              radio.crc_len);
 #endif
 
     ready_ = true;
@@ -3027,17 +2838,17 @@ void MtAdapter::configureRadio()
     last_nodeinfo_ms_ = millis();
     LORA_LOG("[LORA] adapter ready, node_id=%08lX\n", (unsigned long)node_id_);
     LORA_LOG("[LORA] radio config region=%u preset=%u use_preset=%u freq=%.3fMHz sf=%u bw=%.1f cr=4/%u tx=%d ch=%lu sync=0x%02X preamble=%u tx_en=%u\n",
-             static_cast<unsigned>(region_code),
-             static_cast<unsigned>(preset),
-             using_preset ? 1U : 0U,
-             freq_mhz,
-             sf,
-             bw_khz,
-             cr_denom,
-             static_cast<int>(tx_power),
-             static_cast<unsigned long>(channel_slot),
-             kLoraSyncWord,
-             kLoraPreambleLen,
+             static_cast<unsigned>(radio.region_code),
+             static_cast<unsigned>(radio.modem_preset),
+             radio.using_preset ? 1U : 0U,
+             radio.freq_mhz,
+             radio.sf,
+             radio.bw_khz,
+             radio.cr_denom,
+             static_cast<int>(radio.tx_power_dbm),
+             static_cast<unsigned long>(radio.channel_slot),
+             radio.sync_word,
+             radio.preamble_len,
              config_.tx_enabled ? 1U : 0U);
     startRadioReceive();
 }
@@ -3100,13 +2911,7 @@ void MtAdapter::updateChannelKeys()
         secondary_psk_len_ = sizeof(secondary_psk_);
     }
 
-    auto preset =
-        static_cast<meshtastic_Config_LoRaConfig_ModemPreset>(config_.modem_preset);
-    const char* primary_name = config_.use_preset ? chat::meshtastic::presetDisplayName(preset) : "Custom";
-    if (!primary_name || primary_name[0] == '\0')
-    {
-        primary_name = "Custom";
-    }
+    const char* primary_name = chat::meshtastic::primaryChannelName(config_);
     primary_channel_hash_ = computeChannelHash(primary_name, primary_psk_, primary_psk_len_);
     secondary_channel_hash_ =
         computeChannelHash(kSecondaryChannelName,

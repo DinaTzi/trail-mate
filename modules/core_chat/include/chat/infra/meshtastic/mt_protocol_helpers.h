@@ -47,8 +47,6 @@ void fillDecodedPacketCommon(meshtastic_MeshPacket* packet,
                              chat::ChannelId channel_index);
 bool allowPkiForPortnum(uint32_t portnum);
 uint32_t djb2HashText(const char* text);
-void modemPresetToParams(meshtastic_Config_LoRaConfig_ModemPreset preset, bool wide_lora,
-                         float& bw_khz, uint8_t& sf, uint8_t& cr_denom);
 
 } // namespace meshtastic
 } // namespace chat

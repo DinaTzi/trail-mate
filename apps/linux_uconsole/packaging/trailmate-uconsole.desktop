@@ -3,7 +3,7 @@ Type=Application
 Name=Trail Mate
 GenericName=Mesh handheld console
 Comment=Trail Mate uConsole GTK shell
-Exec=trailmate-uconsole
+Exec=env TRAIL_MATE_RUNTIME_MODE=mesh trailmate-uconsole
 TryExec=trailmate-uconsole
 Icon=trailmate-uconsole
 Terminal=false

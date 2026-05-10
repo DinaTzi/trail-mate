@@ -4,10 +4,14 @@
 #include <string>
 #include <string_view>
 
-#include "platform/desktop/sdl_window_presenter.h"
-#include "platform/device/linux_framebuffer_platform.h"
 #include "platform/gtk/gtk_uconsole_app.h"
+#if defined(TRAIL_MATE_UCONSOLE_HAS_SDL)
+#include "platform/desktop/sdl_window_presenter.h"
+#endif
+#if defined(TRAIL_MATE_UCONSOLE_HAS_LEGACY_SURFACE)
+#include "platform/device/linux_framebuffer_platform.h"
 #include "uconsole/uconsole_desktop_shell.h"
+#endif
 
 namespace
 {
@@ -51,7 +55,8 @@ struct LaunchOptions
 {
     Backend backend = Backend::GtkWindow;
     std::string framebuffer = "/dev/fb0";
-    trailmate::uconsole::UConsoleShellOptions shell{};
+    int width = 1180;
+    int height = 600;
     int window_scale = 1;
     bool fullscreen = false;
 };
@@ -79,17 +84,15 @@ LaunchOptions parseOptions(int argc, char** argv)
     }
 
     const int default_width =
-        options.backend == Backend::Framebuffer ? 720
+        options.backend == Backend::Framebuffer ? 1280
         : options.backend == Backend::GtkWindow ? 1180
                                                 : 1280;
     const int default_height =
-        options.backend == Backend::Framebuffer ? 1280
-        : options.backend == Backend::GtkWindow ? 650
+        options.backend == Backend::Framebuffer ? 720
+        : options.backend == Backend::GtkWindow ? 600
                                                 : 720;
-    options.shell.width =
-        envInt("TRAIL_MATE_UCONSOLE_WIDTH", default_width);
-    options.shell.height =
-        envInt("TRAIL_MATE_UCONSOLE_HEIGHT", default_height);
+    options.width = envInt("TRAIL_MATE_UCONSOLE_WIDTH", default_width);
+    options.height = envInt("TRAIL_MATE_UCONSOLE_HEIGHT", default_height);
     options.window_scale = envInt("TRAIL_MATE_UCONSOLE_WINDOW_SCALE", 1);
 
     for (int index = 1; index < argc; ++index)
@@ -105,11 +108,11 @@ LaunchOptions parseOptions(int argc, char** argv)
         }
         else if (current == "--width" && (index + 1) < argc)
         {
-            options.shell.width = std::stoi(argv[++index]);
+            options.width = std::stoi(argv[++index]);
         }
         else if (current == "--height" && (index + 1) < argc)
         {
-            options.shell.height = std::stoi(argv[++index]);
+            options.height = std::stoi(argv[++index]);
         }
         else if (current == "--window-scale" && (index + 1) < argc)
         {
@@ -133,27 +136,43 @@ int main(int argc, char** argv)
         const LaunchOptions options = parseOptions(argc, argv);
         if (options.backend == Backend::Framebuffer)
         {
+#if defined(TRAIL_MATE_UCONSOLE_HAS_LEGACY_SURFACE)
+            trailmate::uconsole::UConsoleShellOptions shell{};
+            shell.width = options.width;
+            shell.height = options.height;
             trailmate::cardputer_zero::platform::device::
                 LinuxFramebufferPlatform device{options.framebuffer};
-            trailmate::uconsole::runUConsoleShell(device, options.shell);
+            trailmate::uconsole::runUConsoleShell(device, shell);
+#else
+            throw std::runtime_error(
+                "framebuffer backend is not compiled into this package; run trailmate-uconsole for the GTK UI");
+#endif
         }
         else if (options.backend == Backend::GtkWindow)
         {
             return trailmate::uconsole::gtk::runGtkUConsoleApp(
-                {.width = options.shell.width,
-                 .height = options.shell.height,
+                {.width = options.width,
+                 .height = options.height,
                  .fullscreen = options.fullscreen,
                  .title = "Trail Mate uConsole"});
         }
         else
         {
+#if defined(TRAIL_MATE_UCONSOLE_HAS_SDL)
             trailmate::uconsole::desktop::SdlWindowPresenter window{
-                {.width = options.shell.width,
-                 .height = options.shell.height,
+                {.width = options.width,
+                 .height = options.height,
                  .scale = options.window_scale,
                  .fullscreen = options.fullscreen,
                  .title = "Trail Mate uConsole"}};
-            trailmate::uconsole::runUConsoleShell(window, options.shell);
+            trailmate::uconsole::UConsoleShellOptions shell{};
+            shell.width = options.width;
+            shell.height = options.height;
+            trailmate::uconsole::runUConsoleShell(window, shell);
+#else
+            throw std::runtime_error(
+                "SDL backend is not compiled into this package; run trailmate-uconsole for the GTK UI");
+#endif
         }
         return 0;
     }

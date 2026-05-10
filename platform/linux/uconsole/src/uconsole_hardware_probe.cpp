@@ -1,6 +1,7 @@
 #include "uconsole/uconsole_hardware_probe.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <sstream>
 #include <string>
@@ -80,20 +81,18 @@ namespace fs = std::filesystem;
 
 [[nodiscard]] bool findSpiDevice(fs::path& out_path)
 {
-    if (existingPath("/dev/spidev4.0"))
+    if (const char* configured = std::getenv("TRAIL_MATE_LORA_SPI");
+        configured != nullptr && configured[0] != '\0' &&
+        existingPath(configured))
     {
-        out_path = "/dev/spidev4.0";
+        out_path = configured;
         return true;
     }
 
-    for (const auto& path : directoryEntries("/dev"))
+    if (existingPath("/dev/spidev1.0"))
     {
-        const std::string name = path.filename().string();
-        if (name.rfind("spidev", 0) == 0)
-        {
-            out_path = path;
-            return true;
-        }
+        out_path = "/dev/spidev1.0";
+        return true;
     }
     return false;
 }

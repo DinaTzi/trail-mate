@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <deque>
 #include <string>
+#include <vector>
 
 #include "chat/domain/chat_model.h"
 #include "chat/ports/i_mesh_adapter.h"
@@ -43,7 +44,10 @@ class LinuxRawLoraMeshAdapter final : public ::chat::IMeshAdapter
                      ::chat::MessageId packet_id = 0,
                      bool want_response = false) override;
     bool pollIncomingData(::chat::MeshIncomingData* out) override;
+    bool requestNodeInfo(::chat::NodeId dest, bool want_response) override;
     void applyConfig(const ::chat::MeshConfig& config) override;
+    void applyProtocolConfig(::chat::MeshProtocol protocol,
+                             const ::chat::MeshConfig& config);
     void setUserInfo(const char* long_name, const char* short_name) override;
     ::chat::NodeId getNodeId() const override;
     bool isReady() const override;
@@ -54,6 +58,9 @@ class LinuxRawLoraMeshAdapter final : public ::chat::IMeshAdapter
 
     void setSelfNodeId(::chat::NodeId id);
     [[nodiscard]] std::string statusText() const;
+    [[nodiscard]] std::string radioConfigText() const;
+    [[nodiscard]] std::string radioStatsText() const;
+    [[nodiscard]] std::vector<std::string> diagnosticLines() const;
 
   private:
     enum class PacketKind : std::uint8_t
@@ -70,6 +77,20 @@ class LinuxRawLoraMeshAdapter final : public ::chat::IMeshAdapter
 
     bool ensureRadioReady();
     ::chat::MessageId nextMessageId();
+    void logStatusIfChanged(const char* title, const std::string& status);
+    void logRadioStatsChanges();
+    void logRxMonitorHeartbeat();
+    bool sendMeshtasticPayload(::chat::ChannelId channel,
+                               ::chat::NodeId dest,
+                               ::chat::MessageId msg_id,
+                               std::uint32_t portnum,
+                               const std::uint8_t* payload,
+                               std::size_t len,
+                               bool want_ack,
+                               bool want_response);
+    bool sendMeshtasticNodeInfoTo(::chat::NodeId dest,
+                                  bool want_response,
+                                  ::chat::ChannelId channel);
     bool sendFrame(PacketKind kind,
                    ::chat::ChannelId channel,
                    ::chat::NodeId dest,
@@ -78,10 +99,13 @@ class LinuxRawLoraMeshAdapter final : public ::chat::IMeshAdapter
                    const std::uint8_t* payload,
                    std::size_t len);
     bool parseFrame(const ::platform::linux_runtime::Sx126xPacket& packet);
+    bool parseMeshtasticPacket(
+        const ::platform::linux_runtime::Sx126xPacket& packet);
 
     ::platform::linux_runtime::Sx126xRadio& radio_;
     ::chat::NodeId self_node_id_ = 0;
     ::chat::MeshConfig config_{};
+    ::chat::MeshProtocol active_protocol_ = ::chat::MeshProtocol::Meshtastic;
     std::uint32_t next_msg_id_ = 1;
     bool started_ = false;
     bool tx_enabled_ = true;
@@ -92,6 +116,10 @@ class LinuxRawLoraMeshAdapter final : public ::chat::IMeshAdapter
     std::deque<::chat::MeshIncomingData> incoming_data_{};
     std::deque<PendingResult> pending_results_{};
     std::deque<::platform::linux_runtime::Sx126xPacket> raw_packets_{};
+    ::platform::linux_runtime::Sx126xRadioStats last_logged_stats_{};
+    bool stats_logged_ = false;
+    std::string last_logged_status_{};
+    std::uint32_t last_rx_monitor_log_s_ = 0;
 };
 
 } // namespace trailmate::linux_app

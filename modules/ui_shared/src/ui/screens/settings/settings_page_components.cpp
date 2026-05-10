@@ -232,6 +232,29 @@ static void refresh_wifi_state_from_runtime()
     }
 }
 
+static void firmware_status_summary(const firmware_update_runtime::Status& status,
+                                    char* out,
+                                    size_t out_len)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+
+    const char* message = status.message[0] != '\0'
+                              ? status.message
+                              : (status.supported ? "Ready to check" : "OTA unsupported");
+    if (status.phase == firmware_update_runtime::Phase::Error &&
+        status.detail[0] != '\0' &&
+        std::strcmp(status.detail, message) != 0)
+    {
+        std::snprintf(out, out_len, "%s: %s", message, status.detail);
+        return;
+    }
+
+    copy_bounded(out, out_len, message);
+}
+
 static void refresh_firmware_update_state_from_runtime()
 {
     const firmware_update_runtime::Status status = firmware_update_runtime::status();
@@ -248,10 +271,7 @@ static void refresh_firmware_update_state_from_runtime()
                      sizeof(g_settings.fw_latest_version),
                      status.checked ? g_settings.fw_current_version : "Not checked");
     }
-    copy_bounded(g_settings.fw_update_status,
-                 sizeof(g_settings.fw_update_status),
-                 status.message[0] != '\0' ? status.message
-                                           : (status.supported ? "Ready to check" : "OTA unsupported"));
+    firmware_status_summary(status, g_settings.fw_update_status, sizeof(g_settings.fw_update_status));
 }
 
 static void refresh_visible_item_values()
@@ -317,8 +337,12 @@ static void sync_firmware_update_ui(bool notify_completion)
             ::ui::SystemNotification::show(status.message, 2600);
             break;
         case firmware_update_runtime::Phase::Error:
-            ::ui::SystemNotification::show(status.message, 3200);
+        {
+            char summary[160];
+            firmware_status_summary(status, summary, sizeof(summary));
+            ::ui::SystemNotification::show(summary, 3800);
             break;
+        }
         default:
             break;
         }
@@ -3205,10 +3229,20 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
             {
                 sync_firmware_update_ui(false);
                 const firmware_update_runtime::Status status = firmware_update_runtime::status();
-                const char* message = status.busy ? "Update task already running"
-                                                  : (status.message[0] != '\0' ? status.message
-                                                                               : "Unable to start update check");
-                ::ui::SystemNotification::show(message, 2600);
+                char message[160];
+                if (status.busy)
+                {
+                    copy_bounded(message, sizeof(message), "Update task already running");
+                }
+                else if (status.message[0] != '\0')
+                {
+                    firmware_status_summary(status, message, sizeof(message));
+                }
+                else
+                {
+                    copy_bounded(message, sizeof(message), "Unable to start update check");
+                }
+                ::ui::SystemNotification::show(message, 3000);
             }
             else
             {
@@ -3221,10 +3255,20 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
             {
                 sync_firmware_update_ui(false);
                 const firmware_update_runtime::Status status = firmware_update_runtime::status();
-                const char* message = status.busy ? "Update task already running"
-                                                  : (status.message[0] != '\0' ? status.message
-                                                                               : "Unable to start OTA install");
-                ::ui::SystemNotification::show(message, 2600);
+                char message[160];
+                if (status.busy)
+                {
+                    copy_bounded(message, sizeof(message), "Update task already running");
+                }
+                else if (status.message[0] != '\0')
+                {
+                    firmware_status_summary(status, message, sizeof(message));
+                }
+                else
+                {
+                    copy_bounded(message, sizeof(message), "Unable to start OTA install");
+                }
+                ::ui::SystemNotification::show(message, 3000);
             }
             else
             {

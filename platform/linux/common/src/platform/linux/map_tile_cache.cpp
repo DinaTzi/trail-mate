@@ -16,6 +16,7 @@
 #include <sqlite3.h>
 
 #include "platform/linux/env_config.h"
+#include "platform/linux/map_diagnostics.h"
 #include "platform/linux/runtime_paths.h"
 
 namespace platform::linux_runtime
@@ -33,6 +34,16 @@ constexpr const char* kUserAgent = "TrailMate-uConsole/0.1";
 std::filesystem::path default_root()
 {
     return resolve_paths().sd_root / "maps" / "base";
+}
+
+std::filesystem::path default_contour_root()
+{
+    return resolve_paths().sd_root / "maps" / "contour";
+}
+
+std::filesystem::path legacy_center_contour_root()
+{
+    return resolve_paths().sd_root / "contours" / "tiles";
 }
 
 sqlite3* open_database()
@@ -159,11 +170,11 @@ std::string default_url_template(MapBaseSource source)
     case MapBaseSource::Terrain:
         return "https://tile.opentopomap.org/{z}/{x}/{y}.png";
     case MapBaseSource::Satellite:
-        return "https://server.arcgisonline.com/ArcGIS/rest/services/"
+        return "https://services.arcgisonline.com/ArcGIS/rest/services/"
                "World_Imagery/MapServer/tile/{z}/{y}/{x}";
     case MapBaseSource::Osm:
     default:
-        return "https://tile.openstreetmap.de/{z}/{x}/{y}.png";
+        return "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
     }
 }
 
@@ -197,6 +208,16 @@ std::string url_template_for_source(MapBaseSource source)
 const char* content_type_for_source(MapBaseSource source)
 {
     return source == MapBaseSource::Satellite ? "image/jpeg" : "image/png";
+}
+
+MapContourProfile major_contour(int interval_m) noexcept
+{
+    return MapContourProfile{MapContourKind::Major, interval_m};
+}
+
+MapContourProfile minor_contour(int interval_m) noexcept
+{
+    return MapContourProfile{MapContourKind::Minor, interval_m};
 }
 
 bool valid_tile(const MapTileId& tile)
@@ -367,6 +388,24 @@ const char* map_base_source_extension(MapBaseSource source) noexcept
     return source == MapBaseSource::Satellite ? "jpg" : "png";
 }
 
+const char* map_contour_kind_key(MapContourKind kind) noexcept
+{
+    switch (kind)
+    {
+    case MapContourKind::Minor:
+        return "minor";
+    case MapContourKind::Major:
+    default:
+        return "major";
+    }
+}
+
+std::string map_contour_profile_key(const MapContourProfile& profile)
+{
+    return std::string(map_contour_kind_key(profile.kind)) + "-" +
+           std::to_string(std::max(1, profile.interval_m));
+}
+
 MapTileCache::MapTileCache() : root_(default_root())
 {
 }
@@ -484,15 +523,21 @@ MapTileResult MapTileCache::ensure_tile(const MapTileId& requested) const
         ctx.stream.close();
         std::error_code remove_ec;
         std::filesystem::remove(temp_path, remove_ec);
+        append_map_diagnostic("tile",
+                              std::string("libcurl init failed for ") + url);
         return fail_result(tile, relative_path, "Cannot initialize libcurl.");
     }
 
+    char error_buffer[CURL_ERROR_SIZE] = {};
+    apply_map_curl_resolver(curl);
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_USERAGENT, kUserAgent);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, kTransferTimeoutSeconds);
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, error_buffer);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_file_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
 
@@ -507,7 +552,23 @@ MapTileResult MapTileCache::ensure_tile(const MapTileId& requested) const
         std::error_code remove_ec;
         std::filesystem::remove(temp_path, remove_ec);
         std::ostringstream message;
-        message << "Download failed: " << curl_easy_strerror(rc);
+        message << "Download failed: "
+                << curl_error_message(rc, error_buffer) << " / url " << url;
+        if (http_status != 0)
+        {
+            message << " / HTTP " << http_status;
+        }
+        const std::string doh = map_curl_doh_url();
+        if (!doh.empty())
+        {
+            message << " / DoH " << doh;
+        }
+        append_map_diagnostic(
+            "tile",
+            std::string(map_base_source_key(tile.source)) + " z" +
+                std::to_string(tile.z) + "/" + std::to_string(tile.x) +
+                "/" + std::to_string(tile.y) + " failed: " +
+                message.str());
         return fail_result(tile, relative_path, message.str(), http_status);
     }
 
@@ -516,6 +577,11 @@ MapTileResult MapTileCache::ensure_tile(const MapTileId& requested) const
     {
         std::error_code remove_ec;
         std::filesystem::remove(temp_path, remove_ec);
+        append_map_diagnostic(
+            "tile",
+            std::string(map_base_source_key(tile.source)) + " z" +
+                std::to_string(tile.z) + "/" + std::to_string(tile.x) +
+                "/" + std::to_string(tile.y) + " empty response from " + url);
         return fail_result(tile, relative_path, "Downloaded tile is empty.",
                            http_status);
     }
@@ -527,10 +593,23 @@ MapTileResult MapTileCache::ensure_tile(const MapTileId& requested) const
     if (ec)
     {
         std::filesystem::remove(temp_path, ec);
+        append_map_diagnostic(
+            "tile",
+            std::string(map_base_source_key(tile.source)) + " z" +
+                std::to_string(tile.z) + "/" + std::to_string(tile.x) +
+                "/" + std::to_string(tile.y) + " commit failed for " +
+                path.string());
         return fail_result(tile, relative_path, "Cannot commit tile file.",
                            http_status);
     }
 
+    append_map_diagnostic(
+        "tile",
+        std::string(map_base_source_key(tile.source)) + " z" +
+            std::to_string(tile.z) + "/" + std::to_string(tile.x) + "/" +
+            std::to_string(tile.y) + " cached HTTP " +
+            std::to_string(http_status) + " " + std::to_string(bytes) +
+            " bytes from " + url);
     return record_tile_status(tile,
                               relative_path,
                               MapTileStatus::Downloaded,
@@ -539,9 +618,89 @@ MapTileResult MapTileCache::ensure_tile(const MapTileId& requested) const
                               "");
 }
 
+MapContourTileStore::MapContourTileStore() : root_(default_contour_root())
+{
+}
+
+MapContourTileStore::MapContourTileStore(std::filesystem::path root)
+    : root_(std::move(root))
+{
+}
+
+const std::filesystem::path& MapContourTileStore::root() const noexcept
+{
+    return root_;
+}
+
+std::filesystem::path MapContourTileStore::relative_tile_path(
+    const MapContourTileId& tile) const
+{
+    MapContourTileId normalized = tile;
+    normalize_map_contour_tile(normalized);
+    return std::filesystem::path("maps") / "contour" /
+           map_contour_profile_key(normalized.profile) /
+           std::to_string(normalized.z) / std::to_string(normalized.x) /
+           (std::to_string(normalized.y) + ".png");
+}
+
+std::filesystem::path MapContourTileStore::tile_path(
+    const MapContourTileId& tile) const
+{
+    MapContourTileId normalized = tile;
+    normalize_map_contour_tile(normalized);
+    return root_ / map_contour_profile_key(normalized.profile) /
+           std::to_string(normalized.z) / std::to_string(normalized.x) /
+           (std::to_string(normalized.y) + ".png");
+}
+
+std::filesystem::path MapContourTileStore::existing_tile_path(
+    const MapContourTileId& tile) const
+{
+    const auto primary = tile_path(tile);
+    if (std::filesystem::exists(primary))
+    {
+        return primary;
+    }
+
+    MapContourTileId normalized = tile;
+    normalize_map_contour_tile(normalized);
+    const auto center_layout =
+        legacy_center_contour_root() /
+        map_contour_profile_key(normalized.profile) /
+        std::to_string(normalized.z) / std::to_string(normalized.x) /
+        (std::to_string(normalized.y) + ".png");
+    return std::filesystem::exists(center_layout) ? center_layout : primary;
+}
+
+bool MapContourTileStore::tile_available(
+    const MapContourTileId& tile) const
+{
+    return std::filesystem::exists(existing_tile_path(tile));
+}
+
 void normalize_map_tile(MapTileId& tile) noexcept
 {
     tile.source = sanitize_map_base_source(static_cast<std::uint8_t>(tile.source));
+    tile.z = std::clamp(tile.z, 0, kMaxZoom);
+    const int tiles = 1 << tile.z;
+    if (tiles <= 0)
+    {
+        tile.x = 0;
+        tile.y = 0;
+        return;
+    }
+
+    tile.x %= tiles;
+    if (tile.x < 0)
+    {
+        tile.x += tiles;
+    }
+    tile.y = std::clamp(tile.y, 0, tiles - 1);
+}
+
+void normalize_map_contour_tile(MapContourTileId& tile) noexcept
+{
+    tile.profile.interval_m = std::clamp(tile.profile.interval_m, 1, 10000);
     tile.z = std::clamp(tile.z, 0, kMaxZoom);
     const int tiles = 1 << tile.z;
     if (tiles <= 0)
@@ -593,6 +752,66 @@ std::vector<MapTileId> map_tiles_around(double lat,
             normalize_map_tile(tile);
             out.push_back(tile);
         }
+    }
+    return out;
+}
+
+std::vector<MapContourProfile> contour_profiles_for_zoom(
+    int zoom,
+    bool allow_ultra_fine)
+{
+    zoom = std::clamp(zoom, 0, kMaxZoom);
+    std::vector<MapContourProfile> out;
+
+    if (zoom <= 7)
+    {
+        return out;
+    }
+    if (zoom == 8)
+    {
+        out.push_back(major_contour(500));
+        return out;
+    }
+    if (zoom == 9)
+    {
+        out.push_back(major_contour(200));
+        return out;
+    }
+    if (zoom == 10)
+    {
+        out.push_back(major_contour(500));
+        out.push_back(minor_contour(100));
+        return out;
+    }
+    if (zoom == 11)
+    {
+        out.push_back(major_contour(200));
+        out.push_back(minor_contour(50));
+        return out;
+    }
+    if (zoom == 12)
+    {
+        out.push_back(major_contour(100));
+        out.push_back(minor_contour(50));
+        return out;
+    }
+    if (zoom == 13 || zoom == 14)
+    {
+        out.push_back(major_contour(100));
+        out.push_back(minor_contour(20));
+        return out;
+    }
+    if (zoom == 15 || zoom == 16)
+    {
+        out.push_back(major_contour(50));
+        out.push_back(minor_contour(10));
+        return out;
+    }
+
+    out.push_back(major_contour(25));
+    if (allow_ultra_fine)
+    {
+        out.push_back(minor_contour(5));
     }
     return out;
 }

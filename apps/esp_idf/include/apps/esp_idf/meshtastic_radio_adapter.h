@@ -2,6 +2,7 @@
 
 #include "board/LoraBoard.h"
 #include "chat/domain/chat_types.h"
+#include "chat/domain/contact_types.h"
 #include "chat/infra/meshtastic/mt_codec_pb.h"
 #include "chat/infra/meshtastic/mt_dedup.h"
 #include "chat/ports/i_mesh_adapter.h"
@@ -59,11 +60,12 @@ class MeshtasticRadioAdapter final : public chat::IMeshAdapter
     void updateChannelKeys();
     void initNodeIdentity();
     void ensureReceiveStarted();
-    bool decodeUserPayload(const uint8_t* payload, size_t len,
-                           const chat::RxMeta& rx_meta,
-                           chat::NodeId from_node,
-                           uint8_t channel_index);
-    void publishPositionEvent(chat::NodeId node_id, const meshtastic_Position& pos);
+    bool publishNodePayload(const meshtastic_Data& data,
+                            const chat::RxMeta& rx_meta,
+                            chat::NodeId from_node,
+                            uint8_t channel_index);
+    void publishPositionEvent(chat::NodeId node_id,
+                              const chat::contacts::NodePosition& pos);
     uint8_t channelHashFor(chat::ChannelId channel) const;
     const uint8_t* channelKeyFor(chat::ChannelId channel, size_t* out_len) const;
 

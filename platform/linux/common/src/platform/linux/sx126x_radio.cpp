@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <string>
 #include <thread>
 
 #if defined(__linux__)
@@ -25,6 +26,7 @@ namespace
 {
 
 constexpr std::uint8_t kCmdSetStandby = 0x80;
+constexpr std::uint8_t kCmdGetStatus = 0xC0;
 constexpr std::uint8_t kCmdSetRx = 0x82;
 constexpr std::uint8_t kCmdSetTx = 0x83;
 constexpr std::uint8_t kCmdSetPacketType = 0x8A;
@@ -71,7 +73,6 @@ constexpr std::uint16_t kIrqTimeout = 0x0200;
 constexpr std::uint16_t kIrqAll = 0x43FF;
 constexpr std::uint16_t kRegOcpConfiguration = 0x08E7;
 constexpr std::uint16_t kRegLoraSyncWordMsb = 0x0740;
-constexpr std::uint16_t kRegVersionString = 0x0320;
 constexpr float kFrequencyStepHz = 0.9536743164f;
 
 int env_int_or_default(const char* name, int fallback)
@@ -203,6 +204,61 @@ void close_fd(int& fd)
 #endif
 }
 
+std::string errno_suffix()
+{
+#if defined(__linux__)
+    return std::string(" errno=") + std::to_string(errno) + " (" +
+           std::strerror(errno) + ")";
+#else
+    return {};
+#endif
+}
+
+std::string hex_bytes(const std::uint8_t* data, std::size_t size)
+{
+    if (data == nullptr || size == 0)
+    {
+        return {};
+    }
+
+    static constexpr char kHex[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(size * 3U);
+    for (std::size_t i = 0; i < size; ++i)
+    {
+        if (i != 0)
+        {
+            out.push_back(' ');
+        }
+        out.push_back(kHex[(data[i] >> 4) & 0x0F]);
+        out.push_back(kHex[data[i] & 0x0F]);
+    }
+    return out;
+}
+
+const char* bool_name(bool value)
+{
+    return value ? "true" : "false";
+}
+
+std::string describe_radio_config(const Sx126xRadioConfig& config)
+{
+    char buffer[384] = {};
+    std::snprintf(buffer,
+                  sizeof(buffer),
+                  "spi=%s gpiochip=%s power=%d reset=%d busy=%d irq=%d hz=%lu dio2_rf=%s dio3_tcxo_1v8=%s",
+                  config.spi_device.c_str(),
+                  config.gpiochip.c_str(),
+                  config.power_gpio,
+                  config.reset_gpio,
+                  config.busy_gpio,
+                  config.irq_gpio,
+                  static_cast<unsigned long>(config.spi_speed_hz),
+                  bool_name(config.dio2_as_rf_switch),
+                  bool_name(config.dio3_tcxo_1v8));
+    return buffer;
+}
+
 #if defined(__linux__)
 bool request_gpio_line(int chip_fd,
                        unsigned offset,
@@ -279,7 +335,7 @@ Sx126xRadio::~Sx126xRadio()
 bool Sx126xRadio::hardwareCandidatePresent()
 {
     const std::filesystem::path spi =
-        env_string_or_default("TRAIL_MATE_LORA_SPI", "/dev/spidev4.0");
+        env_string_or_default("TRAIL_MATE_LORA_SPI", "/dev/spidev1.0");
     std::error_code ec;
     return std::filesystem::exists(spi, ec) && !ec &&
            !env_flag_or_default("TRAIL_MATE_LORA_DISABLE", false);
@@ -444,6 +500,7 @@ bool Sx126xRadio::transmit(const std::uint8_t* data, std::size_t size)
         {
             (void)clearIrqLocked(kIrqAll);
             (void)setRxLocked(kRxTimeoutInf);
+            ++tx_packets_;
             return true;
         }
         if ((irq & kIrqTimeout) != 0)
@@ -478,10 +535,26 @@ bool Sx126xRadio::pollReceive(Sx126xPacket* out)
     }
 
     const std::uint32_t irq = getIrqFlagsLocked();
+    updateLastIrqLocked(irq);
     if ((irq & kIrqRxDone) == 0)
     {
         if ((irq & (kIrqTimeout | kIrqCrcErr | kIrqHeaderErr)) != 0)
         {
+            if ((irq & kIrqCrcErr) != 0)
+            {
+                ++rx_crc_errors_;
+                setErrorLocked("LoRa RX CRC error");
+            }
+            if ((irq & kIrqHeaderErr) != 0)
+            {
+                ++rx_header_errors_;
+                setErrorLocked("LoRa RX header error");
+            }
+            if ((irq & kIrqTimeout) != 0)
+            {
+                ++rx_timeouts_;
+                setErrorLocked("LoRa RX timeout");
+            }
             (void)clearIrqLocked(kIrqAll);
             (void)setRxLocked(kRxTimeoutInf);
         }
@@ -493,6 +566,8 @@ bool Sx126xRadio::pollReceive(Sx126xPacket* out)
     if (packet_len <= 0 ||
         packet_len > static_cast<int>(out->data.size()))
     {
+        ++rx_invalid_lengths_;
+        setErrorLocked("LoRa RX invalid packet length");
         (void)clearIrqLocked(kIrqAll);
         (void)setRxLocked(kRxTimeoutInf);
         return false;
@@ -501,6 +576,8 @@ bool Sx126xRadio::pollReceive(Sx126xPacket* out)
     if (readPacketLocked(offset, out->data.data(),
                          static_cast<std::size_t>(packet_len)) != 0)
     {
+        ++rx_read_errors_;
+        setErrorLocked("LoRa RX buffer read failed");
         (void)clearIrqLocked(kIrqAll);
         (void)setRxLocked(kRxTimeoutInf);
         return false;
@@ -517,6 +594,7 @@ bool Sx126xRadio::pollReceive(Sx126xPacket* out)
 
     (void)clearIrqLocked(kIrqAll);
     (void)setRxLocked(kRxTimeoutInf);
+    ++rx_packets_;
     return true;
 }
 
@@ -550,6 +628,23 @@ Sx126xLoRaConfig Sx126xRadio::appliedLoRaConfig() const
     return lora_config_;
 }
 
+Sx126xRadioStats Sx126xRadio::stats() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return Sx126xRadioStats{
+        .online = online_,
+        .rx_packets = rx_packets_,
+        .tx_packets = tx_packets_,
+        .rx_crc_errors = rx_crc_errors_,
+        .rx_header_errors = rx_header_errors_,
+        .rx_timeouts = rx_timeouts_,
+        .rx_invalid_lengths = rx_invalid_lengths_,
+        .rx_read_errors = rx_read_errors_,
+        .last_irq_flags = last_irq_flags_,
+        .lora_config = lora_config_,
+    };
+}
+
 bool Sx126xRadio::initLocked(const Sx126xRadioConfig& config)
 {
 #if !defined(__linux__)
@@ -562,33 +657,25 @@ bool Sx126xRadio::initLocked(const Sx126xRadioConfig& config)
         return online_;
     }
     config_ = config;
+    setErrorLocked("");
     if (!openGpioLocked() || !openSpiLocked())
     {
         closeLocked();
         return false;
     }
 
-    if (power_fd_ >= 0)
-    {
-        (void)set_gpio_value(power_fd_, 1);
-        sleep_ms(10);
-    }
-
-    if (reset_fd_ >= 0)
-    {
-        (void)set_gpio_value(reset_fd_, 0);
-        sleep_ms(2);
-        (void)set_gpio_value(reset_fd_, 1);
-        sleep_ms(10);
-    }
-
-    initialized_ = true;
-    online_ = probeLocked();
+    online_ = prepareAio2Locked() && probeLocked();
     if (!online_)
     {
-        setErrorLocked("SX126x probe failed");
+        if (last_error_[0] == '\0')
+        {
+            setErrorStringLocked("SX126x probe failed: " +
+                                 describe_radio_config(config_));
+        }
+        closeLocked();
         return false;
     }
+    initialized_ = true;
 
     const std::uint8_t calibrate = 0x7F;
     (void)writeCommandLocked(kCmdCalibrate, &calibrate, 1, true);
@@ -624,7 +711,8 @@ bool Sx126xRadio::openSpiLocked()
     spi_fd_ = open(config_.spi_device.c_str(), O_RDWR | O_CLOEXEC);
     if (spi_fd_ < 0)
     {
-        setErrorLocked("open spidev failed");
+        setErrorStringLocked("open spidev failed: " + config_.spi_device +
+                             errno_suffix());
         return false;
     }
 
@@ -634,7 +722,8 @@ bool Sx126xRadio::openSpiLocked()
         ioctl(spi_fd_, SPI_IOC_WR_BITS_PER_WORD, &bits) != 0 ||
         ioctl(spi_fd_, SPI_IOC_WR_MAX_SPEED_HZ, &config_.spi_speed_hz) != 0)
     {
-        setErrorLocked("configure spidev failed");
+        setErrorStringLocked("configure spidev failed: " +
+                             describe_radio_config(config_) + errno_suffix());
         return false;
     }
     return true;
@@ -649,7 +738,8 @@ bool Sx126xRadio::openGpioLocked()
     chip_fd_ = open(config_.gpiochip.c_str(), O_RDONLY | O_CLOEXEC);
     if (chip_fd_ < 0)
     {
-        setErrorLocked("open gpiochip failed");
+        setErrorStringLocked("open gpiochip failed: " + config_.gpiochip +
+                             errno_suffix());
         return false;
     }
 
@@ -661,7 +751,9 @@ bool Sx126xRadio::openGpioLocked()
                            "trailmate-lora-power",
                            &power_fd_))
     {
-        setErrorLocked("request LoRa power GPIO failed");
+        setErrorStringLocked("request LoRa power GPIO failed: gpio=" +
+                             std::to_string(config_.power_gpio) +
+                             errno_suffix());
         return false;
     }
     if (config_.reset_gpio >= 0 &&
@@ -672,7 +764,9 @@ bool Sx126xRadio::openGpioLocked()
                            "trailmate-lora-reset",
                            &reset_fd_))
     {
-        setErrorLocked("request LoRa reset GPIO failed");
+        setErrorStringLocked("request LoRa reset GPIO failed: gpio=" +
+                             std::to_string(config_.reset_gpio) +
+                             errno_suffix());
         return false;
     }
     if (config_.busy_gpio >= 0 &&
@@ -683,7 +777,9 @@ bool Sx126xRadio::openGpioLocked()
                            "trailmate-lora-busy",
                            &busy_fd_))
     {
-        setErrorLocked("request LoRa busy GPIO failed");
+        setErrorStringLocked("request LoRa busy GPIO failed: gpio=" +
+                             std::to_string(config_.busy_gpio) +
+                             errno_suffix());
         return false;
     }
     if (config_.irq_gpio >= 0 &&
@@ -694,7 +790,9 @@ bool Sx126xRadio::openGpioLocked()
                            "trailmate-lora-irq",
                            &irq_fd_))
     {
-        setErrorLocked("request LoRa IRQ GPIO failed");
+        setErrorStringLocked("request LoRa IRQ GPIO failed: gpio=" +
+                             std::to_string(config_.irq_gpio) +
+                             errno_suffix());
         return false;
     }
     return true;
@@ -712,6 +810,11 @@ void Sx126xRadio::closeLocked()
     initialized_ = false;
     online_ = false;
     users_ = 0;
+}
+
+void Sx126xRadio::updateLastIrqLocked(std::uint32_t irq)
+{
+    last_irq_flags_ = irq;
 }
 
 void Sx126xRadio::waitReadyLocked() const
@@ -759,7 +862,10 @@ bool Sx126xRadio::transferLocked(const std::uint8_t* tx,
     transfer.cs_change = 0;
     if (ioctl(spi_fd_, SPI_IOC_MESSAGE(1), &transfer) < 1)
     {
-        setErrorLocked("SPI transfer failed");
+        setErrorStringLocked("SPI transfer failed: bytes=" +
+                             std::to_string(size) + " " +
+                             describe_radio_config(config_) +
+                             errno_suffix());
         return false;
     }
     return true;
@@ -863,24 +969,151 @@ bool Sx126xRadio::readRegisterLocked(std::uint16_t addr,
     return readCommandLocked(kCmdReadRegister, prefix, sizeof(prefix), data, size, true);
 }
 
+bool Sx126xRadio::prepareAio2Locked()
+{
+#if !defined(__linux__)
+    return false;
+#else
+    if (power_fd_ >= 0)
+    {
+        if (!set_gpio_value(power_fd_, 1))
+        {
+            setErrorStringLocked("set LoRa power GPIO high failed: gpio=" +
+                                 std::to_string(config_.power_gpio) +
+                                 errno_suffix());
+            return false;
+        }
+        sleep_ms(100);
+    }
+
+    if (reset_fd_ >= 0)
+    {
+        if (!set_gpio_value(reset_fd_, 0))
+        {
+            setErrorStringLocked("assert LoRa reset failed: gpio=" +
+                                 std::to_string(config_.reset_gpio) +
+                                 errno_suffix());
+            return false;
+        }
+        sleep_ms(10);
+        if (!set_gpio_value(reset_fd_, 1))
+        {
+            setErrorStringLocked("release LoRa reset failed: gpio=" +
+                                 std::to_string(config_.reset_gpio) +
+                                 errno_suffix());
+            return false;
+        }
+        sleep_ms(30);
+    }
+
+    waitReadyLocked();
+
+    if (config_.dio3_tcxo_1v8)
+    {
+        const std::uint8_t tcxo[4] = {0x02, 0x00, 0x01, 0x40};
+        if (!writeCommandLocked(kCmdSetDio3AsTcxoCtrl, tcxo, sizeof(tcxo), true))
+        {
+            setErrorStringLocked("AIO2 SX1262 TCXO enable failed: " +
+                                 describe_radio_config(config_));
+            return false;
+        }
+        sleep_ms(20);
+    }
+
+    if (config_.dio2_as_rf_switch)
+    {
+        const std::uint8_t dio2 = 0x01;
+        if (!writeCommandLocked(kCmdSetDio2AsRfSwitchCtrl, &dio2, 1, true))
+        {
+            setErrorStringLocked("AIO2 SX1262 DIO2 RF switch enable failed: " +
+                                 describe_radio_config(config_));
+            return false;
+        }
+    }
+
+    const std::uint8_t standby = kStandbyRc;
+    if (!writeCommandLocked(kCmdSetStandby, &standby, 1, true))
+    {
+        setErrorStringLocked("SX1262 standby command failed after AIO2 power/reset: " +
+                             describe_radio_config(config_));
+        return false;
+    }
+    sleep_ms(2);
+    return true;
+#endif
+}
+
+bool Sx126xRadio::readStatusLocked(std::uint8_t* out_status)
+{
+    if (out_status == nullptr)
+    {
+        setErrorLocked("invalid SX1262 status read");
+        return false;
+    }
+    waitReadyLocked();
+    const std::uint8_t tx[2] = {kCmdGetStatus, 0x00};
+    std::uint8_t rx[2] = {};
+    if (!transferLocked(tx, rx, sizeof(tx)))
+    {
+        return false;
+    }
+    *out_status = rx[1];
+    waitReadyLocked();
+    return true;
+}
+
 bool Sx126xRadio::probeLocked()
 {
-    std::uint8_t version[6] = {};
-    if (!readRegisterLocked(kRegVersionString, version, sizeof(version)))
+    std::uint8_t status = 0;
+    const bool have_status = readStatusLocked(&status);
+
+    std::uint8_t original_ocp = 0;
+    if (!readRegisterLocked(kRegOcpConfiguration, &original_ocp, 1))
     {
+        setErrorStringLocked("SX1262 probe failed: OCP register read failed; status=" +
+                             (have_status ? hex_bytes(&status, 1)
+                                          : std::string("unavailable")) +
+                             " " + describe_radio_config(config_));
         return false;
     }
-    bool all_zero = true;
-    bool all_ff = true;
-    for (const std::uint8_t value : version)
+
+    const std::uint8_t probe_ocp =
+        static_cast<std::uint8_t>(original_ocp ^ 0x01U);
+    if (!writeRegisterLocked(kRegOcpConfiguration, &probe_ocp, 1))
     {
-        all_zero = all_zero && value == 0x00;
-        all_ff = all_ff && value == 0xFF;
-    }
-    if (all_zero || all_ff)
-    {
+        setErrorStringLocked("SX1262 probe failed: OCP test write failed; status=" +
+                             (have_status ? hex_bytes(&status, 1)
+                                          : std::string("unavailable")) +
+                             " ocp=" + hex_bytes(&original_ocp, 1) +
+                             " " + describe_radio_config(config_));
         return false;
     }
+
+    std::uint8_t readback_ocp = 0;
+    const bool readback_ok =
+        readRegisterLocked(kRegOcpConfiguration, &readback_ocp, 1);
+    (void)writeRegisterLocked(kRegOcpConfiguration, &original_ocp, 1);
+
+    if (!readback_ok || readback_ocp != probe_ocp)
+    {
+        setErrorStringLocked("SX1262 probe failed: OCP readback mismatch; status=" +
+                             (have_status ? hex_bytes(&status, 1)
+                                          : std::string("unavailable")) +
+                             " original=" + hex_bytes(&original_ocp, 1) +
+                             " wrote=" + hex_bytes(&probe_ocp, 1) +
+                             " read=" + hex_bytes(&readback_ocp, 1) +
+                             " busy=" +
+                             std::to_string(busy_fd_ >= 0
+                                                ? get_gpio_value(busy_fd_)
+                                                : -1) +
+                             " irq=" +
+                             std::to_string(irq_fd_ >= 0
+                                                ? get_gpio_value(irq_fd_)
+                                                : -1) +
+                             " " + describe_radio_config(config_));
+        return false;
+    }
+
     return true;
 }
 
@@ -1124,6 +1357,11 @@ void Sx126xRadio::setErrorLocked(const char* error)
 {
     std::snprintf(last_error_, sizeof(last_error_), "%s",
                   error == nullptr ? "" : error);
+}
+
+void Sx126xRadio::setErrorStringLocked(const std::string& error)
+{
+    setErrorLocked(error.c_str());
 }
 
 } // namespace platform::linux_runtime

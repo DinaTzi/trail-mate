@@ -23,6 +23,26 @@ struct MapTileId
     int y = 0;
 };
 
+enum class MapContourKind : std::uint8_t
+{
+    Major = 0,
+    Minor = 1,
+};
+
+struct MapContourProfile
+{
+    MapContourKind kind = MapContourKind::Major;
+    int interval_m = 0;
+};
+
+struct MapContourTileId
+{
+    MapContourProfile profile{};
+    int z = 0;
+    int x = 0;
+    int y = 0;
+};
+
 enum class MapTileStatus
 {
     Invalid,
@@ -55,6 +75,8 @@ MapBaseSource sanitize_map_base_source(std::uint8_t source) noexcept;
 const char* map_base_source_key(MapBaseSource source) noexcept;
 const char* map_base_source_label(MapBaseSource source) noexcept;
 const char* map_base_source_extension(MapBaseSource source) noexcept;
+const char* map_contour_kind_key(MapContourKind kind) noexcept;
+std::string map_contour_profile_key(const MapContourProfile& profile);
 
 class MapTileCache final
 {
@@ -75,12 +97,35 @@ class MapTileCache final
     std::filesystem::path root_{};
 };
 
+class MapContourTileStore final
+{
+  public:
+    MapContourTileStore();
+    explicit MapContourTileStore(std::filesystem::path root);
+
+    [[nodiscard]] const std::filesystem::path& root() const noexcept;
+    [[nodiscard]] std::filesystem::path tile_path(
+        const MapContourTileId& tile) const;
+    [[nodiscard]] std::filesystem::path existing_tile_path(
+        const MapContourTileId& tile) const;
+    [[nodiscard]] std::filesystem::path relative_tile_path(
+        const MapContourTileId& tile) const;
+    [[nodiscard]] bool tile_available(const MapContourTileId& tile) const;
+
+  private:
+    std::filesystem::path root_{};
+};
+
 void normalize_map_tile(MapTileId& tile) noexcept;
+void normalize_map_contour_tile(MapContourTileId& tile) noexcept;
 std::vector<MapTileId> map_tiles_around(double lat,
                                         double lon,
                                         int zoom,
                                         MapBaseSource source,
                                         int radius_x,
                                         int radius_y);
+std::vector<MapContourProfile> contour_profiles_for_zoom(
+    int zoom,
+    bool allow_ultra_fine);
 
 } // namespace platform::linux_runtime

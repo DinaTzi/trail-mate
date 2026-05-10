@@ -35,7 +35,8 @@ Install Linux build dependencies first:
 
 ```sh
 sudo apt-get install -y build-essential cmake ninja-build pkg-config \
-  libgtk-4-dev libsqlite3-dev libcurl4-openssl-dev
+  libgtk-4-dev libsqlite3-dev libcurl4-openssl-dev gdal-bin unzip \
+  ca-certificates
 ```
 
 ```sh
@@ -74,7 +75,7 @@ The package installs the app as:
 trailmate-uconsole
 ```
 
-The default GTK desktop window is `1180x650`, leaving room for the window
+The default GTK desktop window is `1180x600`, leaving room for the window
 decorations and desktop panel on the uConsole `1280x720` landscape session.
 Override it with:
 
@@ -123,6 +124,32 @@ $TRAIL_MATE_SD_ROOT/maps/base/satellite/{z}/{x}/{y}.jpg
 
 If `TRAIL_MATE_SD_ROOT` is not set, it defaults to
 `$TRAIL_MATE_SETTINGS_ROOT/sdcard`.
+
+Contour overlays are transparent PNG tiles above the active base map. Enable
+or hide them from the map toolbar or Settings -> Map -> Contour overlay. The
+map toolbar also has **Fill visible**, which fills the current visible viewport
+by querying NASA CMR for `NASADEM_HGT`, downloading missing DEM archives with
+the stored Earthdata token, extracting HGT/TIF files, and generating contour PNG
+tiles through GDAL. Earthdata tokens are stored in the same SQLite settings
+database as Linux local state. Generated contour tiles are written to:
+
+```text
+$TRAIL_MATE_SD_ROOT/maps/contour/{major|minor}-{interval}/{z}/{x}/{y}.png
+```
+
+For compatibility with Trail Mate Center's working cache, the GTK map also
+checks:
+
+```text
+$TRAIL_MATE_SD_ROOT/contours/tiles/{major|minor}-{interval}/{z}/{x}/{y}.png
+```
+
+DEM source files and temporary contour work files are kept under:
+
+```text
+$TRAIL_MATE_SD_ROOT/maps/dem
+$TRAIL_MATE_CACHE_ROOT/contour-work
+```
 
 To run the LVGL/SDL fallback window explicitly:
 

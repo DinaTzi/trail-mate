@@ -4,7 +4,7 @@
 
 > A low-power, offline-first handheld device for outdoor navigation and communication
 
-[English](README.md) | [中文](README_CN.md) | [Join Discord](https://discord.gg/87PVMVUP)
+[English](README.md) | [中文](README_CN.md) | [Join Discord](https://discord.gg/UpDsAz9H3)
 
 ---
 

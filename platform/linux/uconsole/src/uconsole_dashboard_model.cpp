@@ -12,10 +12,12 @@
 
 #include "app/linux_app_services.h"
 #include "chat/domain/contact_types.h"
+#include "chat/linux_raw_lora_mesh_adapter.h"
 #include "chat/ports/i_mesh_adapter.h"
 #include "chat/usecase/chat_service.h"
 #include "chat/usecase/contact_service.h"
 #include "platform/linux/map_tile_cache.h"
+#include "platform/linux/runtime_packet_log.h"
 #include "platform/linux/runtime_paths.h"
 #include "platform/ui/gps_runtime.h"
 #include "platform/ui/team_ui_store_runtime.h"
@@ -109,6 +111,104 @@ namespace
     return buffer;
 }
 
+[[nodiscard]] std::uint64_t secondsToMs(std::uint32_t timestamp)
+{
+    return static_cast<std::uint64_t>(timestamp) * 1000ULL;
+}
+
+[[nodiscard]] std::string formatClock(std::uint64_t timestamp_ms)
+{
+    const std::time_t seconds =
+        static_cast<std::time_t>(timestamp_ms / 1000ULL);
+    std::tm local{};
+#if defined(_WIN32)
+    localtime_s(&local, &seconds);
+#else
+    localtime_r(&seconds, &local);
+#endif
+    char buffer[16] = {};
+    std::snprintf(buffer,
+                  sizeof(buffer),
+                  "%02d:%02d",
+                  local.tm_hour,
+                  local.tm_min);
+    return buffer;
+}
+
+[[nodiscard]] bool containsInsensitive(const std::string& text,
+                                       const char* needle)
+{
+    if (needle == nullptr || needle[0] == '\0')
+    {
+        return false;
+    }
+    std::string lower_text = text;
+    std::string lower_needle = needle;
+    std::transform(lower_text.begin(),
+                   lower_text.end(),
+                   lower_text.begin(),
+                   [](unsigned char ch)
+                   {
+                       return static_cast<char>(std::tolower(ch));
+                   });
+    std::transform(lower_needle.begin(),
+                   lower_needle.end(),
+                   lower_needle.begin(),
+                   [](unsigned char ch)
+                   {
+                       return static_cast<char>(std::tolower(ch));
+                   });
+    return lower_text.find(lower_needle) != std::string::npos;
+}
+
+[[nodiscard]] std::string timelineKindFromText(const std::string& text)
+{
+    if (containsInsensitive(text, "team"))
+    {
+        return "team";
+    }
+    if (containsInsensitive(text, "nodeinfo") ||
+        containsInsensitive(text, "node info"))
+    {
+        return "node";
+    }
+    if (containsInsensitive(text, "position") ||
+        containsInsensitive(text, "location"))
+    {
+        return "position";
+    }
+    if (containsInsensitive(text, "telemetry") ||
+        containsInsensitive(text, "metrics"))
+    {
+        return "telemetry";
+    }
+    if (containsInsensitive(text, "message") ||
+        containsInsensitive(text, "text") ||
+        containsInsensitive(text, "chat"))
+    {
+        return "message";
+    }
+    return "system";
+}
+
+void pushOverviewTimeline(std::vector<OverviewTimelineItem>& out,
+                          OverviewTimelineItem item)
+{
+    if (item.timestamp_ms == 0)
+    {
+        item.timestamp_ms = secondsToMs(sys::epoch_seconds_now());
+    }
+    if (item.time_label.empty())
+    {
+        item.time_label = formatClock(item.timestamp_ms);
+    }
+    if (item.kind.empty())
+    {
+        item.kind = timelineKindFromText(item.title + " " + item.detail);
+    }
+    out.push_back(std::move(item));
+}
+
 [[nodiscard]] ContactPreview makeContactPreview(
     const ::chat::contacts::NodeInfo& node)
 {
@@ -119,6 +219,74 @@ namespace
     preview.node_id = formatNodeId(node.node_id);
     preview.status = formatLastSeen(node.last_seen);
     preview.protocol = nodeProtocolLabel(node.protocol);
+    return preview;
+}
+
+[[nodiscard]] std::string conversationLabel(
+    const ::chat::ConversationId& id,
+    const std::string& stored_name,
+    const ::chat::contacts::ContactService& contacts)
+{
+    if (!stored_name.empty() && stored_name != "Broadcast")
+    {
+        return stored_name;
+    }
+    if (id.peer == 0)
+    {
+        return id.channel == ::chat::ChannelId::SECONDARY
+                   ? "Secondary broadcast"
+                   : "Primary broadcast";
+    }
+    if (const auto* node = contacts.getNodeInfo(id.peer))
+    {
+        if (!node->display_name.empty())
+        {
+            return node->display_name;
+        }
+        if (node->short_name[0] != '\0')
+        {
+            return std::string(node->short_name);
+        }
+        if (node->long_name[0] != '\0')
+        {
+            return std::string(node->long_name);
+        }
+    }
+    return formatNodeId(id.peer);
+}
+
+[[nodiscard]] RecentContactPreview makeRecentContactPreview(
+    const ::chat::ConversationMeta& conversation,
+    const ::chat::contacts::ContactService& contacts)
+{
+    RecentContactPreview preview{};
+    preview.conversation = conversation.id;
+    preview.name = conversationLabel(conversation.id, conversation.name, contacts);
+    preview.direct = conversation.id.peer != 0;
+    preview.team = containsInsensitive(conversation.name, "team") ||
+                   containsInsensitive(conversation.preview, "team");
+    preview.has_unread = conversation.unread > 0;
+    preview.badge = preview.team ? "Team" : (preview.direct ? "Direct" : "Broadcast");
+    preview.meta = formatUnread(conversation.unread) + " / " +
+                   formatLastSeen(conversation.last_timestamp);
+    if (conversation.id.peer != 0)
+    {
+        if (const auto* node = contacts.getNodeInfo(conversation.id.peer))
+        {
+            preview.detail =
+                std::string("hops ") +
+                (node->hops_away == 0xFF
+                     ? "?"
+                     : std::to_string(node->hops_away)) +
+                " / " + (node->via_mqtt ? "MQTT" : "LoRa");
+        }
+    }
+    if (preview.detail.empty())
+    {
+        preview.detail = conversation.preview.empty()
+                             ? "No messages in this thread yet."
+                             : conversation.preview;
+    }
     return preview;
 }
 
@@ -231,8 +399,147 @@ void pushTimeline(std::vector<TimelineCandidate>& out,
 
     out.push_back(TimelineCandidate{.timestamp = timestamp,
                                     .item = {.title = std::move(title),
-                                             .detail = std::move(detail),
+                                     .detail = std::move(detail),
                                              .attention = attention}});
+}
+
+void appendPacketLogTimeline(std::vector<OverviewTimelineItem>& out)
+{
+    const ::platform::linux_runtime::PacketLogSource sources[] = {
+        ::platform::linux_runtime::PacketLogSource::Lora,
+        ::platform::linux_runtime::PacketLogSource::Mqtt,
+    };
+    for (const auto source : sources)
+    {
+        const auto logs =
+            ::platform::linux_runtime::recent_packet_logs(source, 120U);
+        for (const auto& log : logs)
+        {
+            OverviewTimelineItem item{};
+            item.timestamp_ms = log.timestamp_ms;
+            item.title = log.title.empty()
+                             ? std::string(::platform::linux_runtime::
+                                               packet_log_source_label(source)) +
+                                   " activity"
+                             : log.title;
+            item.detail = log.summary;
+            item.kind = timelineKindFromText(item.title + " " + item.detail);
+            item.outgoing = log.direction ==
+                            ::platform::linux_runtime::PacketLogDirection::Tx;
+            item.direct = containsInsensitive(log.summary, " direct ") ||
+                          containsInsensitive(log.summary, " to ");
+            item.team = containsInsensitive(item.title, "team") ||
+                        containsInsensitive(item.detail, "team");
+            item.badge =
+                item.team ? "Team"
+                          : std::string(::platform::linux_runtime::
+                                            packet_log_source_label(source)) +
+                                " " +
+                                ::platform::linux_runtime::
+                                    packet_log_direction_label(log.direction);
+            item.attention = containsInsensitive(item.title, "fail") ||
+                             containsInsensitive(item.detail, "fail") ||
+                             containsInsensitive(item.detail, "error");
+            pushOverviewTimeline(out, std::move(item));
+        }
+    }
+}
+
+void appendChatTimeline(std::vector<OverviewTimelineItem>& out,
+                        ::chat::ChatService& chat_service,
+                        const ::chat::contacts::ContactService& contacts)
+{
+    std::size_t total = 0;
+    const auto conversations = chat_service.getConversations(0, 48U, &total);
+    for (const auto& conversation : conversations)
+    {
+        const auto messages =
+            chat_service.getRecentMessages(conversation.id, 12U);
+        for (const auto& message : messages)
+        {
+            OverviewTimelineItem item{};
+            item.timestamp_ms = secondsToMs(message.timestamp);
+            item.kind = "message";
+            item.outgoing = message.status != ::chat::MessageStatus::Incoming;
+            item.direct = conversation.id.peer != 0;
+            item.team = containsInsensitive(conversation.name, "team") ||
+                        message.team_location_icon != 0;
+            item.badge = item.team ? "Team" : (item.direct ? "Direct" : "Broadcast");
+            item.title = item.outgoing ? "Sent message" : "Received message";
+            item.detail =
+                conversationLabel(conversation.id, conversation.name, contacts);
+            if (!message.text.empty())
+            {
+                item.detail += " / ";
+                item.detail += message.text.size() > 72U
+                                   ? message.text.substr(0, 72U) + "..."
+                                   : message.text;
+            }
+            item.attention = message.status == ::chat::MessageStatus::Failed;
+            pushOverviewTimeline(out, std::move(item));
+        }
+    }
+}
+
+void appendNodeTimeline(std::vector<OverviewTimelineItem>& out,
+                        const std::vector<::chat::contacts::NodeInfo>& nodes)
+{
+    for (const auto& node : nodes)
+    {
+        const std::string name =
+            node.display_name.empty() ? formatNodeId(node.node_id)
+                                      : node.display_name;
+        if (node.last_seen != 0)
+        {
+            OverviewTimelineItem item{};
+            item.timestamp_ms = secondsToMs(node.last_seen);
+            item.kind = "node";
+            item.title = "NodeInfo received";
+            item.detail = name + " / " + formatNodeId(node.node_id);
+            item.badge = node.via_mqtt ? "MQTT" : "LoRa";
+            pushOverviewTimeline(out, std::move(item));
+        }
+        if (node.position.valid && node.position.timestamp != 0)
+        {
+            OverviewTimelineItem item{};
+            item.timestamp_ms = secondsToMs(node.position.timestamp);
+            item.kind = "position";
+            item.title = "Position received";
+            item.detail =
+                name + " / " +
+                formatCoordinate(static_cast<double>(node.position.latitude_i) /
+                                     10000000.0,
+                                 static_cast<double>(node.position.longitude_i) /
+                                     10000000.0);
+            item.badge = node.via_mqtt ? "MQTT" : "LoRa";
+            pushOverviewTimeline(out, std::move(item));
+        }
+        if (node.has_device_metrics && node.last_seen != 0)
+        {
+            OverviewTimelineItem item{};
+            item.timestamp_ms = secondsToMs(node.last_seen);
+            item.kind = "telemetry";
+            item.title = "Telemetry received";
+            item.detail = name;
+            if (node.device_metrics.has_battery_level)
+            {
+                item.detail += " / battery " +
+                               std::to_string(node.device_metrics.battery_level) +
+                               "%";
+            }
+            if (node.device_metrics.has_voltage)
+            {
+                char voltage[24] = {};
+                std::snprintf(voltage,
+                              sizeof(voltage),
+                              " / %.2f V",
+                              static_cast<double>(node.device_metrics.voltage));
+                item.detail += voltage;
+            }
+            item.badge = node.via_mqtt ? "MQTT" : "LoRa";
+            pushOverviewTimeline(out, std::move(item));
+        }
+    }
 }
 
 [[nodiscard]] std::string memberDisplayName(
@@ -398,6 +705,15 @@ void buildTeamOverview(UConsoleDashboardSnapshot& out)
     out.team_timeline.reserve(count);
     for (std::size_t index = 0; index < count; ++index)
     {
+        OverviewTimelineItem item{};
+        item.timestamp_ms = secondsToMs(timeline[index].timestamp);
+        item.title = timeline[index].item.title;
+        item.detail = timeline[index].item.detail;
+        item.kind = "team";
+        item.team = true;
+        item.badge = "Team";
+        item.attention = timeline[index].item.attention;
+        pushOverviewTimeline(out.timeline, std::move(item));
         out.team_timeline.push_back(std::move(timeline[index].item));
     }
 }
@@ -417,20 +733,25 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
     auto& chat_service = services_.chat();
     auto& contact_service = services_.contacts();
     const auto* mesh_adapter = services_.meshAdapter();
+    const auto* raw_lora_adapter =
+        dynamic_cast<const linux_app::LinuxRawLoraMeshAdapter*>(mesh_adapter);
     const UConsoleHardwareProbe hardware_probe = probeUConsoleHardware();
 
     std::size_t conversation_total = 0;
     const auto conversations =
-        chat_service.getConversations(0, 6, &conversation_total);
+        chat_service.getConversations(0, 16, &conversation_total);
     out.conversation_count = conversation_total;
     out.unread_count = chat_service.getTotalUnread();
 
     out.mesh_protocol = protocolLabel(services_.meshProtocol());
     out.self_node = formatNodeId(services_.selfNodeId());
 
-    out.conversations.reserve(conversations.size());
-    for (const auto& item : conversations)
+    out.conversations.reserve(std::min<std::size_t>(conversations.size(), 6U));
+    for (std::size_t index = 0;
+         index < conversations.size() && index < 6U;
+         ++index)
     {
+        const auto& item = conversations[index];
         ConversationPreview preview{};
         preview.title = item.name.empty() ? "Primary channel" : item.name;
         preview.preview =
@@ -440,6 +761,14 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
                        formatLastSeen(item.last_timestamp);
         preview.unread = item.unread;
         out.conversations.push_back(std::move(preview));
+    }
+    out.recent_contacts.reserve(5U);
+    for (std::size_t index = 0;
+         index < conversations.size() && out.recent_contacts.size() < 5U;
+         ++index)
+    {
+        out.recent_contacts.push_back(
+            makeRecentContactPreview(conversations[index], contact_service));
     }
 
     auto contacts = contact_service.getContacts();
@@ -467,6 +796,10 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
         out.contacts.push_back(makeContactPreview(visible_nodes[index]));
     }
 
+    appendPacketLogTimeline(out.timeline);
+    appendChatTimeline(out.timeline, chat_service, contact_service);
+    appendNodeTimeline(out.timeline, visible_nodes);
+
     std::string mesh_line = "Mesh: ";
     mesh_line += out.mesh_protocol;
     HardwareStatusItem lora_status{};
@@ -491,12 +824,17 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
     }
     else
     {
-        const ::chat::MeshCapabilities capabilities =
-            mesh_adapter->getCapabilities();
-        mesh_transport_ready = capabilities.supports_unicast_text;
+        mesh_transport_ready = mesh_adapter->isReady();
         mesh_line += mesh_transport_ready ? " transport ready"
                                           : " transport not connected";
-        if (mesh_transport_ready)
+        if (raw_lora_adapter != nullptr)
+        {
+            lora_status.state = mesh_transport_ready ? "Ready" : "Endpoint";
+            lora_status.detail = raw_lora_adapter->statusText() + " / " +
+                                 raw_lora_adapter->radioConfigText() + " / " +
+                                 raw_lora_adapter->radioStatsText();
+        }
+        else if (mesh_transport_ready)
         {
             lora_status.state = "Ready";
             lora_status.detail = "Mesh text transport is available.";
@@ -664,6 +1002,16 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
     out.messages.attention = out.unread_count > 0 || !mesh_transport_ready;
 
     buildTeamOverview(out);
+    std::sort(out.timeline.begin(),
+              out.timeline.end(),
+              [](const auto& left, const auto& right)
+              {
+                  return left.timestamp_ms > right.timestamp_ms;
+              });
+    if (out.timeline.size() > 200U)
+    {
+        out.timeline.resize(200U);
+    }
 
     out.hardware = {aio2_status, lora_status, gps_status, storage_status,
                     map_status};
@@ -683,6 +1031,13 @@ UConsoleDashboardSnapshot UConsoleDashboardModel::snapshot() const
         "Map cache: " + std::to_string(tile_stats.cached_tiles) +
             " tiles at " + tile_stats.root.string(),
     };
+    if (raw_lora_adapter != nullptr)
+    {
+        for (const auto& line : raw_lora_adapter->diagnosticLines())
+        {
+            out.capability_lines.push_back("LoRa: " + line);
+        }
+    }
 
     return out;
 }

@@ -1,8 +1,11 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
+
+#include "chat/domain/chat_types.h"
 
 namespace trailmate::linux_app
 {
@@ -60,6 +63,32 @@ struct TeamTimelineItem
     bool attention = false;
 };
 
+struct OverviewTimelineItem
+{
+    std::uint64_t timestamp_ms = 0;
+    std::string time_label{};
+    std::string title{};
+    std::string detail{};
+    std::string badge{};
+    std::string kind{}; // message, node, position, telemetry, team, system
+    bool team = false;
+    bool direct = false;
+    bool outgoing = false;
+    bool attention = false;
+};
+
+struct RecentContactPreview
+{
+    ::chat::ConversationId conversation{};
+    std::string name{};
+    std::string meta{};
+    std::string detail{};
+    std::string badge{};
+    bool direct = false;
+    bool team = false;
+    bool has_unread = false;
+};
+
 struct UConsoleDashboardSnapshot
 {
     std::size_t conversation_count = 0;
@@ -75,8 +104,10 @@ struct UConsoleDashboardSnapshot
     MessageOverview messages{};
     std::vector<ConversationPreview> conversations{};
     std::vector<ContactPreview> contacts{};
+    std::vector<RecentContactPreview> recent_contacts{};
     std::vector<HardwareStatusItem> hardware{};
     std::vector<TeamTimelineItem> team_timeline{};
+    std::vector<OverviewTimelineItem> timeline{};
     std::vector<std::string> capability_lines{};
 };
 

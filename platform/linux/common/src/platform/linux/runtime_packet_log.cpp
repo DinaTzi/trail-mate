@@ -16,10 +16,20 @@ constexpr std::size_t kMaxEntriesPerSource = 240;
 std::mutex s_mutex;
 std::deque<PacketLogEntry> s_gps_entries;
 std::deque<PacketLogEntry> s_lora_entries;
+std::deque<PacketLogEntry> s_mqtt_entries;
 
 std::deque<PacketLogEntry>& entries_for(PacketLogSource source)
 {
-    return source == PacketLogSource::Lora ? s_lora_entries : s_gps_entries;
+    switch (source)
+    {
+    case PacketLogSource::Lora:
+        return s_lora_entries;
+    case PacketLogSource::Mqtt:
+        return s_mqtt_entries;
+    case PacketLogSource::Gps:
+    default:
+        return s_gps_entries;
+    }
 }
 
 std::uint64_t now_ms()
@@ -77,6 +87,8 @@ const char* packet_log_source_label(PacketLogSource source) noexcept
     {
     case PacketLogSource::Lora:
         return "LoRa";
+    case PacketLogSource::Mqtt:
+        return "MQTT";
     case PacketLogSource::Gps:
     default:
         return "GPS";

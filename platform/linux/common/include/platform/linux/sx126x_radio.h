@@ -11,7 +11,7 @@ namespace platform::linux_runtime
 
 struct Sx126xRadioConfig
 {
-    std::string spi_device = "/dev/spidev4.0";
+    std::string spi_device = "/dev/spidev1.0";
     std::string gpiochip = "/dev/gpiochip0";
     int power_gpio = 16;
     int reset_gpio = 25;
@@ -46,6 +46,20 @@ struct Sx126xPacket
     std::uint8_t cr = 0;
 };
 
+struct Sx126xRadioStats
+{
+    bool online = false;
+    std::uint32_t rx_packets = 0;
+    std::uint32_t tx_packets = 0;
+    std::uint32_t rx_crc_errors = 0;
+    std::uint32_t rx_header_errors = 0;
+    std::uint32_t rx_timeouts = 0;
+    std::uint32_t rx_invalid_lengths = 0;
+    std::uint32_t rx_read_errors = 0;
+    std::uint32_t last_irq_flags = 0;
+    Sx126xLoRaConfig lora_config{};
+};
+
 class Sx126xRadio final
 {
   public:
@@ -67,6 +81,7 @@ class Sx126xRadio final
     [[nodiscard]] bool isOnline() const;
     [[nodiscard]] const char* lastError() const;
     [[nodiscard]] Sx126xLoRaConfig appliedLoRaConfig() const;
+    [[nodiscard]] Sx126xRadioStats stats() const;
 
   private:
     Sx126xRadio() = default;
@@ -101,7 +116,9 @@ class Sx126xRadio final
                             std::uint8_t* data,
                             std::size_t size);
 
+    bool prepareAio2Locked();
     bool probeLocked();
+    bool readStatusLocked(std::uint8_t* out_status);
     bool setPacketTypeLocked(std::uint8_t packet_type);
     bool setRfFrequencyLocked(float freq_mhz);
     bool setTxPowerLocked(std::int8_t tx_power);
@@ -120,6 +137,8 @@ class Sx126xRadio final
     bool readPacketStatusLocked(float* out_rssi_dbm, float* out_snr_db);
 
     void setErrorLocked(const char* error);
+    void setErrorStringLocked(const std::string& error);
+    void updateLastIrqLocked(std::uint32_t irq);
 
     mutable std::mutex mutex_{};
     Sx126xRadioConfig config_{};
@@ -135,7 +154,15 @@ class Sx126xRadio final
     float freq_mhz_ = 0.0f;
     bool initialized_ = false;
     bool online_ = false;
-    char last_error_[128] = {};
+    std::uint32_t rx_packets_ = 0;
+    std::uint32_t tx_packets_ = 0;
+    std::uint32_t rx_crc_errors_ = 0;
+    std::uint32_t rx_header_errors_ = 0;
+    std::uint32_t rx_timeouts_ = 0;
+    std::uint32_t rx_invalid_lengths_ = 0;
+    std::uint32_t rx_read_errors_ = 0;
+    std::uint32_t last_irq_flags_ = 0;
+    char last_error_[512] = {};
 };
 
 } // namespace platform::linux_runtime

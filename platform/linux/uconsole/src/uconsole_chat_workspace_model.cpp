@@ -2,15 +2,23 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "app/linux_app_services.h"
+#include "chat/domain/contact_types.h"
 #include "chat/ports/i_mesh_adapter.h"
 #include "chat/usecase/chat_service.h"
+#include "chat/usecase/contact_service.h"
+#include "meshtastic/mesh.pb.h"
+#include "pb_encode.h"
+#include "platform/ui/gps_runtime.h"
 #include "sys/clock.h"
 
 namespace trailmate::uconsole
@@ -58,6 +66,50 @@ namespace
     return buffer;
 }
 
+[[nodiscard]] std::string formatNodeLabel(std::uint32_t node_id)
+{
+    return "0x" + formatNodeId(node_id);
+}
+
+[[nodiscard]] std::string contactDisplayName(
+    const ::chat::contacts::ContactService& contacts,
+    ::chat::NodeId node_id)
+{
+    if (node_id == 0)
+    {
+        return {};
+    }
+    if (const auto* node = contacts.getNodeInfo(node_id))
+    {
+        if (!node->display_name.empty())
+        {
+            return node->display_name;
+        }
+        if (node->short_name[0] != '\0')
+        {
+            return std::string(node->short_name);
+        }
+        if (node->long_name[0] != '\0')
+        {
+            return std::string(node->long_name);
+        }
+    }
+    const std::string stored = contacts.getContactName(node_id);
+    if (!stored.empty())
+    {
+        return stored;
+    }
+    return {};
+}
+
+[[nodiscard]] std::string displayNameOrId(
+    const ::chat::contacts::ContactService& contacts,
+    ::chat::NodeId node_id)
+{
+    const std::string name = contactDisplayName(contacts, node_id);
+    return name.empty() ? formatNodeLabel(node_id) : name;
+}
+
 [[nodiscard]] std::string formatChannel(::chat::ChannelId channel)
 {
     switch (channel)
@@ -102,6 +154,135 @@ namespace
     return buffer;
 }
 
+[[nodiscard]] double degToRad(double degrees)
+{
+    return degrees * 3.14159265358979323846 / 180.0;
+}
+
+[[nodiscard]] double distanceMeters(double lat_a,
+                                    double lon_a,
+                                    double lat_b,
+                                    double lon_b)
+{
+    constexpr double kEarthRadiusM = 6371000.0;
+    const double d_lat = degToRad(lat_b - lat_a);
+    const double d_lon = degToRad(lon_b - lon_a);
+    const double a =
+        std::sin(d_lat / 2.0) * std::sin(d_lat / 2.0) +
+        std::cos(degToRad(lat_a)) * std::cos(degToRad(lat_b)) *
+            std::sin(d_lon / 2.0) * std::sin(d_lon / 2.0);
+    const double c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
+    return kEarthRadiusM * c;
+}
+
+[[nodiscard]] std::string formatDistance(double meters)
+{
+    if (!std::isfinite(meters) || meters < 0.0)
+    {
+        return "distance ?";
+    }
+    if (meters < 1000.0)
+    {
+        char buffer[24] = {};
+        std::snprintf(buffer, sizeof(buffer), "%.0f m", meters);
+        return buffer;
+    }
+    char buffer[24] = {};
+    std::snprintf(buffer, sizeof(buffer), "%.1f km", meters / 1000.0);
+    return buffer;
+}
+
+[[nodiscard]] const char* contactProtocolLabel(
+    ::chat::contacts::NodeProtocolType protocol) noexcept
+{
+    switch (protocol)
+    {
+    case ::chat::contacts::NodeProtocolType::Meshtastic:
+        return "Meshtastic";
+    case ::chat::contacts::NodeProtocolType::MeshCore:
+        return "MeshCore";
+    case ::chat::contacts::NodeProtocolType::RNode:
+        return "RNode";
+    case ::chat::contacts::NodeProtocolType::LXMF:
+        return "LXMF";
+    case ::chat::contacts::NodeProtocolType::Unknown:
+    default:
+        return "Unknown";
+    }
+}
+
+[[nodiscard]] std::string formatCoordinate(std::int32_t value_e7)
+{
+    char buffer[24] = {};
+    std::snprintf(buffer,
+                  sizeof(buffer),
+                  "%.5f",
+                  static_cast<double>(value_e7) / 10000000.0);
+    return buffer;
+}
+
+[[nodiscard]] ChatNodeInfoItem makeNodeInfoItem(
+    const ::chat::contacts::NodeInfo& node)
+{
+    ChatNodeInfoItem item{};
+    item.node_id = node.node_id;
+    item.title = node.display_name.empty() ? formatNodeLabel(node.node_id)
+                                           : node.display_name;
+    item.subtitle = node.long_name[0] != '\0' ? std::string(node.long_name)
+                                              : formatNodeLabel(node.node_id);
+    item.via_mqtt = node.via_mqtt;
+    item.has_position = node.position.valid;
+    item.is_contact = node.is_contact;
+    item.is_ignored = node.is_ignored;
+    item.has_public_key = node.has_public_key;
+    item.key_verified = node.key_manually_verified;
+
+    item.status = std::string(contactProtocolLabel(node.protocol)) + " / " +
+                  (node.via_mqtt ? "MQTT" : "LoRa") + " / " +
+                  formatAge(node.last_seen);
+    if (node.is_ignored)
+    {
+        item.status += " / ignored";
+    }
+    if (node.has_public_key)
+    {
+        item.status += node.key_manually_verified ? " / key trusted"
+                                                  : " / key unverified";
+    }
+
+    const std::string hops = node.hops_away == 0xFF
+                                 ? "?"
+                                 : std::to_string(node.hops_away);
+    const std::string channel =
+        node.channel == 0xFF ? "?" : std::to_string(node.channel);
+    char signal[112] = {};
+    std::snprintf(signal,
+                  sizeof(signal),
+                  "RSSI %.1f dBm / SNR %.1f dB / hops %s / ch %s",
+                  static_cast<double>(node.rssi),
+                  static_cast<double>(node.snr),
+                  hops.c_str(),
+                  channel.c_str());
+    item.signal = signal;
+
+    if (node.position.valid)
+    {
+        item.position = formatCoordinate(node.position.latitude_i) + ", " +
+                        formatCoordinate(node.position.longitude_i);
+        if (node.position.has_altitude)
+        {
+            item.position += " / ";
+            item.position += std::to_string(node.position.altitude);
+            item.position += " m";
+        }
+    }
+    else
+    {
+        item.position = "No position packet stored.";
+    }
+    return item;
+}
+
 [[nodiscard]] std::string trimCopy(const std::string& text)
 {
     const auto is_space = [](unsigned char ch)
@@ -115,6 +296,32 @@ namespace
     return std::string(begin, end);
 }
 
+[[nodiscard]] bool containsInsensitive(const std::string& text,
+                                       const char* needle)
+{
+    if (needle == nullptr || needle[0] == '\0')
+    {
+        return false;
+    }
+    std::string lower_text = text;
+    std::string lower_needle = needle;
+    std::transform(lower_text.begin(),
+                   lower_text.end(),
+                   lower_text.begin(),
+                   [](unsigned char ch)
+                   {
+                       return static_cast<char>(std::tolower(ch));
+                   });
+    std::transform(lower_needle.begin(),
+                   lower_needle.end(),
+                   lower_needle.begin(),
+                   [](unsigned char ch)
+                   {
+                       return static_cast<char>(std::tolower(ch));
+                   });
+    return lower_text.find(lower_needle) != std::string::npos;
+}
+
 [[nodiscard]] bool sameConversation(const ::chat::ConversationId& left,
                                     const ::chat::ConversationId& right) noexcept
 {
@@ -122,18 +329,21 @@ namespace
 }
 
 [[nodiscard]] std::string titleForConversation(
-    const ::chat::ConversationId& id, const std::string& stored_name)
+    const ::chat::ConversationId& id,
+    const std::string& stored_name,
+    const ::chat::contacts::ContactService& contacts)
 {
     if (!stored_name.empty() && stored_name != "Broadcast") return stored_name;
     if (id.peer == 0)
     {
         return formatChannel(id.channel) + " broadcast";
     }
-    return "Direct " + formatNodeId(id.peer);
+    return displayNameOrId(contacts, id.peer);
 }
 
 [[nodiscard]] std::string metaForConversation(
-    const ::chat::ConversationMeta& conversation)
+    const ::chat::ConversationMeta& conversation,
+    const ::chat::contacts::ContactService& contacts)
 {
     std::string meta = protocolLabel(conversation.id.protocol);
     meta += " / ";
@@ -141,7 +351,11 @@ namespace
     if (conversation.id.peer != 0)
     {
         meta += " / ";
-        meta += formatNodeId(conversation.id.peer);
+        meta += formatNodeLabel(conversation.id.peer);
+        if (const auto* node = contacts.getNodeInfo(conversation.id.peer))
+        {
+            meta += node->via_mqtt ? " / MQTT" : " / LoRa";
+        }
     }
     meta += " / ";
     meta += formatAge(conversation.last_timestamp);
@@ -155,29 +369,242 @@ namespace
     return meta;
 }
 
+[[nodiscard]] const ::chat::contacts::NodeInfo* nodeForConversation(
+    const ::chat::ConversationId& id,
+    const ::chat::contacts::ContactService& contacts)
+{
+    if (id.peer == 0)
+    {
+        return nullptr;
+    }
+    return contacts.getNodeInfo(id.peer);
+}
+
+[[nodiscard]] std::string groupForConversation(
+    const ::chat::ConversationMeta& conversation,
+    const ::chat::contacts::NodeInfo* node)
+{
+    if (conversation.id.peer == 0)
+    {
+        return "Broadcast";
+    }
+    if (containsInsensitive(conversation.name, "team") ||
+        containsInsensitive(conversation.preview, "team"))
+    {
+        return "Team";
+    }
+    if (node != nullptr && node->is_contact)
+    {
+        return "Contacts";
+    }
+    return "Nearby";
+}
+
+[[nodiscard]] std::string factsForConversation(
+    const ::chat::ConversationMeta& conversation,
+    const ::chat::contacts::NodeInfo* node,
+    bool has_local_gps,
+    double local_lat,
+    double local_lon)
+{
+    if (conversation.id.peer == 0)
+    {
+        return "broadcast / channel-wide";
+    }
+    if (node == nullptr)
+    {
+        return "node facts pending";
+    }
+
+    std::string facts = "hops ";
+    facts += node->hops_away == 0xFF ? "?" : std::to_string(node->hops_away);
+    facts += " / ";
+    facts += formatAge(node->last_seen);
+    facts += " / ";
+    facts += node->via_mqtt ? "MQTT" : "LoRa";
+    if (has_local_gps && node->position.valid)
+    {
+        const double lat =
+            static_cast<double>(node->position.latitude_i) / 10000000.0;
+        const double lon =
+            static_cast<double>(node->position.longitude_i) / 10000000.0;
+        facts += " / ";
+        facts += formatDistance(distanceMeters(local_lat, local_lon, lat, lon));
+    }
+    return facts;
+}
+
 [[nodiscard]] ChatConversationItem makeConversationItem(
     const ::chat::ConversationMeta& conversation,
-    const ::chat::ConversationId& active)
+    const ::chat::ConversationId& active,
+    const ::chat::contacts::ContactService& contacts,
+    bool has_local_gps,
+    double local_lat,
+    double local_lon)
 {
     ChatConversationItem item{};
     item.id = conversation.id;
-    item.title = titleForConversation(conversation.id, conversation.name);
+    const auto* node = nodeForConversation(conversation.id, contacts);
+    item.group = groupForConversation(conversation, node);
+    item.title = titleForConversation(conversation.id, conversation.name,
+                                      contacts);
     item.preview = conversation.preview.empty()
                        ? "No messages in this thread yet."
                        : conversation.preview;
-    item.meta = metaForConversation(conversation);
+    item.meta = metaForConversation(conversation, contacts);
+    item.facts = factsForConversation(conversation,
+                                      node,
+                                      has_local_gps,
+                                      local_lat,
+                                      local_lon);
     item.unread = conversation.unread;
+    item.broadcast = conversation.id.peer == 0;
+    item.direct = conversation.id.peer != 0;
+    item.contact = node != nullptr && node->is_contact;
+    item.team = item.group == "Team";
+    if (node != nullptr)
+    {
+        item.last_seen = node->last_seen;
+        item.hops_away = node->hops_away;
+        if (has_local_gps && node->position.valid)
+        {
+            const double lat =
+                static_cast<double>(node->position.latitude_i) / 10000000.0;
+            const double lon =
+                static_cast<double>(node->position.longitude_i) / 10000000.0;
+            item.distance_m = distanceMeters(local_lat, local_lon, lat, lon);
+            item.has_distance = std::isfinite(item.distance_m);
+        }
+    }
     item.active = sameConversation(conversation.id, active);
     return item;
 }
 
+void sortConversations(std::vector<::chat::ConversationMeta>& conversations,
+                       ChatThreadSortMode sort_mode,
+                       const ::chat::contacts::ContactService& contacts,
+                       bool has_local_gps,
+                       double local_lat,
+                       double local_lon)
+{
+    auto distance_for = [&](const ::chat::ConversationMeta& conversation)
+    {
+        const auto* node = nodeForConversation(conversation.id, contacts);
+        if (!has_local_gps || node == nullptr || !node->position.valid)
+        {
+            return std::numeric_limits<double>::infinity();
+        }
+        const double lat =
+            static_cast<double>(node->position.latitude_i) / 10000000.0;
+        const double lon =
+            static_cast<double>(node->position.longitude_i) / 10000000.0;
+        return distanceMeters(local_lat, local_lon, lat, lon);
+    };
+    auto hops_for = [&](const ::chat::ConversationMeta& conversation)
+    {
+        const auto* node = nodeForConversation(conversation.id, contacts);
+        if (node == nullptr || node->hops_away == 0xFF)
+        {
+            return 0xFF;
+        }
+        return static_cast<int>(node->hops_away);
+    };
+    auto last_seen_for = [&](const ::chat::ConversationMeta& conversation)
+    {
+        const auto* node = nodeForConversation(conversation.id, contacts);
+        return node == nullptr ? conversation.last_timestamp : node->last_seen;
+    };
+
+    std::stable_sort(conversations.begin(),
+                     conversations.end(),
+                     [&](const auto& left, const auto& right)
+                     {
+                         switch (sort_mode)
+                         {
+                         case ChatThreadSortMode::Hops:
+                             if (hops_for(left) != hops_for(right))
+                             {
+                                 return hops_for(left) < hops_for(right);
+                             }
+                             break;
+                         case ChatThreadSortMode::Distance:
+                             if (distance_for(left) != distance_for(right))
+                             {
+                                 return distance_for(left) < distance_for(right);
+                             }
+                             break;
+                         case ChatThreadSortMode::LastSeen:
+                             if (last_seen_for(left) != last_seen_for(right))
+                             {
+                                 return last_seen_for(left) > last_seen_for(right);
+                             }
+                             break;
+                         case ChatThreadSortMode::Recent:
+                         default:
+                             break;
+                         }
+                         return left.last_timestamp > right.last_timestamp;
+                     });
+}
+
+[[nodiscard]] std::string unreadSenderSummary(
+    ::chat::ChatService& chat_service,
+    const ::chat::ConversationMeta& conversation,
+    const ::chat::contacts::ContactService& contacts)
+{
+    if (conversation.unread <= 0)
+    {
+        return {};
+    }
+
+    auto messages = chat_service.getRecentMessages(conversation.id, 64);
+    std::vector<::chat::NodeId> senders{};
+    senders.reserve(static_cast<std::size_t>(conversation.unread));
+    int remaining = conversation.unread;
+    for (auto it = messages.rbegin(); it != messages.rend() && remaining > 0;
+         ++it)
+    {
+        if (it->status != ::chat::MessageStatus::Incoming)
+        {
+            continue;
+        }
+        --remaining;
+        if (it->from == 0)
+        {
+            continue;
+        }
+        if (std::find(senders.begin(), senders.end(), it->from) ==
+            senders.end())
+        {
+            senders.push_back(it->from);
+        }
+    }
+
+    if (senders.empty())
+    {
+        return "Unread";
+    }
+
+    std::string out = "Unread from " +
+                      displayNameOrId(contacts, senders.front());
+    if (senders.size() > 1U)
+    {
+        out += " +";
+        out += std::to_string(senders.size() - 1U);
+    }
+    return out;
+}
+
 [[nodiscard]] ChatMessageItem makeMessageItem(
-    const ::chat::ChatMessage& message, ::chat::NodeId self_node)
+    const ::chat::ChatMessage& message,
+    ::chat::NodeId self_node,
+    const ::chat::contacts::ContactService& contacts)
 {
     ChatMessageItem item{};
     item.outgoing = message.from == 0 || message.from == self_node;
     item.failed = message.status == ::chat::MessageStatus::Failed;
-    item.sender = item.outgoing ? "You" : formatNodeId(message.from);
+    item.sender =
+        item.outgoing ? "You" : displayNameOrId(contacts, message.from);
     item.text = message.text.empty() ? "(empty)" : message.text;
     item.meta = statusLabel(message.status);
     item.meta += " / ";
@@ -188,6 +615,11 @@ namespace
         std::snprintf(buffer, sizeof(buffer), " / #%08lX",
                       static_cast<unsigned long>(message.msg_id));
         item.meta += buffer;
+    }
+    if (!item.outgoing && message.from != 0)
+    {
+        item.meta += " / ";
+        item.meta += formatNodeLabel(message.from);
     }
     return item;
 }
@@ -213,7 +645,9 @@ UConsoleChatWorkspaceModel::UConsoleChatWorkspaceModel(
 }
 
 ChatWorkspaceSnapshot UConsoleChatWorkspaceModel::snapshot(
-    std::size_t conversation_limit, std::size_t message_limit)
+    std::size_t conversation_limit,
+    std::size_t message_limit,
+    ChatThreadSortMode sort_mode)
 {
     ensureActiveConversation();
 
@@ -222,9 +656,30 @@ ChatWorkspaceSnapshot UConsoleChatWorkspaceModel::snapshot(
     out.action_status = action_status_;
     out.total_unread = services_.chat().getTotalUnread();
     out.can_send = canSendActiveConversation();
+    out.can_contact_active_peer = active_conversation_.peer != 0;
+    out.can_request_nodeinfo =
+        services_.meshAdapter() != nullptr && active_conversation_.peer != 0;
+    const auto* adapter = services_.meshAdapter();
+    const ::chat::MeshCapabilities capabilities =
+        adapter == nullptr ? ::chat::MeshCapabilities{}
+                           : adapter->getCapabilities();
+    const bool appdata_ready = adapter != nullptr && adapter->isReady() &&
+                               (active_conversation_.peer == 0
+                                    ? capabilities.supports_broadcast_appdata
+                                    : capabilities.supports_unicast_appdata);
+    auto& contacts = services_.contacts();
+    const auto gps = ::platform::ui::gps::get_data();
+    const bool has_local_gps = gps.valid;
+    const double local_lat = gps.lat;
+    const double local_lon = gps.lng;
+    out.can_send_position = appdata_ready && has_local_gps;
+    out.can_send_poi = appdata_ready && has_local_gps &&
+                       active_conversation_.protocol ==
+                           ::chat::MeshProtocol::Meshtastic;
 
     std::size_t total = 0;
-    auto conversations = loadConversationPage(conversation_limit, &total);
+    auto conversations =
+        loadConversationPage(conversation_limit, &total, sort_mode);
     out.total_conversations = total;
 
     if (!conversations.empty())
@@ -239,7 +694,8 @@ ChatWorkspaceSnapshot UConsoleChatWorkspaceModel::snapshot(
         if (!active_visible)
         {
             auto active_meta = makeSyntheticPrimary(active_conversation_);
-            active_meta.name = titleForConversation(active_conversation_, {});
+            active_meta.name =
+                titleForConversation(active_conversation_, {}, contacts);
             conversations.insert(conversations.begin(), std::move(active_meta));
         }
     }
@@ -249,8 +705,15 @@ ChatWorkspaceSnapshot UConsoleChatWorkspaceModel::snapshot(
     displayed_conversations_.reserve(conversations.size());
     for (const auto& conversation : conversations)
     {
-        out.conversations.push_back(
-            makeConversationItem(conversation, active_conversation_));
+        ChatConversationItem item = makeConversationItem(conversation,
+                                                        active_conversation_,
+                                                        contacts,
+                                                        has_local_gps,
+                                                        local_lat,
+                                                        local_lon);
+        item.unread_source =
+            unreadSenderSummary(services_.chat(), conversation, contacts);
+        out.conversations.push_back(std::move(item));
         displayed_conversations_.push_back(conversation.id);
     }
 
@@ -264,12 +727,13 @@ ChatWorkspaceSnapshot UConsoleChatWorkspaceModel::snapshot(
     if (active_it != conversations.end())
     {
         out.active_title =
-            titleForConversation(active_it->id, active_it->name);
-        out.active_meta = metaForConversation(*active_it);
+            titleForConversation(active_it->id, active_it->name, contacts);
+        out.active_meta = metaForConversation(*active_it, contacts);
     }
     else
     {
-        out.active_title = titleForConversation(active_conversation_, {});
+        out.active_title = titleForConversation(active_conversation_, {},
+                                               contacts);
         out.active_meta = protocolLabel(active_conversation_.protocol);
     }
 
@@ -279,18 +743,54 @@ ChatWorkspaceSnapshot UConsoleChatWorkspaceModel::snapshot(
     const ::chat::NodeId self_node = services_.selfNodeId();
     for (const auto& message : messages)
     {
-        out.messages.push_back(makeMessageItem(message, self_node));
+        out.messages.push_back(makeMessageItem(message, self_node, contacts));
+        const ::chat::NodeId sender =
+            message.from == 0 || message.from == self_node ? 0 : message.from;
+        if (sender == 0)
+        {
+            continue;
+        }
+        const bool already_listed =
+            std::any_of(out.nodes.begin(),
+                        out.nodes.end(),
+                        [sender](const auto& node)
+                        {
+                            return node.node_id == sender;
+                        });
+        if (!already_listed && out.nodes.size() < 5U)
+        {
+            if (const auto* node = contacts.getNodeInfo(sender))
+            {
+                out.nodes.push_back(makeNodeInfoItem(*node));
+            }
+        }
+    }
+
+    if (active_conversation_.peer != 0 &&
+        std::none_of(out.nodes.begin(),
+                     out.nodes.end(),
+                     [this](const auto& node)
+                     {
+                         return node.node_id == active_conversation_.peer;
+                     }))
+    {
+        if (const auto* node = contacts.getNodeInfo(active_conversation_.peer))
+        {
+            out.nodes.insert(out.nodes.begin(), makeNodeInfoItem(*node));
+        }
     }
 
     return out;
 }
 
 bool UConsoleChatWorkspaceModel::selectConversationAt(
-    std::size_t index, std::size_t conversation_limit)
+    std::size_t index,
+    std::size_t conversation_limit,
+    ChatThreadSortMode sort_mode)
 {
     if (displayed_conversations_.empty())
     {
-        static_cast<void>(snapshot(conversation_limit, 0));
+        static_cast<void>(snapshot(conversation_limit, 0, sort_mode));
     }
     if (index < displayed_conversations_.size())
     {
@@ -298,7 +798,9 @@ bool UConsoleChatWorkspaceModel::selectConversationAt(
     }
 
     std::size_t total = 0;
-    auto conversations = loadConversationPage(conversation_limit, &total);
+    auto conversations = loadConversationPage(conversation_limit,
+                                             &total,
+                                             sort_mode);
     if (conversations.empty() && index == 0)
     {
         return selectPrimaryConversation();
@@ -353,6 +855,286 @@ bool UConsoleChatWorkspaceModel::sendText(const std::string& text)
     return true;
 }
 
+bool UConsoleChatWorkspaceModel::sendCurrentPosition()
+{
+    ensureActiveConversation();
+    auto* adapter = services_.meshAdapter();
+    if (adapter == nullptr || !adapter->isReady())
+    {
+        action_status_ = "No Linux mesh transport is connected.";
+        return false;
+    }
+    const auto gps = ::platform::ui::gps::get_data();
+    if (!gps.valid)
+    {
+        action_status_ = "No GPS fix to send.";
+        return false;
+    }
+
+    meshtastic_Position pos = meshtastic_Position_init_zero;
+    pos.has_latitude_i = true;
+    pos.latitude_i = static_cast<std::int32_t>(std::lround(gps.lat * 10000000.0));
+    pos.has_longitude_i = true;
+    pos.longitude_i = static_cast<std::int32_t>(std::lround(gps.lng * 10000000.0));
+    pos.timestamp = sys::epoch_seconds_now();
+    pos.location_source = meshtastic_Position_LocSource_LOC_INTERNAL;
+    if (gps.has_alt)
+    {
+        pos.has_altitude = true;
+        pos.altitude = static_cast<std::int32_t>(std::lround(gps.alt_m));
+        pos.altitude_source = meshtastic_Position_AltSource_ALT_INTERNAL;
+    }
+
+    std::uint8_t payload[meshtastic_Position_size] = {};
+    pb_ostream_t stream = pb_ostream_from_buffer(payload, sizeof(payload));
+    if (!pb_encode(&stream, meshtastic_Position_fields, &pos))
+    {
+        action_status_ = "Position encoding failed.";
+        return false;
+    }
+    if (!adapter->sendAppData(active_conversation_.channel,
+                              meshtastic_PortNum_POSITION_APP,
+                              payload,
+                              stream.bytes_written,
+                              active_conversation_.peer,
+                              false))
+    {
+        action_status_ = "Position failed to queue.";
+        return false;
+    }
+    action_status_ = "Position queued.";
+    return true;
+}
+
+bool UConsoleChatWorkspaceModel::sendCurrentPoi()
+{
+    ensureActiveConversation();
+    auto* adapter = services_.meshAdapter();
+    if (adapter == nullptr || !adapter->isReady())
+    {
+        action_status_ = "No Linux mesh transport is connected.";
+        return false;
+    }
+    if (active_conversation_.protocol != ::chat::MeshProtocol::Meshtastic)
+    {
+        action_status_ = "POI sharing is currently Meshtastic only.";
+        return false;
+    }
+    const auto gps = ::platform::ui::gps::get_data();
+    if (!gps.valid)
+    {
+        action_status_ = "No GPS fix to turn into a POI.";
+        return false;
+    }
+
+    meshtastic_Waypoint waypoint = meshtastic_Waypoint_init_zero;
+    waypoint.id = sys::epoch_seconds_now();
+    waypoint.has_latitude_i = true;
+    waypoint.latitude_i = static_cast<std::int32_t>(std::lround(gps.lat * 10000000.0));
+    waypoint.has_longitude_i = true;
+    waypoint.longitude_i = static_cast<std::int32_t>(std::lround(gps.lng * 10000000.0));
+    waypoint.expire = waypoint.id + 86400U;
+    std::strncpy(waypoint.name, "Trail Mate POI", sizeof(waypoint.name) - 1);
+    std::strncpy(waypoint.description,
+                 "Shared from uConsole current GPS fix",
+                 sizeof(waypoint.description) - 1);
+
+    std::uint8_t payload[meshtastic_Waypoint_size] = {};
+    pb_ostream_t stream = pb_ostream_from_buffer(payload, sizeof(payload));
+    if (!pb_encode(&stream, meshtastic_Waypoint_fields, &waypoint))
+    {
+        action_status_ = "POI encoding failed.";
+        return false;
+    }
+    if (!adapter->sendAppData(active_conversation_.channel,
+                              meshtastic_PortNum_WAYPOINT_APP,
+                              payload,
+                              stream.bytes_written,
+                              active_conversation_.peer,
+                              false))
+    {
+        action_status_ = "POI failed to queue.";
+        return false;
+    }
+    action_status_ = "POI queued.";
+    return true;
+}
+
+bool UConsoleChatWorkspaceModel::requestActiveNodeInfo()
+{
+    ensureActiveConversation();
+    auto* adapter = services_.meshAdapter();
+    if (adapter == nullptr || active_conversation_.peer == 0)
+    {
+        action_status_ = "Select a direct node first.";
+        return false;
+    }
+    if (!adapter->requestNodeInfo(active_conversation_.peer, true))
+    {
+        action_status_ = "NodeInfo request is not supported by this transport.";
+        return false;
+    }
+    action_status_ = "NodeInfo request queued.";
+    return true;
+}
+
+bool UConsoleChatWorkspaceModel::addActivePeerAsContact()
+{
+    ensureActiveConversation();
+    if (active_conversation_.peer == 0)
+    {
+        action_status_ = "Broadcast cannot be added as a contact.";
+        return false;
+    }
+    const std::string name =
+        displayNameOrId(services_.contacts(), active_conversation_.peer);
+    if (!services_.contacts().addContact(active_conversation_.peer,
+                                         name.c_str()))
+    {
+        action_status_ = "Contact could not be saved.";
+        return false;
+    }
+    action_status_ = "Contact saved.";
+    return true;
+}
+
+bool UConsoleChatWorkspaceModel::selectNodeConversation(::chat::NodeId node_id)
+{
+    ensureActiveConversation();
+    if (node_id == 0)
+    {
+        action_status_ = "Node is unavailable.";
+        return false;
+    }
+    const ::chat::ChannelId channel = active_conversation_.channel;
+    return selectConversation(::chat::ConversationId(channel,
+                                                    node_id,
+                                                    services_.meshProtocol()));
+}
+
+bool UConsoleChatWorkspaceModel::addNodeAsContact(::chat::NodeId node_id)
+{
+    if (node_id == 0)
+    {
+        action_status_ = "Node is unavailable.";
+        return false;
+    }
+    const std::string name = displayNameOrId(services_.contacts(), node_id);
+    if (!services_.contacts().addContact(node_id, name.c_str()))
+    {
+        action_status_ = "Contact could not be saved.";
+        return false;
+    }
+    action_status_ = "Contact saved.";
+    return true;
+}
+
+bool UConsoleChatWorkspaceModel::requestNodeInfo(::chat::NodeId node_id)
+{
+    if (node_id == 0)
+    {
+        action_status_ = "Node is unavailable.";
+        return false;
+    }
+    auto* adapter = services_.meshAdapter();
+    if (adapter == nullptr)
+    {
+        action_status_ = "No Linux mesh transport is connected.";
+        return false;
+    }
+    if (!adapter->requestNodeInfo(node_id, true))
+    {
+        action_status_ = "NodeInfo request is not supported by this transport.";
+        return false;
+    }
+    action_status_ = "NodeInfo request queued.";
+    return true;
+}
+
+bool UConsoleChatWorkspaceModel::exchangeUserInfo(::chat::NodeId node_id)
+{
+    if (node_id == 0)
+    {
+        action_status_ = "Node is unavailable.";
+        return false;
+    }
+    auto* adapter = services_.meshAdapter();
+    if (adapter == nullptr)
+    {
+        action_status_ = "No Linux mesh transport is connected.";
+        return false;
+    }
+    if (!adapter->requestNodeInfo(node_id, true))
+    {
+        action_status_ = "UserInfo exchange is not supported by this transport.";
+        return false;
+    }
+    action_status_ = "UserInfo exchange queued.";
+    return true;
+}
+
+bool UConsoleChatWorkspaceModel::toggleNodeIgnored(::chat::NodeId node_id)
+{
+    if (node_id == 0)
+    {
+        action_status_ = "Node is unavailable.";
+        return false;
+    }
+    const auto* node = services_.contacts().getNodeInfo(node_id);
+    if (node == nullptr)
+    {
+        action_status_ = "Node record is not stored yet.";
+        return false;
+    }
+    const bool next = !node->is_ignored;
+    if (!services_.contacts().setNodeIgnored(node_id, next))
+    {
+        action_status_ = "Ignore state could not be saved.";
+        return false;
+    }
+    action_status_ = next ? "Node ignored." : "Node unignored.";
+    return true;
+}
+
+bool UConsoleChatWorkspaceModel::verifyNodeKey(::chat::NodeId node_id)
+{
+    if (node_id == 0)
+    {
+        action_status_ = "Node is unavailable.";
+        return false;
+    }
+
+    auto* adapter = services_.meshAdapter();
+    const ::chat::MeshCapabilities capabilities =
+        adapter == nullptr ? ::chat::MeshCapabilities{}
+                           : adapter->getCapabilities();
+    if (adapter != nullptr && capabilities.supports_pki &&
+        adapter->startKeyVerification(node_id))
+    {
+        action_status_ = "Key verification started.";
+        return true;
+    }
+
+    const auto* node = services_.contacts().getNodeInfo(node_id);
+    if (node == nullptr || !node->has_public_key)
+    {
+        action_status_ = "No public key is stored for this node.";
+        return false;
+    }
+    if (node->key_manually_verified)
+    {
+        action_status_ = "Key is already trusted.";
+        return true;
+    }
+    if (!services_.contacts().setNodeKeyManuallyVerified(node_id, true))
+    {
+        action_status_ = "Key trust state could not be saved.";
+        return false;
+    }
+    action_status_ = "Key marked trusted.";
+    return true;
+}
+
 void UConsoleChatWorkspaceModel::ensureActiveConversation()
 {
     if (active_initialized_) return;
@@ -380,9 +1162,25 @@ bool UConsoleChatWorkspaceModel::canSendActiveConversation() const
 
 std::vector<::chat::ConversationMeta>
 UConsoleChatWorkspaceModel::loadConversationPage(std::size_t limit,
-                                                 std::size_t* total) const
+                                                 std::size_t* total,
+                                                 ChatThreadSortMode sort_mode) const
 {
-    return services_.chat().getConversations(0, limit, total);
+    const std::size_t fetch_limit = std::max<std::size_t>(limit, 64U);
+    auto conversations = services_.chat().getConversations(0,
+                                                           fetch_limit,
+                                                           total);
+    const auto gps = ::platform::ui::gps::get_data();
+    sortConversations(conversations,
+                      sort_mode,
+                      services_.contacts(),
+                      gps.valid,
+                      gps.lat,
+                      gps.lng);
+    if (conversations.size() > limit)
+    {
+        conversations.resize(limit);
+    }
+    return conversations;
 }
 
 } // namespace trailmate::uconsole

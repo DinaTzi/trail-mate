@@ -17,9 +17,9 @@
 #include "chat/domain/chat_model.h"
 #include "chat/infra/contact_store_core.h"
 #include "chat/infra/node_store_core.h"
-#include "chat/infra/store/ram_store.h"
 #include "chat/linux_noop_mesh_adapter.h"
 #include "chat/linux_raw_lora_mesh_adapter.h"
+#include "chat/linux_sqlite_chat_store.h"
 #include "chat/ports/i_contact_blob_store.h"
 #include "chat/ports/i_node_blob_store.h"
 #include "chat/usecase/chat_service.h"
@@ -1455,10 +1455,6 @@ struct LinuxAppServices::Implementation
         noop_mesh_adapter.setSelfNodeId(self_node_id);
         raw_lora_mesh_adapter.setSelfNodeId(self_node_id);
         loopback_mesh_adapter.setSelfNodeId(self_node_id);
-        if (raw_lora_enabled)
-        {
-            (void)raw_lora_mesh_adapter.begin();
-        }
         node_store.setProtectedNodeChecker(
             [self_node_id](uint32_t node_id)
             {
@@ -1598,7 +1594,7 @@ struct LinuxAppServices::Implementation
     ::chat::contacts::ContactStoreCore contact_store;
     ::chat::contacts::ContactService contact_service;
     ::chat::ChatModel chat_model;
-    ::chat::RamStore chat_store;
+    LinuxSqliteChatStore chat_store;
     bool raw_lora_enabled = false;
     ::trailmate::cardputer_zero::linux_ui::LinuxNoopMeshAdapter noop_mesh_adapter;
     LinuxRawLoraMeshAdapter raw_lora_mesh_adapter;
@@ -1726,7 +1722,15 @@ void LinuxAppServices::saveConfig()
 void LinuxAppServices::applyMeshConfig()
 {
     ensureServicesReady();
-    impl().mesh_adapter.applyConfig(mesh_config_for_protocol(config_));
+    if (impl().raw_lora_enabled && !impl().demo_world_enabled)
+    {
+        impl().raw_lora_mesh_adapter.applyProtocolConfig(
+            config_.mesh_protocol, mesh_config_for_protocol(config_));
+    }
+    else
+    {
+        impl().mesh_adapter.applyConfig(mesh_config_for_protocol(config_));
+    }
     impl().chat_service.setActiveProtocol(config_.mesh_protocol);
 }
 
