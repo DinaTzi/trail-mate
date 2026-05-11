@@ -159,6 +159,15 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_uconsole_chat_dedup_smoke
              COMMAND trailmate_uconsole_chat_dedup_smoke)
 
+    add_executable(trailmate_uconsole_chat_workspace_smoke
+        tests/uconsole_chat_workspace_smoke.cpp
+    )
+    target_link_libraries(trailmate_uconsole_chat_workspace_smoke
+        PRIVATE trailmate_uconsole_shell
+    )
+    add_test(NAME trailmate_uconsole_chat_workspace_smoke
+             COMMAND trailmate_uconsole_chat_workspace_smoke)
+
     add_executable(trailmate_uconsole_meshtastic_node_payload_smoke
         tests/uconsole_meshtastic_node_payload_smoke.cpp
     )

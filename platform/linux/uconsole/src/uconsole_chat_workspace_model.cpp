@@ -175,6 +175,25 @@ namespace
     return kEarthRadiusM * c;
 }
 
+[[nodiscard]] double bearingDegrees(double from_lat,
+                                    double from_lon,
+                                    double to_lat,
+                                    double to_lon)
+{
+    const double lat1 = degToRad(from_lat);
+    const double lat2 = degToRad(to_lat);
+    const double d_lon = degToRad(to_lon - from_lon);
+    const double y = std::sin(d_lon) * std::cos(lat2);
+    const double x = std::cos(lat1) * std::sin(lat2) -
+                     std::sin(lat1) * std::cos(lat2) * std::cos(d_lon);
+    double bearing = std::atan2(y, x) * 180.0 / 3.14159265358979323846;
+    if (bearing < 0.0)
+    {
+        bearing += 360.0;
+    }
+    return bearing;
+}
+
 [[nodiscard]] std::string formatDistance(double meters)
 {
     if (!std::isfinite(meters) || meters < 0.0)
@@ -211,6 +230,33 @@ namespace
     }
 }
 
+[[nodiscard]] ::chat::MeshProtocol meshProtocolForNode(
+    ::chat::contacts::NodeProtocolType protocol,
+    ::chat::MeshProtocol fallback) noexcept
+{
+    switch (protocol)
+    {
+    case ::chat::contacts::NodeProtocolType::Meshtastic:
+        return ::chat::MeshProtocol::Meshtastic;
+    case ::chat::contacts::NodeProtocolType::MeshCore:
+        return ::chat::MeshProtocol::MeshCore;
+    case ::chat::contacts::NodeProtocolType::RNode:
+        return ::chat::MeshProtocol::RNode;
+    case ::chat::contacts::NodeProtocolType::LXMF:
+        return ::chat::MeshProtocol::LXMF;
+    case ::chat::contacts::NodeProtocolType::Unknown:
+    default:
+        return fallback;
+    }
+}
+
+[[nodiscard]] ::chat::ChannelId channelForNode(
+    const ::chat::contacts::NodeInfo& node) noexcept
+{
+    return node.channel == 1U ? ::chat::ChannelId::SECONDARY
+                              : ::chat::ChannelId::PRIMARY;
+}
+
 [[nodiscard]] std::string formatCoordinate(std::int32_t value_e7)
 {
     char buffer[24] = {};
@@ -219,6 +265,129 @@ namespace
                   "%.5f",
                   static_cast<double>(value_e7) / 10000000.0);
     return buffer;
+}
+
+[[nodiscard]] const char* roleLabel(::chat::contacts::NodeRoleType role) noexcept
+{
+    using Role = ::chat::contacts::NodeRoleType;
+    switch (role)
+    {
+    case Role::Client:
+        return "Client";
+    case Role::ClientMute:
+        return "Client mute";
+    case Role::Router:
+        return "Router";
+    case Role::RouterClient:
+        return "Router client";
+    case Role::Repeater:
+        return "Repeater";
+    case Role::Tracker:
+        return "Tracker";
+    case Role::Sensor:
+        return "Sensor";
+    case Role::Tak:
+        return "TAK";
+    case Role::ClientHidden:
+        return "Client hidden";
+    case Role::LostAndFound:
+        return "Lost and found";
+    case Role::TakTracker:
+        return "TAK tracker";
+    case Role::RouterLate:
+        return "Router late";
+    case Role::ClientBase:
+        return "Client base";
+    case Role::Unknown:
+    default:
+        return "Unknown";
+    }
+}
+
+[[nodiscard]] std::string formatNodeInfoId(std::uint32_t node_id)
+{
+    char buffer[16] = {};
+    if (node_id <= 0xFFFFFFUL)
+    {
+        std::snprintf(buffer,
+                      sizeof(buffer),
+                      "!%06lX",
+                      static_cast<unsigned long>(node_id));
+    }
+    else
+    {
+        std::snprintf(buffer,
+                      sizeof(buffer),
+                      "!%08lX",
+                      static_cast<unsigned long>(node_id));
+    }
+    return buffer;
+}
+
+[[nodiscard]] std::string formatMacAddress(const std::uint8_t mac[6])
+{
+    char buffer[24] = {};
+    std::snprintf(buffer,
+                  sizeof(buffer),
+                  "%02X:%02X:%02X:%02X:%02X:%02X",
+                  mac[0],
+                  mac[1],
+                  mac[2],
+                  mac[3],
+                  mac[4],
+                  mac[5]);
+    return buffer;
+}
+
+[[nodiscard]] std::string formatFloatValue(double value,
+                                           const char* suffix,
+                                           int precision)
+{
+    if (!std::isfinite(value))
+    {
+        return "?";
+    }
+    char format[16] = {};
+    std::snprintf(format, sizeof(format), "%%.%df%%s", precision);
+    char buffer[40] = {};
+    std::snprintf(buffer, sizeof(buffer), format, value, suffix ? suffix : "");
+    return buffer;
+}
+
+[[nodiscard]] std::string formatDop(std::uint32_t value)
+{
+    if (value == 0)
+    {
+        return "?";
+    }
+    char buffer[24] = {};
+    std::snprintf(buffer,
+                  sizeof(buffer),
+                  "%.2f",
+                  static_cast<double>(value) / 100.0);
+    return buffer;
+}
+
+void appendDetailRow(ChatNodeDetailSection& section,
+                     std::string label,
+                     std::string value,
+                     bool attention = false)
+{
+    if (value.empty())
+    {
+        return;
+    }
+    section.rows.push_back(
+        ChatNodeDetailRow{std::move(label), std::move(value), attention});
+}
+
+void appendDetailSection(ChatNodeDetailSnapshot& out,
+                         ChatNodeDetailSection section)
+{
+    if (!section.rows.empty())
+    {
+        out.sections.push_back(std::move(section));
+    }
 }
 
 [[nodiscard]] ChatNodeInfoItem makeNodeInfoItem(
@@ -448,9 +617,14 @@ namespace
     item.group = groupForConversation(conversation, node);
     item.title = titleForConversation(conversation.id, conversation.name,
                                       contacts);
-    item.preview = conversation.preview.empty()
-                       ? "No messages in this thread yet."
-                       : conversation.preview;
+    if (!conversation.preview.empty())
+    {
+        item.preview = conversation.preview;
+    }
+    else if (conversation.id.peer == 0)
+    {
+        item.preview = "No messages in this thread yet.";
+    }
     item.meta = metaForConversation(conversation, contacts);
     item.facts = factsForConversation(conversation,
                                       node,
@@ -636,6 +810,44 @@ void sortConversations(std::vector<::chat::ConversationMeta>& conversations,
     return conversation;
 }
 
+[[nodiscard]] bool hasDirectConversationForNode(
+    const std::vector<::chat::ConversationMeta>& conversations,
+    ::chat::NodeId node_id)
+{
+    return std::any_of(conversations.begin(),
+                       conversations.end(),
+                       [node_id](const auto& conversation)
+                       {
+                           return conversation.id.peer == node_id;
+                       });
+}
+
+void appendNodeConversationIfMissing(
+    std::vector<::chat::ConversationMeta>& conversations,
+    const ::chat::contacts::NodeInfo& node,
+    ::chat::MeshProtocol fallback_protocol)
+{
+    if (node.node_id == 0 ||
+        hasDirectConversationForNode(conversations, node.node_id))
+    {
+        return;
+    }
+
+    ::chat::ConversationMeta conversation{};
+    conversation.id =
+        ::chat::ConversationId(channelForNode(node),
+                               node.node_id,
+                               meshProtocolForNode(node.protocol,
+                                                   fallback_protocol));
+    conversation.name = node.display_name.empty()
+                            ? formatNodeLabel(node.node_id)
+                            : node.display_name;
+    conversation.preview.clear();
+    conversation.last_timestamp = node.last_seen;
+    conversation.unread = 0;
+    conversations.push_back(std::move(conversation));
+}
+
 } // namespace
 
 UConsoleChatWorkspaceModel::UConsoleChatWorkspaceModel(
@@ -779,6 +991,237 @@ ChatWorkspaceSnapshot UConsoleChatWorkspaceModel::snapshot(
             out.nodes.insert(out.nodes.begin(), makeNodeInfoItem(*node));
         }
     }
+
+    return out;
+}
+
+ChatNodeDetailSnapshot UConsoleChatWorkspaceModel::nodeDetails(
+    ::chat::NodeId node_id) const
+{
+    ChatNodeDetailSnapshot out{};
+    out.node_id = node_id;
+    out.title = node_id == 0 ? "Node unavailable" : formatNodeLabel(node_id);
+
+    if (node_id == 0)
+    {
+        out.subtitle = "No node id was attached to this action.";
+        return out;
+    }
+
+    const auto* node = services_.contacts().getNodeInfo(node_id);
+    if (node == nullptr)
+    {
+        out.subtitle = "No NodeInfo record is stored locally yet.";
+        return out;
+    }
+
+    out.found = true;
+    out.title = node->display_name.empty() ? formatNodeLabel(node->node_id)
+                                           : node->display_name;
+    out.subtitle = std::string(contactProtocolLabel(node->protocol)) + " / " +
+                   (node->via_mqtt ? "MQTT" : "LoRa") + " / " +
+                   formatAge(node->last_seen);
+    if (node->position.valid)
+    {
+        out.has_position = true;
+        out.lat = static_cast<double>(node->position.latitude_i) / 10000000.0;
+        out.lon = static_cast<double>(node->position.longitude_i) / 10000000.0;
+
+        if (const auto* self_info =
+                services_.contacts().getNodeInfo(services_.selfNodeId());
+            self_info != nullptr && self_info->position.valid)
+        {
+            out.has_self_position = true;
+            out.self_lat =
+                static_cast<double>(self_info->position.latitude_i) /
+                10000000.0;
+            out.self_lon =
+                static_cast<double>(self_info->position.longitude_i) /
+                10000000.0;
+        }
+        else
+        {
+            const auto gps = ::platform::ui::gps::get_data();
+            if (gps.valid)
+            {
+                out.has_self_position = true;
+                out.self_lat = gps.lat;
+                out.self_lon = gps.lng;
+            }
+        }
+        if (out.has_self_position)
+        {
+            out.distance_m =
+                distanceMeters(out.self_lat, out.self_lon, out.lat, out.lon);
+            out.bearing_deg =
+                bearingDegrees(out.self_lat, out.self_lon, out.lat, out.lon);
+        }
+    }
+
+    ChatNodeDetailSection identity{"Identity", {}};
+    appendDetailRow(identity, "Node ID", formatNodeInfoId(node->node_id));
+    if (node->short_name[0] != '\0')
+    {
+        appendDetailRow(identity, "Short name", node->short_name);
+    }
+    if (node->long_name[0] != '\0')
+    {
+        appendDetailRow(identity, "Long name", node->long_name);
+    }
+    appendDetailRow(identity, "Protocol", contactProtocolLabel(node->protocol));
+    appendDetailRow(identity, "Role", roleLabel(node->role));
+    if (node->hw_model != 0)
+    {
+        appendDetailRow(identity,
+                        "HW model",
+                        "Meshtastic #" + std::to_string(node->hw_model));
+    }
+    appendDetailRow(identity,
+                    "Channel",
+                    node->channel == 0xFF
+                        ? "Unknown"
+                        : std::to_string(static_cast<unsigned>(node->channel)));
+    appendDetailRow(identity, "Transport", node->via_mqtt ? "MQTT" : "LoRa");
+    appendDetailRow(identity, "Contact", node->is_contact ? "Yes" : "No");
+    appendDetailRow(identity,
+                    "Ignored",
+                    node->is_ignored ? "Yes" : "No",
+                    node->is_ignored);
+    appendDetailSection(out, std::move(identity));
+
+    ChatNodeDetailSection radio{"Radio", {}};
+    appendDetailRow(radio,
+                    "RSSI",
+                    std::isfinite(node->rssi)
+                        ? formatFloatValue(node->rssi, " dBm", 0)
+                        : "Unknown");
+    appendDetailRow(radio,
+                    "SNR",
+                    std::isfinite(node->snr)
+                        ? formatFloatValue(node->snr, " dB", 1)
+                        : "Unknown");
+    appendDetailRow(radio,
+                    "Hops",
+                    node->hops_away == 0xFF
+                        ? "Unknown"
+                        : std::to_string(static_cast<unsigned>(
+                              node->hops_away)));
+    if (node->next_hop != 0)
+    {
+        appendDetailRow(radio,
+                        "Next hop",
+                        std::to_string(static_cast<unsigned>(node->next_hop)));
+    }
+    appendDetailRow(radio, "Last seen", formatAge(node->last_seen));
+    appendDetailSection(out, std::move(radio));
+
+    ChatNodeDetailSection position{"Position", {}};
+    if (node->position.valid)
+    {
+        appendDetailRow(position,
+                        "Latitude",
+                        formatCoordinate(node->position.latitude_i));
+        appendDetailRow(position,
+                        "Longitude",
+                        formatCoordinate(node->position.longitude_i));
+        if (node->position.has_altitude)
+        {
+            appendDetailRow(position,
+                            "Altitude",
+                            std::to_string(node->position.altitude) + " m");
+        }
+        if (node->position.timestamp != 0)
+        {
+            appendDetailRow(position,
+                            "Position age",
+                            formatAge(node->position.timestamp));
+        }
+        if (node->position.precision_bits != 0)
+        {
+            appendDetailRow(position,
+                            "Precision",
+                            std::to_string(node->position.precision_bits) +
+                                " bits");
+        }
+        if (node->position.gps_accuracy_mm != 0)
+        {
+            appendDetailRow(
+                position,
+                "GPS accuracy",
+                formatFloatValue(
+                    static_cast<double>(node->position.gps_accuracy_mm) /
+                        1000.0,
+                    " m",
+                    1));
+        }
+        appendDetailRow(position, "PDOP", formatDop(node->position.pdop));
+        appendDetailRow(position, "HDOP", formatDop(node->position.hdop));
+        appendDetailRow(position, "VDOP", formatDop(node->position.vdop));
+    }
+    else
+    {
+        appendDetailRow(position,
+                        "Stored position",
+                        "No POSITION packet has been stored.",
+                        true);
+    }
+    appendDetailSection(out, std::move(position));
+
+    ChatNodeDetailSection security{"Security", {}};
+    appendDetailRow(security,
+                    "Public key",
+                    node->has_public_key ? "Stored" : "Not stored",
+                    !node->has_public_key);
+    appendDetailRow(security,
+                    "Key verification",
+                    node->key_manually_verified ? "Trusted" : "Unverified",
+                    node->has_public_key && !node->key_manually_verified);
+    if (node->has_macaddr)
+    {
+        appendDetailRow(security, "MAC", formatMacAddress(node->macaddr));
+    }
+    appendDetailSection(out, std::move(security));
+
+    ChatNodeDetailSection metrics{"Device metrics", {}};
+    if (node->has_device_metrics)
+    {
+        const auto& m = node->device_metrics;
+        if (m.has_battery_level)
+        {
+            appendDetailRow(metrics,
+                            "Battery",
+                            std::to_string(m.battery_level) + "%");
+        }
+        if (m.has_voltage)
+        {
+            appendDetailRow(metrics,
+                            "Voltage",
+                            formatFloatValue(m.voltage, " V", 2));
+        }
+        if (m.has_channel_utilization)
+        {
+            appendDetailRow(metrics,
+                            "Channel util",
+                            formatFloatValue(m.channel_utilization, "%", 1));
+        }
+        if (m.has_air_util_tx)
+        {
+            appendDetailRow(metrics,
+                            "TX air util",
+                            formatFloatValue(m.air_util_tx, "%", 1));
+        }
+        if (m.has_uptime_seconds)
+        {
+            appendDetailRow(metrics,
+                            "Uptime",
+                            std::to_string(m.uptime_seconds) + " s");
+        }
+    }
+    else
+    {
+        appendDetailRow(metrics, "Telemetry", "No device metrics stored.");
+    }
+    appendDetailSection(out, std::move(metrics));
 
     return out;
 }
@@ -1166,13 +1609,32 @@ UConsoleChatWorkspaceModel::loadConversationPage(std::size_t limit,
                                                  ChatThreadSortMode sort_mode) const
 {
     const std::size_t fetch_limit = std::max<std::size_t>(limit, 64U);
+    std::size_t stored_total = 0;
     auto conversations = services_.chat().getConversations(0,
                                                            fetch_limit,
-                                                           total);
+                                                           &stored_total);
+    auto& contacts = services_.contacts();
+    const auto contact_nodes = contacts.getContacts();
+    const auto nearby_nodes = contacts.getNearby();
+    const auto fallback_protocol = services_.meshProtocol();
+    const std::size_t before_node_conversations = conversations.size();
+    for (const auto& node : contact_nodes)
+    {
+        appendNodeConversationIfMissing(conversations, node, fallback_protocol);
+    }
+    for (const auto& node : nearby_nodes)
+    {
+        appendNodeConversationIfMissing(conversations, node, fallback_protocol);
+    }
+    if (total != nullptr)
+    {
+        *total =
+            stored_total + (conversations.size() - before_node_conversations);
+    }
     const auto gps = ::platform::ui::gps::get_data();
     sortConversations(conversations,
                       sort_mode,
-                      services_.contacts(),
+                      contacts,
                       gps.valid,
                       gps.lat,
                       gps.lng);

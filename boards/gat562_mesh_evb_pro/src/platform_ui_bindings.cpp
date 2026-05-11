@@ -286,6 +286,59 @@ bool get_gnss_snapshot(GnssSatInfo* out, std::size_t max, std::size_t* out_count
     return has_snapshot;
 }
 
+GpsDiagnosticsSnapshot diagnostics()
+{
+    GpsDiagnosticsSnapshot snapshot{};
+    snapshot.supported = ::boards::gat562_mesh_evb_pro::Gat562Board::instance().hasGPSHardware();
+    snapshot.enabled = is_enabled();
+    snapshot.powered = is_powered();
+    snapshot.ready = ::boards::gat562_mesh_evb_pro::Gat562Board::instance().isGPSReady();
+
+    GpsState data = get_data();
+    snapshot.has_fix = data.valid;
+    snapshot.satellites = data.satellites;
+
+    GnssStatus status{};
+    std::size_t sat_count = 0;
+    ::gps::GnssSatInfo sats[::gps::kMaxGnssSats]{};
+    if (get_gnss_snapshot(sats, ::gps::kMaxGnssSats, &sat_count, &status))
+    {
+        snapshot.sats_in_view = status.sats_in_view;
+        snapshot.sats_in_use = status.sats_in_use;
+    }
+
+    if (!snapshot.supported)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::Disabled;
+    }
+    else if (!snapshot.enabled)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::NotEnabled;
+    }
+    else if (!snapshot.powered)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::PowerOff;
+    }
+    else if (!snapshot.ready)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::TransportNotReady;
+    }
+    else if (!snapshot.has_fix)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::NoFix;
+    }
+    else
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::OK;
+    }
+    return snapshot;
+}
+
+void set_receiver_init_config(const GpsReceiverInitConfig& config)
+{
+    (void)config;
+}
+
 uint32_t last_motion_ms()
 {
     return ::boards::gat562_mesh_evb_pro::Gat562Board::instance().gpsLastMotionMs();

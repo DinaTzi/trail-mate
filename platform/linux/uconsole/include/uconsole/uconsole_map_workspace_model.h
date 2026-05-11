@@ -43,6 +43,12 @@ struct MapNodeOverlayItem
     bool via_mqtt = false;
     bool is_contact = false;
     std::uint32_t last_seen = 0;
+    float rssi = 0.0F;
+    float snr = 0.0F;
+    std::uint8_t hops_away = 0xFF;
+    std::uint8_t channel = 0xFF;
+    bool has_altitude = false;
+    std::int32_t altitude_m = 0;
 };
 
 struct MapCoordinate
@@ -94,6 +100,11 @@ class UConsoleMapWorkspaceModel final
     explicit UConsoleMapWorkspaceModel(linux_app::LinuxAppServices& services);
 
     [[nodiscard]] MapWorkspaceSnapshot snapshot() const;
+    [[nodiscard]] MapWorkspaceSnapshot snapshotAround(double lat,
+                                                      double lon,
+                                                      int zoom,
+                                                      int radius_x,
+                                                      int radius_y) const;
     [[nodiscard]] ::platform::linux_runtime::MapTileResult ensureTile(
         const ::platform::linux_runtime::MapTileId& tile) const;
     [[nodiscard]] ::platform::linux_runtime::MapContourGenerationResult

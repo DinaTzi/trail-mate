@@ -236,6 +236,7 @@ struct GtkUConsoleAppState
     double map_context_lat = 0.0;
     double map_context_lon = 0.0;
     bool map_context_valid = false;
+    std::uint32_t map_selected_node_id = 0;
     double map_drag_start_lat = 0.0;
     double map_drag_start_lon = 0.0;
     int map_drag_start_zoom = 14;

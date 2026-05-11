@@ -16,6 +16,7 @@ class IGpsHardware
     virtual void powerOn() = 0;
     virtual void powerOff() = 0;
     virtual uint32_t loop() = 0;
+    virtual uint32_t lastLoopReadBytes() const = 0;
     virtual bool hasFix() const = 0;
     virtual double latitude() const = 0;
     virtual double longitude() const = 0;
@@ -29,7 +30,7 @@ class IGpsHardware
     virtual size_t getSatellites(gps::GnssSatInfo* out, size_t max) const = 0;
     virtual gps::GnssStatus getGnssStatus() const = 0;
     virtual bool syncTime(uint32_t gps_task_interval_ms) = 0;
-    virtual bool applyGnssConfig(uint8_t mode, uint8_t sat_mask) = 0;
+    virtual bool applyGnssConfig(uint8_t mode, uint8_t sat_mask, bool send_rxm, bool send_gnss) = 0;
     virtual bool applyNmeaConfig(uint8_t output_hz, uint8_t sentence_mask) = 0;
 };
 

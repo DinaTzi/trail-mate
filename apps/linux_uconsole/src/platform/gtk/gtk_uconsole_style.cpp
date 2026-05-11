@@ -519,6 +519,119 @@ window {
   padding: 2px 6px;
   font-size: 11px;
 }
+.node-info-dialog {
+  background: #f3f6f1;
+}
+.node-info-dialog-body {
+  padding: 12px;
+}
+.node-info-title {
+  color: #17231f;
+  font-size: 18px;
+  font-weight: 700;
+}
+.node-info-section {
+  background: #ffffff;
+  border: 1px solid #d5ddd4;
+  border-radius: 6px;
+  padding: 8px;
+}
+.node-info-section-title {
+  color: #202926;
+  font-weight: 700;
+}
+.node-info-row {
+  padding: 2px 0;
+}
+.node-info-key {
+  color: #66726d;
+  font-size: 12px;
+  font-weight: 700;
+}
+.node-info-value {
+  color: #1f2925;
+  font-size: 12px;
+}
+.node-info-value-attention {
+  color: #8a3f00;
+  font-size: 12px;
+  font-weight: 700;
+}
+.node-info-map-stage {
+  background: #89968e;
+  border: 1px solid #b7c1b8;
+  border-radius: 6px;
+}
+.node-info-map-grid {
+  background: #89968e;
+}
+.node-info-map-tile {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.node-info-map-tile-pending {
+  background: #c8d0c8;
+}
+.node-info-marker-node,
+.node-info-marker-self {
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.node-info-marker-node {
+  background: rgba(255, 248, 221, 0.96);
+  color: #493711;
+  border: 2px solid #c28f2c;
+}
+.node-info-marker-self {
+  background: rgba(224, 247, 239, 0.96);
+  color: #0e3e37;
+  border: 2px solid #1d685e;
+}
+.node-info-map-id,
+.node-info-map-lon,
+.node-info-map-lat,
+.node-info-distance {
+  background: rgba(28, 35, 32, 0.82);
+  color: #eef4ef;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.node-info-distance {
+  background: rgba(255, 255, 255, 0.92);
+  color: #18312b;
+  border: 1px solid rgba(20, 66, 58, 0.34);
+}
+.node-info-map-panel {
+  background: rgba(28, 35, 32, 0.86);
+  border: 1px solid rgba(238, 244, 239, 0.18);
+  border-radius: 6px;
+  padding: 6px;
+}
+.node-info-map-protocol,
+.node-info-map-rssi,
+.node-info-map-snr,
+.node-info-map-seen {
+  color: #eef4ef;
+  font-size: 12px;
+  font-weight: 700;
+}
+.node-info-map-rssi {
+  color: #f3df9b;
+}
+.node-info-map-snr {
+  color: #a6d5ef;
+}
+.node-info-map-seen {
+  color: #cfd9d2;
+}
+.node-info-map-empty {
+  color: #50605a;
+}
 .empty-state {
   color: #66726d;
   padding: 12px;
@@ -660,6 +773,19 @@ window {
   padding: 1px 6px;
   font-weight: 700;
 }
+.map-node-marker-button {
+  min-height: 0;
+  padding: 1px 6px;
+}
+.map-node-bubble {
+  background: rgba(255, 255, 255, 0.96);
+  color: #1b211e;
+  border: 1px solid rgba(42, 54, 48, 0.26);
+  border-left: 4px solid #2f685e;
+  border-radius: 6px;
+  padding: 7px;
+  min-width: 166px;
+}
 .map-context-menu {
   background: #fbfcfa;
   border: 1px solid #aebaae;
@@ -726,6 +852,24 @@ window {
   border: 1px solid #d5ddd4;
   border-radius: 5px;
   padding: 7px 8px;
+}
+.log-entry-header {
+  border-spacing: 7px;
+}
+.log-time {
+  color: #52615a;
+  font-family: monospace;
+  font-size: 12px;
+}
+.log-source,
+.log-direction {
+  background: #e7efe7;
+  color: #26352e;
+  border: 1px solid #c8d5c7;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: monospace;
+  font-size: 12px;
 }
 .log-segments {
   padding: 3px 0;

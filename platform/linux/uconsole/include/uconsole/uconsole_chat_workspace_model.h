@@ -68,6 +68,36 @@ struct ChatNodeInfoItem
     bool key_verified = false;
 };
 
+struct ChatNodeDetailRow
+{
+    std::string label{};
+    std::string value{};
+    bool attention = false;
+};
+
+struct ChatNodeDetailSection
+{
+    std::string title{};
+    std::vector<ChatNodeDetailRow> rows{};
+};
+
+struct ChatNodeDetailSnapshot
+{
+    bool found = false;
+    ::chat::NodeId node_id = 0;
+    std::string title{};
+    std::string subtitle{};
+    bool has_position = false;
+    double lat = 0.0;
+    double lon = 0.0;
+    bool has_self_position = false;
+    double self_lat = 0.0;
+    double self_lon = 0.0;
+    double distance_m = 0.0;
+    double bearing_deg = 0.0;
+    std::vector<ChatNodeDetailSection> sections{};
+};
+
 struct ChatWorkspaceSnapshot
 {
     std::vector<ChatConversationItem> conversations{};
@@ -113,6 +143,7 @@ class UConsoleChatWorkspaceModel final
     bool exchangeUserInfo(::chat::NodeId node_id);
     bool toggleNodeIgnored(::chat::NodeId node_id);
     bool verifyNodeKey(::chat::NodeId node_id);
+    [[nodiscard]] ChatNodeDetailSnapshot nodeDetails(::chat::NodeId node_id) const;
 
     [[nodiscard]] const ::chat::ConversationId& activeConversation() const
     {

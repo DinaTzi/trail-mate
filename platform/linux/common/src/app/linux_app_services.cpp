@@ -52,7 +52,7 @@ namespace
 constexpr const char* kConfigNamespace = "linux_app_facade";
 constexpr const char* kConfigBlobKey = "app_config_v1";
 constexpr uint32_t kConfigBlobMagic = 0x544D4346U; // TMCF
-constexpr uint32_t kConfigBlobVersion = 1U;
+constexpr uint32_t kConfigBlobVersion = 2U;
 
 constexpr const char* kNodeStoreNamespace = "linux_contact_nodes";
 constexpr const char* kNodeStoreKey = "nodes_v1";

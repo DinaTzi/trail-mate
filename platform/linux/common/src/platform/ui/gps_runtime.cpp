@@ -1187,6 +1187,81 @@ bool get_gnss_snapshot(GnssSatInfo* out, std::size_t max, std::size_t* out_count
     return true;
 }
 
+GpsDiagnosticsSnapshot diagnostics()
+{
+    GpsDiagnosticsSnapshot snapshot{};
+    snapshot.supported = runtime_active();
+    snapshot.enabled = is_enabled();
+    snapshot.powered = is_powered();
+    snapshot.collection_interval_ms = s_collection_interval_ms;
+    snapshot.poll_interval_ms = 1000;
+
+    if (!snapshot.supported)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::Disabled;
+        return snapshot;
+    }
+    if (!snapshot.enabled)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::NotEnabled;
+        return snapshot;
+    }
+    if (!snapshot.powered)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::PowerOff;
+        return snapshot;
+    }
+
+    std::lock_guard<std::mutex> lock(s_mutex);
+    bool requested_serial = false;
+    const bool source_requested =
+        !requested_source_path(&requested_serial).empty();
+    poll_external_source_locked();
+
+    if (external_source_active_locked())
+    {
+        snapshot.ready = true;
+        snapshot.has_fix = s_runtime.data.valid;
+        snapshot.satellites = s_runtime.data.satellites;
+        snapshot.sats_in_view = s_runtime.status.sats_in_view;
+        snapshot.sats_in_use = s_runtime.status.sats_in_use;
+        snapshot.last_rx_age_ms = s_runtime.last_rx_ms ? (now_ms() - s_runtime.last_rx_ms) : 0xFFFFFFFFUL;
+    }
+    else if (!source_requested)
+    {
+        const auto state = make_default_state();
+        const auto status = make_default_status();
+        snapshot.ready = true;
+        snapshot.has_fix = state.valid;
+        snapshot.satellites = state.satellites;
+        snapshot.sats_in_view = status.sats_in_view;
+        snapshot.sats_in_use = status.sats_in_use;
+        snapshot.last_rx_age_ms = 0;
+    }
+    else
+    {
+        snapshot.ready = false;
+    }
+
+    if (!snapshot.ready)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::TransportNotReady;
+    }
+    else if (snapshot.last_rx_age_ms != 0xFFFFFFFFUL && snapshot.last_rx_age_ms > kExternalSourceStaleMs)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::TrafficStalled;
+    }
+    else if (!snapshot.has_fix)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::NoFix;
+    }
+    else
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::OK;
+    }
+    return snapshot;
+}
+
 uint32_t last_motion_ms()
 {
     if (!runtime_active())
@@ -1248,6 +1323,11 @@ void set_external_nmea_config(uint8_t output_hz, uint8_t sentence_mask)
 {
     s_external_nmea_output_hz = output_hz;
     s_external_nmea_sentence_mask = sentence_mask;
+}
+
+void set_receiver_init_config(const GpsReceiverInitConfig& config)
+{
+    (void)config;
 }
 
 void set_motion_idle_timeout(uint32_t timeout_ms)

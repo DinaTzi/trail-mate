@@ -252,13 +252,12 @@ bool ChatService::isDuplicateIncoming(const ChatMessage& msg) const
         return false;
     }
 
-    const IncomingIdentity identity{
-        .protocol = msg.protocol,
-        .channel = msg.channel,
-        .from = msg.from,
-        .peer = msg.peer,
-        .msg_id = msg.msg_id,
-    };
+    IncomingIdentity identity{};
+    identity.protocol = msg.protocol;
+    identity.channel = msg.channel;
+    identity.from = msg.from;
+    identity.peer = msg.peer;
+    identity.msg_id = msg.msg_id;
     return std::find(recent_incoming_.begin(),
                      recent_incoming_.end(),
                      identity) != recent_incoming_.end();
@@ -271,13 +270,12 @@ void ChatService::rememberIncoming(const ChatMessage& msg)
         return;
     }
 
-    const IncomingIdentity identity{
-        .protocol = msg.protocol,
-        .channel = msg.channel,
-        .from = msg.from,
-        .peer = msg.peer,
-        .msg_id = msg.msg_id,
-    };
+    IncomingIdentity identity{};
+    identity.protocol = msg.protocol;
+    identity.channel = msg.channel;
+    identity.from = msg.from;
+    identity.peer = msg.peer;
+    identity.msg_id = msg.msg_id;
     recent_incoming_.push_back(identity);
     while (recent_incoming_.size() > kRecentIncomingLimit)
     {

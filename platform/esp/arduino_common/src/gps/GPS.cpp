@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -34,6 +35,24 @@ void GPS::attach(Stream* stream)
 {
     _stream = stream;
     assert(_stream);
+    debug_nmea_sentence_count_ = 0;
+    debug_raw_sample_len_ = 0;
+    debug_raw_first_ms_ = 0;
+    debug_raw_sample_logged_ = false;
+    debug_raw_saw_nmea_ = false;
+    debug_raw_burst_sample_len_ = 0;
+    debug_raw_burst_count_ = 0;
+    debug_raw_burst_first_ms_ = 0;
+    debug_raw_burst_last_ms_ = 0;
+    debug_raw_burst_idle_gap_ms_ = 0;
+    debug_raw_burst_bytes_ = 0;
+    debug_raw_burst_printable_ = 0;
+    debug_raw_burst_comma_ = 0;
+    debug_raw_burst_high_ = 0;
+    debug_raw_burst_zero_ = 0;
+    debug_raw_burst_ubx_sync_ = 0;
+    debug_raw_burst_logged_ = false;
+    last_loop_read_bytes_ = 0;
 }
 
 bool GPS::init(Stream* stream)
@@ -388,27 +407,32 @@ bool GPS::configureNmeaOutput(uint8_t output_hz, uint8_t sentence_mask)
 
     bool enable_gga = true;
     bool enable_rmc = true;
+    bool enable_gsa = true;
     bool enable_gsv = true;
     switch (sentence_mask)
     {
-    case 0: // GGA + RMC + GSV
+    case 0: // GGA + RMC + GSA + GSV
         enable_gga = true;
         enable_rmc = true;
+        enable_gsa = true;
         enable_gsv = true;
         break;
-    case 1: // RMC + GSV
+    case 1: // RMC + GSA + GSV
         enable_gga = false;
         enable_rmc = true;
+        enable_gsa = true;
         enable_gsv = true;
         break;
     case 2: // GGA + RMC
         enable_gga = true;
         enable_rmc = true;
+        enable_gsa = false;
         enable_gsv = false;
         break;
     default:
         enable_gga = true;
         enable_rmc = true;
+        enable_gsa = true;
         enable_gsv = true;
         break;
     }
@@ -417,6 +441,7 @@ bool GPS::configureNmeaOutput(uint8_t output_hz, uint8_t sentence_mask)
     {
         enable_gga = false;
         enable_rmc = false;
+        enable_gsa = false;
         enable_gsv = false;
     }
 
@@ -437,9 +462,17 @@ bool GPS::configureNmeaOutput(uint8_t output_hz, uint8_t sentence_mask)
 
     bool ok = true;
     ok = ok && set_msg_rate(0x00, enable_gga ? output_hz : 0); // GGA
+    ok = ok && set_msg_rate(0x02, enable_gsa ? output_hz : 0); // GSA
     ok = ok && set_msg_rate(0x04, enable_rmc ? output_hz : 0); // RMC
     ok = ok && set_msg_rate(0x03, enable_gsv ? output_hz : 0); // GSV
-    GPS_LOG("[GPS] CFG-MSG nmea_rate=%u mask=%u ok=%d\n", output_hz, sentence_mask, ok ? 1 : 0);
+    Serial.printf("[GPS] nmea config rate=%u mask=%u gga=%u gsa=%u rmc=%u gsv=%u ok=%d\n",
+                  static_cast<unsigned>(output_hz),
+                  static_cast<unsigned>(sentence_mask),
+                  enable_gga ? 1U : 0U,
+                  enable_gsa ? 1U : 0U,
+                  enable_rmc ? 1U : 0U,
+                  enable_gsv ? 1U : 0U,
+                  ok ? 1 : 0);
     return ok;
 }
 
@@ -479,6 +512,210 @@ gps::GnssStatus GPS::getGnssStatus() const
     return st;
 }
 
+void GPS::observeDebugByte(uint8_t b)
+{
+    if (b == '$')
+    {
+        debug_raw_saw_nmea_ = true;
+        debug_raw_sample_len_ = 0;
+        if (debug_raw_burst_sample_len_ > 0 && !debug_raw_burst_logged_)
+        {
+            logDebugRawBurst("interrupted_by_nmea", millis());
+        }
+        return;
+    }
+    if (debug_raw_sample_logged_)
+    {
+        observeDebugRawBurstByte(b, millis());
+    }
+    if (debug_raw_saw_nmea_ || debug_raw_sample_logged_)
+    {
+        return;
+    }
+    if (debug_raw_sample_len_ < sizeof(debug_raw_sample_))
+    {
+        if (debug_raw_sample_len_ == 0)
+        {
+            debug_raw_first_ms_ = millis();
+        }
+        debug_raw_sample_[debug_raw_sample_len_++] = b;
+    }
+    if (debug_raw_sample_len_ == sizeof(debug_raw_sample_))
+    {
+        logDebugRawSample("first64_no_nmea");
+    }
+}
+
+void GPS::flushDebugRawSampleIfStale(uint32_t now_ms)
+{
+    if (debug_raw_saw_nmea_ || debug_raw_sample_logged_ || debug_raw_sample_len_ == 0 || debug_raw_first_ms_ == 0)
+    {
+        if (debug_raw_burst_sample_len_ > 0 && !debug_raw_burst_logged_ &&
+            debug_raw_burst_last_ms_ != 0 && (now_ms - debug_raw_burst_last_ms_) >= 1000UL)
+        {
+            logDebugRawBurst("partial_idle_1s", now_ms);
+        }
+        return;
+    }
+    if ((now_ms - debug_raw_first_ms_) >= 2000UL)
+    {
+        logDebugRawSample("partial_no_nmea_2s");
+    }
+}
+
+void GPS::logDebugRawSample(const char* reason)
+{
+    if (debug_raw_sample_logged_ || debug_raw_sample_len_ == 0)
+    {
+        return;
+    }
+    char hex[sizeof(debug_raw_sample_) * 3 + 1]{};
+    size_t pos = 0;
+    for (size_t i = 0; i < debug_raw_sample_len_ && pos + 3 < sizeof(hex); ++i)
+    {
+        pos += snprintf(hex + pos, sizeof(hex) - pos, "%02X%s",
+                        static_cast<unsigned>(debug_raw_sample_[i]),
+                        (i + 1 == debug_raw_sample_len_) ? "" : " ");
+    }
+    Serial.printf("[GPS][RAW] reason=%s len=%u hex=%s\n",
+                  reason ? reason : "no_nmea",
+                  static_cast<unsigned>(debug_raw_sample_len_),
+                  hex);
+    debug_raw_sample_logged_ = true;
+}
+
+void GPS::observeDebugRawBurstByte(uint8_t b, uint32_t now_ms)
+{
+    constexpr uint32_t kBurstIdleGapMs = 2000UL;
+    constexpr uint16_t kMaxLoggedBursts = 8;
+
+    if (debug_raw_saw_nmea_ || debug_raw_burst_count_ >= kMaxLoggedBursts)
+    {
+        return;
+    }
+
+    uint32_t idle_gap_ms = 0;
+    if (debug_raw_burst_last_ms_ != 0 && now_ms >= debug_raw_burst_last_ms_)
+    {
+        idle_gap_ms = now_ms - debug_raw_burst_last_ms_;
+    }
+
+    if (debug_raw_burst_last_ms_ != 0 && idle_gap_ms >= kBurstIdleGapMs)
+    {
+        if (debug_raw_burst_sample_len_ > 0 && !debug_raw_burst_logged_)
+        {
+            logDebugRawBurst("partial_before_gap", now_ms);
+        }
+        debug_raw_burst_sample_len_ = 0;
+        debug_raw_burst_first_ms_ = 0;
+        debug_raw_burst_idle_gap_ms_ = idle_gap_ms;
+        debug_raw_burst_bytes_ = 0;
+        debug_raw_burst_printable_ = 0;
+        debug_raw_burst_comma_ = 0;
+        debug_raw_burst_high_ = 0;
+        debug_raw_burst_zero_ = 0;
+        debug_raw_burst_ubx_sync_ = 0;
+        debug_raw_burst_logged_ = false;
+    }
+
+    if (debug_raw_burst_sample_len_ == 0)
+    {
+        debug_raw_burst_first_ms_ = now_ms;
+        debug_raw_burst_idle_gap_ms_ = idle_gap_ms;
+    }
+
+    if (debug_raw_burst_sample_len_ < sizeof(debug_raw_burst_sample_))
+    {
+        debug_raw_burst_sample_[debug_raw_burst_sample_len_++] = b;
+    }
+    debug_raw_burst_bytes_++;
+    if (b >= 32 && b <= 126)
+    {
+        debug_raw_burst_printable_++;
+    }
+    if (b == ',')
+    {
+        debug_raw_burst_comma_++;
+    }
+    if (b >= 128)
+    {
+        debug_raw_burst_high_++;
+    }
+    if (b == 0)
+    {
+        debug_raw_burst_zero_++;
+    }
+    if (b == 0xB5 || b == 0x62)
+    {
+        debug_raw_burst_ubx_sync_++;
+    }
+    debug_raw_burst_last_ms_ = now_ms;
+
+    if (!debug_raw_burst_logged_ && debug_raw_burst_sample_len_ == sizeof(debug_raw_burst_sample_))
+    {
+        logDebugRawBurst("non_nmea_burst64", now_ms);
+    }
+}
+
+void GPS::logDebugRawBurst(const char* reason, uint32_t now_ms)
+{
+    if (debug_raw_burst_logged_ || debug_raw_burst_sample_len_ == 0)
+    {
+        return;
+    }
+    char hex[sizeof(debug_raw_burst_sample_) * 3 + 1]{};
+    size_t pos = 0;
+    for (size_t i = 0; i < debug_raw_burst_sample_len_ && pos + 3 < sizeof(hex); ++i)
+    {
+        pos += snprintf(hex + pos, sizeof(hex) - pos, "%02X%s",
+                        static_cast<unsigned>(debug_raw_burst_sample_[i]),
+                        (i + 1 == debug_raw_burst_sample_len_) ? "" : " ");
+    }
+    const uint32_t age_ms = (debug_raw_burst_first_ms_ > 0 && now_ms >= debug_raw_burst_first_ms_)
+                                ? (now_ms - debug_raw_burst_first_ms_)
+                                : 0;
+    Serial.printf("[GPS][RAW_BURST] n=%u reason=%s len=%u bytes=%lu gap_ms=%lu age_ms=%lu printable=%u comma=%u high=%u zero=%u ubx_sync=%u hex=%s\n",
+                  static_cast<unsigned>(debug_raw_burst_count_ + 1),
+                  reason ? reason : "non_nmea",
+                  static_cast<unsigned>(debug_raw_burst_sample_len_),
+                  static_cast<unsigned long>(debug_raw_burst_bytes_),
+                  static_cast<unsigned long>(debug_raw_burst_idle_gap_ms_),
+                  static_cast<unsigned long>(age_ms),
+                  static_cast<unsigned>(debug_raw_burst_printable_),
+                  static_cast<unsigned>(debug_raw_burst_comma_),
+                  static_cast<unsigned>(debug_raw_burst_high_),
+                  static_cast<unsigned>(debug_raw_burst_zero_),
+                  static_cast<unsigned>(debug_raw_burst_ubx_sync_),
+                  hex);
+    debug_raw_burst_count_++;
+    debug_raw_burst_logged_ = true;
+}
+
+void GPS::logDebugNmeaSentence(const char* sentence)
+{
+    if (!sentence || debug_nmea_sentence_count_ >= 8)
+    {
+        return;
+    }
+
+    char preview[128]{};
+    size_t out = 0;
+    for (size_t i = 0; sentence[i] != '\0' && out < sizeof(preview) - 1; ++i)
+    {
+        char c = sentence[i];
+        if (c == '\r' || c == '\n')
+        {
+            break;
+        }
+        preview[out++] = (c >= 32 && c <= 126) ? c : '.';
+    }
+    preview[out] = '\0';
+    Serial.printf("[GPS][NMEA] sample%u=%s\n",
+                  static_cast<unsigned>(debug_nmea_sentence_count_ + 1),
+                  preview);
+    debug_nmea_sentence_count_++;
+}
+
 void GPS::handleNmeaChar(char c)
 {
     if (c == '$')
@@ -513,6 +750,7 @@ void GPS::parseNmeaSentence(char* sentence)
     {
         return;
     }
+    logDebugNmeaSentence(sentence);
 
     char* start = sentence + 1;
     char* checksum = strchr(start, '*');

@@ -53,7 +53,7 @@ cmake --preset linux-uconsole-release
 cmake --build --preset linux-uconsole-deb
 ```
 
-The release preset stamps the package as `0.1.24~alpha`. Override it for another
+The release preset stamps the package as `0.1.25~alpha`. Override it for another
 release with:
 
 ```sh

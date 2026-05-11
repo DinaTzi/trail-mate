@@ -3,6 +3,7 @@
 #include "platform/gtk/gtk_uconsole_mqtt_settings.h"
 #include "platform/gtk/gtk_uconsole_shell.h"
 #include "platform/gtk/gtk_uconsole_widgets.h"
+#include "sys/clock.h"
 
 #include <algorithm>
 #include <chrono>
@@ -181,6 +182,47 @@ std::string formatMapDistance(double meters)
         std::snprintf(buffer, sizeof(buffer), "%.2f km", meters / 1000.0);
     }
     return std::string(buffer);
+}
+
+std::string formatMapNodeAge(std::uint32_t timestamp)
+{
+    if (timestamp == 0)
+    {
+        return "seen: --";
+    }
+    const std::uint32_t now = sys::epoch_seconds_now();
+    if (timestamp >= now)
+    {
+        return "seen: now";
+    }
+    const std::uint32_t age = now - timestamp;
+    char buffer[32] = {};
+    if (age < 60U)
+    {
+        std::snprintf(buffer, sizeof(buffer), "seen: now");
+    }
+    else if (age < 3600U)
+    {
+        std::snprintf(buffer,
+                      sizeof(buffer),
+                      "seen: %lum",
+                      static_cast<unsigned long>(age / 60U));
+    }
+    else if (age < 86400U)
+    {
+        std::snprintf(buffer,
+                      sizeof(buffer),
+                      "seen: %luh",
+                      static_cast<unsigned long>(age / 3600U));
+    }
+    else
+    {
+        std::snprintf(buffer,
+                      sizeof(buffer),
+                      "seen: %lud",
+                      static_cast<unsigned long>(age / 86400U));
+    }
+    return buffer;
 }
 
 void updateMapMeasureStatus(GtkUConsoleAppState& state)
@@ -838,19 +880,95 @@ void pollContourFill(GtkUConsoleAppState& state)
     state.map_grid_signature.clear();
 }
 
-GtkWidget* buildNodeMarker(const MapNodeOverlayItem& node)
+void onMapNodeMarkerClicked(GtkButton* button, gpointer data)
+{
+    auto& state = *static_cast<GtkUConsoleAppState*>(data);
+    const auto node_id = static_cast<std::uint32_t>(
+        GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(button),
+                                           "trailmate-map-node-id")));
+    state.map_selected_node_id =
+        state.map_selected_node_id == node_id ? 0U : node_id;
+    refreshMap(state);
+}
+
+GtkWidget* buildNodeMarker(GtkUConsoleAppState& state,
+                           const MapNodeOverlayItem& node)
 {
     const std::string label =
         node.via_mqtt ? ("MQ " + node.label) : node.label;
-    GtkWidget* marker =
-        makeLabel(label.c_str(),
-                  node.via_mqtt ? "map-marker-mqtt" : "map-marker-local");
+    GtkWidget* marker = gtk_button_new_with_label(label.c_str());
+    gtk_widget_add_css_class(
+        marker,
+        node.via_mqtt ? "map-marker-mqtt" : "map-marker-local");
+    gtk_widget_add_css_class(marker, "map-node-marker-button");
     std::ostringstream tip;
     tip << (node.via_mqtt ? "MQTT" : "Mesh") << " node 0x"
         << std::hex << std::uppercase << node.node_id << std::dec
         << " / lat " << node.lat << " / lon " << node.lon;
     gtk_widget_set_tooltip_text(marker, tip.str().c_str());
+    g_object_set_data(G_OBJECT(marker),
+                      "trailmate-map-node-id",
+                      GUINT_TO_POINTER(static_cast<guint>(node.node_id)));
+    g_signal_connect(marker,
+                     "clicked",
+                     G_CALLBACK(onMapNodeMarkerClicked),
+                     &state);
     return marker;
+}
+
+GtkWidget* buildMapNodeBubble(const MapNodeOverlayItem& node)
+{
+    GtkWidget* bubble = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    gtk_widget_add_css_class(bubble, "map-node-bubble");
+    gtk_widget_set_size_request(bubble, 176, -1);
+
+    GtkWidget* title_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget* title = makeLabel(node.label.c_str(), "row-title", true);
+    gtk_widget_set_hexpand(title, TRUE);
+    gtk_box_append(GTK_BOX(title_row), title);
+    gtk_box_append(GTK_BOX(title_row),
+                   makeLabel(node.via_mqtt ? "MQTT" : "LoRa", "mini-chip"));
+    gtk_box_append(GTK_BOX(bubble), title_row);
+
+    char id[24] = {};
+    std::snprintf(id,
+                  sizeof(id),
+                  "id: !%08lX",
+                  static_cast<unsigned long>(node.node_id));
+    gtk_box_append(GTK_BOX(bubble), makeLabel(id, "row-meta"));
+
+    std::string position = "lat: " + formatMapDecimal(node.lat) +
+                           "\nlon: " + formatMapDecimal(node.lon);
+    if (node.has_altitude)
+    {
+        position += "\nalt: " + std::to_string(node.altitude_m) + " m";
+    }
+    gtk_box_append(GTK_BOX(bubble),
+                   makeLabel(position.c_str(), "row-meta", true));
+
+    std::string radio = formatMapNodeAge(node.last_seen);
+    radio += "\nhops: ";
+    radio += node.hops_away == 0xFF
+                 ? "?"
+                 : std::to_string(static_cast<unsigned>(node.hops_away));
+    radio += "\nrssi: ";
+    radio += std::isfinite(node.rssi)
+                 ? std::to_string(static_cast<int>(std::lround(node.rssi)))
+                 : "?";
+    radio += " dBm\nsnr: ";
+    if (std::isfinite(node.snr))
+    {
+        char snr[24] = {};
+        std::snprintf(snr, sizeof(snr), "%.1f dB", node.snr);
+        radio += snr;
+    }
+    else
+    {
+        radio += "?";
+    }
+    gtk_box_append(GTK_BOX(bubble),
+                   makeLabel(radio.c_str(), "row-meta", true));
+    return bubble;
 }
 
 double mapLongitudeToWorldPx(double lon, int zoom)
@@ -966,9 +1084,20 @@ void refreshMapMarkers(GtkUConsoleAppState& state,
         return;
     }
 
+    if (state.map_selected_node_id != 0 &&
+        std::none_of(snapshot.nodes.begin(),
+                     snapshot.nodes.end(),
+                     [&](const auto& node)
+                     {
+                         return node.node_id == state.map_selected_node_id;
+                     }))
+    {
+        state.map_selected_node_id = 0;
+    }
+
     for (const auto& node : snapshot.nodes)
     {
-        GtkWidget* marker = buildNodeMarker(node);
+        GtkWidget* marker = buildNodeMarker(state, node);
         const double x = std::clamp(node.x_fraction, 0.0, 1.0) *
                          static_cast<double>(width);
         const double y = std::clamp(node.y_fraction, 0.0, 1.0) *
@@ -977,6 +1106,19 @@ void refreshMapMarkers(GtkUConsoleAppState& state,
                       marker,
                       std::max(0.0, x - 14.0),
                       std::max(0.0, y - 11.0));
+        if (state.map_selected_node_id == node.node_id)
+        {
+            GtkWidget* bubble = buildMapNodeBubble(node);
+            gtk_fixed_put(
+                GTK_FIXED(state.map_marker_layer),
+                bubble,
+                std::clamp(x + 12.0,
+                           4.0,
+                           static_cast<double>(std::max(4, width - 178))),
+                std::clamp(y - 18.0,
+                           4.0,
+                           static_cast<double>(std::max(4, height - 156))));
+        }
     }
 
     if (state.map_measure_has_start)

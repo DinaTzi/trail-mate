@@ -232,6 +232,12 @@ void append_projected_node(MapWorkspaceSnapshot& out,
     item.via_mqtt = node.via_mqtt;
     item.is_contact = node.is_contact;
     item.last_seen = node.last_seen;
+    item.rssi = node.rssi;
+    item.snr = node.snr;
+    item.hops_away = node.hops_away;
+    item.channel = node.channel;
+    item.has_altitude = node.position.has_altitude;
+    item.altitude_m = node.position.altitude;
     out.nodes.push_back(std::move(item));
     ++out.visible_node_count;
     if (node.via_mqtt)
@@ -410,6 +416,55 @@ MapWorkspaceSnapshot UConsoleMapWorkspaceModel::snapshot() const
         }
     }
 
+    return out;
+}
+
+MapWorkspaceSnapshot UConsoleMapWorkspaceModel::snapshotAround(
+    double lat,
+    double lon,
+    int zoom,
+    int radius_x,
+    int radius_y) const
+{
+    MapWorkspaceSnapshot out{};
+    if (!std::isfinite(lat) || !std::isfinite(lon))
+    {
+        return out;
+    }
+
+    const int clamped_radius_x = std::clamp(radius_x, 0, 4);
+    const int clamped_radius_y = std::clamp(radius_y, 0, 4);
+    out.has_center = true;
+    out.has_configured_center = true;
+    out.lat = clamp_web_mercator_lat(lat);
+    out.lon = std::clamp(lon, -180.0, 180.0);
+    out.zoom = std::clamp(zoom, kMinZoom, kMaxZoom);
+    out.source_label =
+        ::platform::linux_runtime::map_base_source_label(source());
+    out.fix_label = "NodeInfo";
+    out.columns = static_cast<std::size_t>(clamped_radius_x * 2 + 1);
+    out.rows = static_cast<std::size_t>(clamped_radius_y * 2 + 1);
+    out.center_tile_index =
+        static_cast<std::size_t>(clamped_radius_y) * out.columns +
+        static_cast<std::size_t>(clamped_radius_x);
+    out.tiles.reserve(out.columns * out.rows);
+
+    const auto tiles = ::platform::linux_runtime::map_tiles_around(
+        out.lat,
+        out.lon,
+        out.zoom,
+        source(),
+        clamped_radius_x,
+        clamped_radius_y);
+    for (const auto& tile : tiles)
+    {
+        MapTileItem item{};
+        item.id = tile;
+        item.path = tile_cache_.tile_path(tile);
+        item.available = tile_cache_.tile_available(tile);
+        out.tiles.push_back(std::move(item));
+    }
+    out.cache_stats = tile_cache_.stats();
     return out;
 }
 

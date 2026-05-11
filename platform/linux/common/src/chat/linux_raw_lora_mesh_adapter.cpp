@@ -151,6 +151,47 @@ std::string packet_signal_text(
     return buffer;
 }
 
+std::string pb_error_text(const pb_istream_t& stream)
+{
+    const char* error = PB_GET_ERROR(&stream);
+    return (error != nullptr && error[0] != '\0') ? error : "unknown";
+}
+
+std::string describe_nodeinfo_payload_failure(const meshtastic_Data& data)
+{
+    meshtastic_NodeInfo node = meshtastic_NodeInfo_init_default;
+    pb_istream_t node_stream =
+        pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+    if (pb_decode(&node_stream, meshtastic_NodeInfo_fields, &node))
+    {
+        return "NodeInfo protobuf decoded but no meaningful node facts were present.";
+    }
+
+    const std::string node_error = pb_error_text(node_stream);
+    meshtastic_User user = meshtastic_User_init_default;
+    pb_istream_t user_stream =
+        pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+    if (pb_decode(&user_stream, meshtastic_User_fields, &user))
+    {
+        return "Legacy User protobuf decoded but no meaningful user facts were present.";
+    }
+
+    return "NodeInfo pb=" + node_error +
+           " / User pb=" + pb_error_text(user_stream);
+}
+
+std::string describe_position_payload_failure(const meshtastic_Data& data)
+{
+    meshtastic_Position pos = meshtastic_Position_init_zero;
+    pb_istream_t stream =
+        pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+    if (pb_decode(&stream, meshtastic_Position_fields, &pos))
+    {
+        return "Position protobuf decoded but latitude/longitude were missing or invalid.";
+    }
+    return "Position pb=" + pb_error_text(stream);
+}
+
 MeshtasticAirPlan build_meshtastic_air_plan(
     const ::chat::MeshConfig& config)
 {
@@ -1818,6 +1859,7 @@ bool LinuxRawLoraMeshAdapter::parseMeshtasticPacket(
     pb_istream_t stream = pb_istream_from_buffer(plaintext, plaintext_len);
     if (!pb_decode(&stream, meshtastic_Data_fields, &decoded))
     {
+        const std::string pb_error = pb_error_text(stream);
         append_lora_system_log(
             "Meshtastic RX protobuf failed",
             "Channel hash matched but Data protobuf did not decode. Check PSK/channel settings if this repeats.",
@@ -1832,6 +1874,11 @@ bool LinuxRawLoraMeshAdapter::parseMeshtasticPacket(
                  .label = "plain",
                  .text = ::platform::linux_runtime::hex_bytes(plaintext,
                                                               plaintext_len),
+             },
+             {
+                 .kind = ::platform::linux_runtime::PacketLogSegmentKind::Error,
+                 .label = "pb",
+                 .text = pb_error,
              }});
         return true;
     }
@@ -2020,10 +2067,17 @@ bool LinuxRawLoraMeshAdapter::parseMeshtasticPacket(
         }
         else
         {
+            const std::string reason = describe_nodeinfo_payload_failure(decoded);
             append_lora_system_log(
                 "Meshtastic nodeinfo decode failed",
                 "NODEINFO_APP payload was neither Meshtastic NodeInfo nor legacy User.",
                 {{
+                    .kind =
+                        ::platform::linux_runtime::PacketLogSegmentKind::Error,
+                    .label = "reason",
+                    .text = reason,
+                },
+                {
                     .kind =
                         ::platform::linux_runtime::PacketLogSegmentKind::Error,
                     .label = "payload",
@@ -2084,10 +2138,17 @@ bool LinuxRawLoraMeshAdapter::parseMeshtasticPacket(
         }
         else
         {
+            const std::string reason = describe_position_payload_failure(decoded);
             append_lora_system_log(
                 "Meshtastic position decode failed",
                 "POSITION_APP payload did not contain a valid latitude and longitude.",
                 {{
+                    .kind =
+                        ::platform::linux_runtime::PacketLogSegmentKind::Error,
+                    .label = "reason",
+                    .text = reason,
+                },
+                {
                     .kind =
                         ::platform::linux_runtime::PacketLogSegmentKind::Error,
                     .label = "payload",

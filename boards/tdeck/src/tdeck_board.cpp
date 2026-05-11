@@ -8,6 +8,7 @@
 #include <SD.h>
 #include <Wire.h>
 #include <ctime>
+#include <driver/gpio.h>
 #include <limits>
 #include <sys/time.h>
 
@@ -28,6 +29,12 @@ constexpr float kTDeckRadioCurrentLimitMa = 140.0f;
 constexpr uint8_t kTDeckBacklightStepMax = 16;
 constexpr uint32_t kTDeckBacklightOffDelayMs = 3;
 constexpr uint32_t kTDeckBacklightWakeDelayUs = 30;
+// LilyGo's T-Deck GPSShield reference starts the L76K/CASIC path at 9600.
+constexpr uint32_t kGpsDefaultBaud = 9600;
+constexpr uint8_t kGpsProfileAuto = 0;
+constexpr uint8_t kGpsProfileNmeaPassive = 1;
+constexpr uint8_t kGpsProfileUbxLegacy = 2;
+constexpr uint8_t kGpsProfileUbxModern = 3;
 uint8_t s_backlight_level = 0;
 
 #if DEVICE_MAX_BRIGHTNESS_LEVEL > 0
@@ -205,6 +212,22 @@ int read_battery_percent_adc_fallback()
 {
     return battery_percent_from_mv(read_battery_mv_adc_fallback());
 }
+
+bool is_supported_gps_baud(uint32_t baud)
+{
+    switch (baud)
+    {
+    case 4800:
+    case 9600:
+    case 19200:
+    case 38400:
+    case 57600:
+    case 115200:
+        return true;
+    default:
+        return false;
+    }
+}
 } // namespace
 
 TDeckBoard::TDeckBoard()
@@ -225,22 +248,70 @@ TDeckBoard* TDeckBoard::getInstance()
 
 bool TDeckBoard::initGPS()
 {
-    // Board init owns the physical UART. Receiver probing/configuration is runtime-owned.
+    // Board init owns the physical UART. Receiver behavior/configuration is runtime-owned.
+    const uint32_t manual_baud = gps_init_config_.baud;
+    const bool explicit_ubx_profile = gps_init_config_.profile == kGpsProfileUbxLegacy ||
+                                      gps_init_config_.profile == kGpsProfileUbxModern;
+    uint32_t selected_baud = kGpsDefaultBaud;
+    const char* selected_source = "legacy_default";
+    const char* signature = "not_probed";
+    gps::GpsReceiverProtocol protocol = gps::GpsReceiverProtocol::Unknown;
+
+    if (is_supported_gps_baud(manual_baud))
+    {
+        selected_baud = manual_baud;
+        selected_source = "manual_direct";
+        protocol = explicit_ubx_profile ? gps::GpsReceiverProtocol::Ubx : gps::GpsReceiverProtocol::Unknown;
+        signature = explicit_ubx_profile ? "ubx_profile" : "not_probed";
+    }
+    else if (gps_receiver_init_configured_ && gps_init_config_.profile == kGpsProfileAuto)
+    {
+        selected_baud = kGpsDefaultBaud;
+        selected_source = "auto_direct";
+    }
+    else
+    {
+        // Keep Auto passive here; receiver-specific commands belong in runtime policy,
+        // after the module/protocol has been selected.
+        selected_baud = kGpsDefaultBaud;
+        if (gps_init_config_.profile == kGpsProfileNmeaPassive)
+        {
+            protocol = gps::GpsReceiverProtocol::Nmea;
+            signature = "nmea_profile";
+            selected_source = "nmea_passive";
+        }
+        else if (gps_init_config_.profile == kGpsProfileUbxLegacy ||
+                 gps_init_config_.profile == kGpsProfileUbxModern)
+        {
+            protocol = gps::GpsReceiverProtocol::Ubx;
+            signature = "ubx_profile";
+            selected_source = gps_init_config_.profile == kGpsProfileUbxLegacy ? "ubx_legacy" : "ubx_modern";
+        }
+    }
+
     Serial1.end();
-    Serial1.begin(38400, SERIAL_8N1, GPS_RX, GPS_TX);
+    delay(10);
+    Serial1.begin(selected_baud, SERIAL_8N1, GPS_RX, GPS_TX);
+    const esp_err_t rx_pull_rc = gpio_set_pull_mode(static_cast<gpio_num_t>(GPS_RX), GPIO_PULLUP_ONLY);
     delay(100);
     gps_.attach(&Serial1);
     setGPSOnline(true);
-    Serial.printf("[TDeckBoard] GPS UART ready baud=%lu rx=%d tx=%d\n",
-                  38400UL,
+    gps_receiver_protocol_ = protocol;
+    Serial.printf("[TDeckBoard] GPS UART ready baud=%lu rx=%d tx=%d probe=%s signature=%s protocol=%s rx_pullup=%d\n",
+                  static_cast<unsigned long>(selected_baud),
                   GPS_RX,
-                  GPS_TX);
+                  GPS_TX,
+                  selected_source,
+                  signature,
+                  gps::gpsReceiverProtocolName(gps_receiver_protocol_),
+                  rx_pull_rc == ESP_OK ? 1 : 0);
     return true;
 }
 
 void TDeckBoard::deinitGPS()
 {
     Serial1.end();
+    gps_receiver_protocol_ = gps::GpsReceiverProtocol::Unknown;
     setGPSOnline(false);
 }
 

@@ -182,6 +182,31 @@ int main()
     assert(zoomed_out.zoom == clicked_zoom);
     assert(std::abs(zoomed_out.lat - click_point.lat) < 0.000001);
     assert(std::abs(zoomed_out.lon - click_point.lon) < 0.000001);
+    model.setZoom(12);
+
+    ::chat::contacts::NodeUpdate lora_node{};
+    lora_node.short_name = "LORA";
+    lora_node.long_name = "LoRa Node";
+    lora_node.has_last_seen = true;
+    lora_node.last_seen = 123457U;
+    lora_node.has_via_mqtt = true;
+    lora_node.via_mqtt = false;
+    lora_node.has_position = true;
+    lora_node.position.valid = true;
+    lora_node.position.latitude_i = 312305000;
+    lora_node.position.longitude_i = 1214747000;
+    lora_node.has_hops_away = true;
+    lora_node.hops_away = 1;
+    services.contacts().applyNodeUpdate(0x2234ABCDU, lora_node);
+
+    model.setShowMqttNodes(false);
+    const auto mqtt_hidden = model.snapshot();
+    assert(!mqtt_hidden.show_mqtt_nodes);
+    assert(mqtt_hidden.visible_mqtt_node_count == 0U);
+    assert(mqtt_hidden.hidden_mqtt_node_count == 1U);
+    assert(mqtt_hidden.nodes.size() == 1U);
+    assert(!mqtt_hidden.nodes[0].via_mqtt);
+    assert(mqtt_hidden.nodes[0].node_id == 0x2234ABCDU);
 
     ::chat::MeshConfig mt_config{};
     mt_config.region = static_cast<uint8_t>(
@@ -200,13 +225,6 @@ int main()
     assert(radio.freq_mhz >= 470.0f);
     assert(radio.freq_mhz <= 510.0f);
     assert(std::abs(radio.freq_mhz - 433.175f) > 1.0f);
-
-    model.setShowMqttNodes(false);
-    const auto mqtt_hidden = model.snapshot();
-    assert(!mqtt_hidden.show_mqtt_nodes);
-    assert(mqtt_hidden.visible_mqtt_node_count == 0U);
-    assert(mqtt_hidden.hidden_mqtt_node_count == 1U);
-    assert(mqtt_hidden.nodes.empty());
 
     std::filesystem::remove_all(root, ec);
     return 0;

@@ -3,8 +3,14 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <ctime>
 #include <deque>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
+#include <string_view>
+
+#include "platform/linux/runtime_paths.h"
 
 namespace platform::linux_runtime
 {
@@ -12,6 +18,7 @@ namespace
 {
 
 constexpr std::size_t kMaxEntriesPerSource = 240;
+constexpr std::uintmax_t kMaxPacketLogFileBytes = 2U * 1024U * 1024U;
 
 std::mutex s_mutex;
 std::deque<PacketLogEntry> s_gps_entries;
@@ -32,6 +39,52 @@ std::deque<PacketLogEntry>& entries_for(PacketLogSource source)
     }
 }
 
+const char* packet_log_file_name(PacketLogSource source)
+{
+    switch (source)
+    {
+    case PacketLogSource::Lora:
+        return "lora.log";
+    case PacketLogSource::Mqtt:
+        return "mqtt.log";
+    case PacketLogSource::Gps:
+    default:
+        return "gps.log";
+    }
+}
+
+const char* direction_token(PacketLogDirection direction)
+{
+    switch (direction)
+    {
+    case PacketLogDirection::Tx:
+        return "TX";
+    case PacketLogDirection::System:
+        return "SYS";
+    case PacketLogDirection::Rx:
+    default:
+        return "RX";
+    }
+}
+
+const char* segment_kind_token(PacketLogSegmentKind kind)
+{
+    switch (kind)
+    {
+    case PacketLogSegmentKind::Header:
+        return "header";
+    case PacketLogSegmentKind::Body:
+        return "body";
+    case PacketLogSegmentKind::Checksum:
+        return "checksum";
+    case PacketLogSegmentKind::Error:
+        return "error";
+    case PacketLogSegmentKind::Meta:
+    default:
+        return "meta";
+    }
+}
+
 std::uint64_t now_ms()
 {
     using clock = std::chrono::system_clock;
@@ -39,6 +92,105 @@ std::uint64_t now_ms()
         std::chrono::duration_cast<std::chrono::milliseconds>(
             clock::now().time_since_epoch())
             .count());
+}
+
+std::string timestamp_utc(std::uint64_t timestamp_ms)
+{
+    const std::time_t seconds =
+        static_cast<std::time_t>(timestamp_ms / 1000ULL);
+    std::tm utc{};
+#if defined(_WIN32)
+    gmtime_s(&utc, &seconds);
+#else
+    gmtime_r(&seconds, &utc);
+#endif
+    char buffer[40] = {};
+    const auto millis = static_cast<unsigned>(timestamp_ms % 1000ULL);
+    std::strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%S", &utc);
+    char out[48] = {};
+    std::snprintf(out, sizeof(out), "%s.%03uZ", buffer, millis);
+    return out;
+}
+
+void write_escaped(std::ostream& out, std::string_view text)
+{
+    out << '"';
+    for (char ch : text)
+    {
+        switch (ch)
+        {
+        case '\\':
+            out << "\\\\";
+            break;
+        case '"':
+            out << "\\\"";
+            break;
+        case '\n':
+            out << "\\n";
+            break;
+        case '\r':
+            out << "\\r";
+            break;
+        case '\t':
+            out << "\\t";
+            break;
+        default:
+            out << ch;
+            break;
+        }
+    }
+    out << '"';
+}
+
+void rotate_if_needed(const std::filesystem::path& path)
+{
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec || size < kMaxPacketLogFileBytes)
+    {
+        return;
+    }
+
+    const auto rotated = path.string() + ".1";
+    std::filesystem::remove(rotated, ec);
+    ec.clear();
+    std::filesystem::rename(path, rotated, ec);
+}
+
+void append_packet_log_file(const PacketLogEntry& entry)
+{
+    const auto path =
+        resolve_paths().settings_root / "logs" / packet_log_file_name(entry.source);
+    if (!ensure_directory(path.parent_path()))
+    {
+        return;
+    }
+    rotate_if_needed(path);
+
+    std::ofstream out(path, std::ios::app);
+    if (!out.is_open())
+    {
+        return;
+    }
+
+    out << timestamp_utc(entry.timestamp_ms)
+        << " direction=" << direction_token(entry.direction)
+        << " title=";
+    write_escaped(out, entry.title);
+    out << " summary=";
+    write_escaped(out, entry.summary);
+    if (!entry.raw_hex.empty())
+    {
+        out << " raw=";
+        write_escaped(out, entry.raw_hex);
+    }
+    for (const auto& segment : entry.segments)
+    {
+        out << " segment." << segment_kind_token(segment.kind) << '.'
+            << (segment.label.empty() ? "value" : segment.label) << '=';
+        write_escaped(out, segment.text);
+    }
+    out << '\n';
 }
 
 } // namespace
@@ -50,6 +202,7 @@ void append_packet_log(PacketLogEntry entry)
     {
         entry.timestamp_ms = now_ms();
     }
+    append_packet_log_file(entry);
     auto& entries = entries_for(entry.source);
     entries.push_back(std::move(entry));
     while (entries.size() > kMaxEntriesPerSource)

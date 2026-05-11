@@ -30,7 +30,7 @@ jobs:
       - name: Install Linux simulator dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build xorg-dev libasound2-dev libegl1-mesa-dev libwayland-dev libxkbcommon-dev wayland-protocols libgtk-4-dev libsqlite3-dev libcurl4-openssl-dev
+          sudo apt-get install -y ninja-build dpkg-dev xorg-dev libasound2-dev libegl1-mesa-dev libwayland-dev libxkbcommon-dev wayland-protocols libgtk-4-dev libsqlite3-dev libcurl4-openssl-dev
 
       - name: Configure simulator
         working-directory: apps/linux_sim
@@ -67,6 +67,21 @@ jobs:
       - name: Build uConsole Linux shell
         working-directory: apps/linux_uconsole
         run: cmake --build --preset linux-uconsole-debug-build
+
+      - name: Configure uConsole Debian package
+        working-directory: apps/linux_uconsole
+        run: cmake --preset linux-uconsole-release
+
+      - name: Build uConsole Debian package
+        working-directory: apps/linux_uconsole
+        run: cmake --build --preset linux-uconsole-deb
+
+      - name: Upload uConsole Debian package
+        uses: actions/upload-artifact@v4
+        with:
+          name: trailmate-uconsole-deb
+          path: apps/linux_uconsole/build/uconsole-release/*.deb
+          if-no-files-found: error
 
       - name: Verify split Linux workflow from WSL-style entrypoint
         working-directory: apps/linux_sim

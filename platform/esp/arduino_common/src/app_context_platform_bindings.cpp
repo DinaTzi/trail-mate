@@ -31,6 +31,18 @@
 namespace
 {
 
+gps::GpsReceiverInitConfig make_receiver_init_config(const app::AppConfig& config)
+{
+    gps::GpsReceiverInitConfig init{};
+    init.baud = config.gps_init_baud;
+    init.probe_ms = config.gps_init_probe_ms;
+    init.profile = config.gps_init_profile;
+    init.rxm_policy = config.gps_init_rxm_policy;
+    init.gnss_policy = config.gps_init_gnss_policy;
+    init.nmea_policy = config.gps_init_nmea_policy;
+    return init;
+}
+
 std::unique_ptr<chat::IMeshAdapter> create_mesh_runtime()
 {
     return std::unique_ptr<chat::IMeshAdapter>(new chat::MeshAdapterRouter());
@@ -51,7 +63,8 @@ void init_gps_runtime(GpsBoard* gps_board,
                       *motion_board,
                       disable_hw_init,
                       config.gps_interval_ms,
-                      config.motion_config);
+                      config.motion_config,
+                      make_receiver_init_config(config));
     gps_service.setEnabled(config.gps_enabled);
     gps_service.setCollectionInterval(config.gps_interval_ms);
     gps_service.setPowerStrategy(config.gps_strategy);
@@ -61,6 +74,7 @@ void init_gps_runtime(GpsBoard* gps_board,
 
 void apply_position_config(const app::AppConfig& config)
 {
+    gps::GpsService::getInstance().setReceiverInitConfig(make_receiver_init_config(config));
     gps::GpsService::getInstance().setEnabled(config.gps_enabled);
     gps::GpsService::getInstance().setCollectionInterval(config.gps_interval_ms);
     gps::GpsService::getInstance().setPowerStrategy(config.gps_strategy);

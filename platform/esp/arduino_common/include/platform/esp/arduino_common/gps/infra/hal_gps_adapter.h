@@ -17,6 +17,7 @@ class HalGpsAdapter : public IGpsHardware
     void powerOn() override;
     void powerOff() override;
     uint32_t loop() override;
+    uint32_t lastLoopReadBytes() const override;
     bool hasFix() const override;
     double latitude() const override;
     double longitude() const override;
@@ -30,7 +31,7 @@ class HalGpsAdapter : public IGpsHardware
     size_t getSatellites(gps::GnssSatInfo* out, size_t max) const override;
     gps::GnssStatus getGnssStatus() const override;
     bool syncTime(uint32_t gps_task_interval_ms) override;
-    bool applyGnssConfig(uint8_t mode, uint8_t sat_mask) override;
+    bool applyGnssConfig(uint8_t mode, uint8_t sat_mask, bool send_rxm, bool send_gnss) override;
     bool applyNmeaConfig(uint8_t output_hz, uint8_t sentence_mask) override;
 
   private:
