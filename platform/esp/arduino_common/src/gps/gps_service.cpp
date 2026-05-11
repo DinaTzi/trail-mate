@@ -5,17 +5,26 @@
 #include "gps/usecase/gps_runtime_policy.h"
 #include "platform/esp/arduino_common/gps/track_recorder.h"
 #include "platform/esp/arduino_common/power_tier.h"
+#include <cstdio>
 #include <cstring>
 
-#ifndef GPS_TASK_LOG_ENABLE
-#define GPS_TASK_LOG_ENABLE 0
-#endif
-
-#if GPS_TASK_LOG_ENABLE
+// GPS task logs are release diagnostics while receiver bring-up is unstable.
 #define GPS_TASK_LOG(...) Serial.printf(__VA_ARGS__)
-#else
-#define GPS_TASK_LOG(...)
-#endif
+
+namespace
+{
+
+constexpr uint32_t kGpsUartPollIntervalMs = 250;
+constexpr uint32_t kGpsIdlePollIntervalMs = 1000;
+constexpr uint32_t kGpsHealthLogIntervalMs = 10000;
+constexpr uint32_t kGpsPostConfigWatchMs = 8000;
+
+const char* gps_valid_text(bool valid)
+{
+    return valid ? "fix" : "nofix";
+}
+
+} // namespace
 
 namespace gps
 {
@@ -28,10 +37,13 @@ GpsService& GpsService::getInstance()
 
 void GpsService::begin(GpsBoard& gps_board, MotionBoard& motion_board,
                        uint32_t disable_hw_init, uint32_t gps_interval_ms,
-                       const MotionConfig& motion_config)
+                       const MotionConfig& motion_config,
+                       const GpsReceiverInitConfig& receiver_init_config)
 {
     gps_board_ = &gps_board;
     motion_board_ = &motion_board;
+    receiver_init_config_ = receiver_init_config;
+    gps_board_->setGPSReceiverInitConfig(receiver_init_config_);
     gps_adapter_.begin(gps_board);
 
     gps_disabled_ = (disable_hw_init & NO_HW_GPS) != 0;
@@ -42,6 +54,7 @@ void GpsService::begin(GpsBoard& gps_board, MotionBoard& motion_board,
         return;
     }
     gps_ready_ = gps_adapter_.isReady();
+    gps_powered_ = gps_ready_;
     if (!gps_ready_)
     {
         Serial.printf("[GPS] service starting reason=adapter_not_ready_waiting_retry\n");
@@ -53,6 +66,11 @@ void GpsService::begin(GpsBoard& gps_board, MotionBoard& motion_board,
     if (gps_data_mutex_ == NULL)
     {
         log_e("Failed to create GPS data mutex");
+    }
+    gps_init_mutex_ = xSemaphoreCreateRecursiveMutex();
+    if (gps_init_mutex_ == NULL)
+    {
+        log_e("Failed to create GPS init mutex");
     }
 
     runtime_state_.setCollectionInterval(gps_interval_ms);
@@ -162,6 +180,64 @@ bool GpsService::getGnssSnapshot(GnssSatInfo* out, size_t max, size_t* out_count
     return false;
 }
 
+GpsDiagnosticsSnapshot GpsService::getDiagnostics()
+{
+    GpsDiagnosticsSnapshot snapshot{};
+    snapshot.supported = !gps_disabled_;
+    snapshot.enabled = isEnabled();
+    snapshot.powered = gps_powered_;
+    snapshot.ready = gps_ready_;
+    snapshot.chars_total = gps_chars_total_;
+    snapshot.chars_recent = gps_chars_recent_;
+    snapshot.poll_interval_ms = kGpsUartPollIntervalMs;
+    snapshot.collection_interval_ms = getCollectionInterval();
+    snapshot.last_rx_age_ms = gps_last_rx_ms_ > 0 ? (millis() - gps_last_rx_ms_) : 0xFFFFFFFFUL;
+
+    if (gps_data_mutex_ != NULL && xSemaphoreTake(gps_data_mutex_, pdMS_TO_TICKS(50)) == pdTRUE)
+    {
+        snapshot.has_fix = gps_state_.valid;
+        snapshot.satellites = gps_state_.satellites;
+        snapshot.sats_in_view = gnss_status_.sats_in_view;
+        snapshot.sats_in_use = gnss_status_.sats_in_use;
+        xSemaphoreGive(gps_data_mutex_);
+    }
+
+    if (!snapshot.supported)
+    {
+        snapshot.code = GpsDiagnosticCode::Disabled;
+    }
+    else if (!snapshot.enabled)
+    {
+        snapshot.code = GpsDiagnosticCode::NotEnabled;
+    }
+    else if (!snapshot.powered)
+    {
+        snapshot.code = GpsDiagnosticCode::PowerOff;
+    }
+    else if (!snapshot.ready)
+    {
+        snapshot.code = GpsDiagnosticCode::TransportNotReady;
+    }
+    else if (snapshot.chars_total == 0)
+    {
+        snapshot.code = GpsDiagnosticCode::NoTraffic;
+    }
+    else if (snapshot.last_rx_age_ms != 0xFFFFFFFFUL && snapshot.last_rx_age_ms > 15000UL)
+    {
+        snapshot.code = GpsDiagnosticCode::TrafficStalled;
+    }
+    else if (!snapshot.has_fix)
+    {
+        snapshot.code = GpsDiagnosticCode::NoFix;
+    }
+    else
+    {
+        snapshot.code = GpsDiagnosticCode::OK;
+    }
+
+    return snapshot;
+}
+
 uint32_t GpsService::getCollectionInterval() const
 {
     return runtime_state_.collectionIntervalMs(getPowerTier());
@@ -266,6 +342,20 @@ void GpsService::setExternalNmeaConfig(uint8_t output_hz, uint8_t sentence_mask)
     runtime_config_.markExternalNmeaConfigApplied();
 }
 
+void GpsService::setReceiverInitConfig(const GpsReceiverInitConfig& config)
+{
+    if (!takeGpsUartLock())
+    {
+        return;
+    }
+    receiver_init_config_ = config;
+    if (gps_board_ != nullptr)
+    {
+        gps_board_->setGPSReceiverInitConfig(receiver_init_config_);
+    }
+    giveGpsUartLock();
+}
+
 void GpsService::setMotionConfig(const MotionConfig& config)
 {
     if (!isEnabled() || gps_board_ == nullptr)
@@ -310,12 +400,68 @@ void GpsService::applyGnssConfig()
     {
         return;
     }
-    const GnssRuntimeConfig& gnss_config = runtime_config_.gnssConfig();
-    if (!gps_adapter_.applyGnssConfig(gnss_config.mode, gnss_config.sat_mask))
+    if (!takeGpsUartLock())
     {
         return;
     }
+    const GnssRuntimeConfig& gnss_config = runtime_config_.gnssConfig();
+    bool send_rxm = receiver_init_config_.rxm_policy != 1;
+    bool send_gnss = receiver_init_config_.gnss_policy != 1;
+#if defined(ARDUINO_T_DECK_PRO)
+    const bool tdeck_legacy_or_unknown = receiver_init_config_.profile == 0 ||
+                                         receiver_init_config_.profile == 1 ||
+                                         receiver_init_config_.profile == 2;
+    if (tdeck_legacy_or_unknown && receiver_init_config_.rxm_policy == 0)
+    {
+        send_rxm = false;
+    }
+    if (tdeck_legacy_or_unknown && receiver_init_config_.gnss_policy == 0)
+    {
+        send_gnss = false;
+    }
+#elif defined(ARDUINO_T_DECK)
+    if ((send_rxm || send_gnss) && !canSendReceiverUbxConfig("applyGnssConfig"))
+    {
+        send_rxm = false;
+        send_gnss = false;
+    }
+#endif
+    if (!send_rxm && !send_gnss)
+    {
+        Serial.printf("[GPS] applyGnssConfig skipped rxm_policy=%u gnss_policy=%u profile=%u mode=%u sat_mask=0x%02X\n",
+                      static_cast<unsigned>(receiver_init_config_.rxm_policy),
+                      static_cast<unsigned>(receiver_init_config_.gnss_policy),
+                      static_cast<unsigned>(receiver_init_config_.profile),
+                      static_cast<unsigned>(gnss_config.mode),
+                      static_cast<unsigned>(gnss_config.sat_mask));
+        runtime_config_.markGnssConfigApplied();
+        giveGpsUartLock();
+        return;
+    }
+    const uint32_t chars_before = gps_chars_total_;
+    const uint32_t started_ms = millis();
+    const bool ok = gps_adapter_.applyGnssConfig(gnss_config.mode, gnss_config.sat_mask, send_rxm, send_gnss);
+    const uint32_t elapsed_ms = millis() - started_ms;
+    Serial.printf("[GPS] applyGnssConfig mode=%u sat_mask=0x%02X ok=%d powered=%d ready=%d chars_before=%lu chars_after=%lu elapsed_ms=%lu rxm_send=%d gnss_send=%d profile=%u\n",
+                  static_cast<unsigned>(gnss_config.mode),
+                  static_cast<unsigned>(gnss_config.sat_mask),
+                  ok ? 1 : 0,
+                  gps_powered_ ? 1 : 0,
+                  gps_ready_ ? 1 : 0,
+                  static_cast<unsigned long>(chars_before),
+                  static_cast<unsigned long>(gps_chars_total_),
+                  static_cast<unsigned long>(elapsed_ms),
+                  send_rxm ? 1 : 0,
+                  send_gnss ? 1 : 0,
+                  static_cast<unsigned>(receiver_init_config_.profile));
+    startPostConfigStreamWatch("applyGnssConfig", gps_chars_total_);
+    if (!ok)
+    {
+        giveGpsUartLock();
+        return;
+    }
     runtime_config_.markGnssConfigApplied();
+    giveGpsUartLock();
 }
 
 void GpsService::applyInternalNmeaConfig()
@@ -324,10 +470,114 @@ void GpsService::applyInternalNmeaConfig()
     {
         return;
     }
-    if (!gps_adapter_.applyNmeaConfig(1, 0))
+    if (!takeGpsUartLock())
     {
         return;
     }
+    if (receiver_init_config_.nmea_policy == 1)
+    {
+        Serial.printf("[GPS] applyInternalNmeaConfig skipped policy=skip\n");
+        giveGpsUartLock();
+        return;
+    }
+#if defined(ARDUINO_T_DECK_PRO)
+    if (receiver_init_config_.nmea_policy == 0 &&
+        (receiver_init_config_.profile == 0 || receiver_init_config_.profile == 1 || receiver_init_config_.profile == 2))
+    {
+        Serial.printf("[GPS] applyInternalNmeaConfig skipped policy=auto_legacy profile=%u\n",
+                      static_cast<unsigned>(receiver_init_config_.profile));
+        giveGpsUartLock();
+        return;
+    }
+#elif defined(ARDUINO_T_DECK)
+    if (!canSendReceiverUbxConfig("applyInternalNmeaConfig"))
+    {
+        giveGpsUartLock();
+        return;
+    }
+#endif
+    const uint32_t chars_before = gps_chars_total_;
+    const uint32_t started_ms = millis();
+    const bool ok = gps_adapter_.applyNmeaConfig(1, 0);
+    const uint32_t elapsed_ms = millis() - started_ms;
+    Serial.printf("[GPS] applyInternalNmeaConfig rate=1 sentence_mask=0 ok=%d powered=%d ready=%d chars_before=%lu chars_after=%lu elapsed_ms=%lu ubx=cfg_msg\n",
+                  ok ? 1 : 0,
+                  gps_powered_ ? 1 : 0,
+                  gps_ready_ ? 1 : 0,
+                  static_cast<unsigned long>(chars_before),
+                  static_cast<unsigned long>(gps_chars_total_),
+                  static_cast<unsigned long>(elapsed_ms));
+    startPostConfigStreamWatch("applyInternalNmeaConfig", gps_chars_total_);
+    if (!ok)
+    {
+        giveGpsUartLock();
+        return;
+    }
+    giveGpsUartLock();
+}
+
+bool GpsService::takeGpsUartLock(TickType_t timeout)
+{
+    return gps_init_mutex_ == nullptr || xSemaphoreTakeRecursive(gps_init_mutex_, timeout) == pdTRUE;
+}
+
+void GpsService::giveGpsUartLock()
+{
+    if (gps_init_mutex_ != nullptr)
+    {
+        xSemaphoreGiveRecursive(gps_init_mutex_);
+    }
+}
+
+bool GpsService::canSendReceiverUbxConfig(const char* source) const
+{
+#if defined(ARDUINO_T_DECK)
+    if (gps_board_ == nullptr)
+    {
+        return false;
+    }
+
+    const GpsReceiverProtocol protocol = gps_board_->getGPSReceiverProtocol();
+    const bool explicit_ubx_profile = receiver_init_config_.profile == 2 ||
+                                      receiver_init_config_.profile == 3;
+    if (protocol == GpsReceiverProtocol::Ubx)
+    {
+        return true;
+    }
+    if (explicit_ubx_profile)
+    {
+        Serial.printf("[GPS] %s ubx_config allowed explicit_profile=%u detected_protocol=%s\n",
+                      source ? source : "gps_config",
+                      static_cast<unsigned>(receiver_init_config_.profile),
+                      gpsReceiverProtocolName(protocol));
+        return true;
+    }
+
+    Serial.printf("[GPS] %s skipped ubx_config profile=%u detected_protocol=%s chars_total=%lu\n",
+                  source ? source : "gps_config",
+                  static_cast<unsigned>(receiver_init_config_.profile),
+                  gpsReceiverProtocolName(protocol),
+                  static_cast<unsigned long>(gps_chars_total_));
+    return false;
+#else
+    (void)source;
+    return true;
+#endif
+}
+
+void GpsService::startPostConfigStreamWatch(const char* label, uint32_t chars_total)
+{
+    gps_post_config_watch_active_ = true;
+    gps_post_config_start_ms_ = millis();
+    gps_post_config_chars_ = chars_total;
+    std::snprintf(gps_post_config_label_,
+                  sizeof(gps_post_config_label_),
+                  "%s",
+                  label ? label : "gps_config");
+    Serial.printf("[GPS] post_config watch source=%s chars=%lu window_ms=%lu\n",
+                  gps_post_config_label_,
+                  static_cast<unsigned long>(gps_post_config_chars_),
+                  static_cast<unsigned long>(kGpsPostConfigWatchMs));
 }
 
 void GpsService::setMotionIdleTimeout(uint32_t timeout_ms)
@@ -357,10 +607,20 @@ void GpsService::gpsTask(void* pvParameters)
     uint32_t loop_count = 0;
     uint32_t task_start_ms = millis();
     uint32_t last_log_ms = 0;
+    uint32_t last_health_log_ms = 0;
+    uint32_t last_health_total_chars = 0;
+    uint32_t last_health_total_uart_reads = 0;
+    uint32_t last_total_chars = 0;
+    uint32_t total_uart_reads = 0;
 
     GPS_TASK_LOG("[GPS Task] ===== TASK STARTED =====\n");
     GPS_TASK_LOG("[GPS Task] Started at %lu ms, GPS ready: %d\n", task_start_ms, service->gps_adapter_.isReady());
     GPS_TASK_LOG("[GPS Task] Collection interval: %lu ms\n", service->getCollectionInterval());
+    Serial.printf("[GPS] task started ready=%d powered=%d poll_ms=%lu collection_ms=%lu\n",
+                  service->gps_adapter_.isReady() ? 1 : 0,
+                  service->gps_powered_ ? 1 : 0,
+                  static_cast<unsigned long>(kGpsUartPollIntervalMs),
+                  static_cast<unsigned long>(service->getCollectionInterval()));
 
     while (true)
     {
@@ -368,6 +628,13 @@ void GpsService::gpsTask(void* pvParameters)
         uint32_t now_ms = millis();
         bool gps_ready = service->gps_adapter_.isReady();
         service->gps_ready_ = gps_ready;
+        uint32_t total_chars = last_total_chars;
+        uint32_t chars_this_loop = 0;
+        uint32_t uart_read_bytes = 0;
+        bool health_valid = false;
+        uint8_t health_sat_count = 0;
+        uint8_t health_sats_in_view = 0;
+        uint8_t health_sats_in_use = 0;
 
         if (service->motion_adapter_.isReady() && service->motion_policy_.isEnabled())
         {
@@ -384,8 +651,11 @@ void GpsService::gpsTask(void* pvParameters)
 
         if (should_log)
         {
-            GPS_TASK_LOG("[GPS Task] Loop %lu: GPS ready=%d, valid=%d, mutex=%p\n",
-                         loop_count, gps_ready, service->gps_state_.valid, service->gps_data_mutex_);
+            GPS_TASK_LOG("[GPS Task] Loop %lu: GPS ready=%d, valid=%d, mutex_ok=%d\n",
+                         loop_count,
+                         gps_ready,
+                         service->gps_state_.valid,
+                         service->gps_data_mutex_ != NULL ? 1 : 0);
             last_log_ms = now_ms;
         }
 
@@ -398,17 +668,48 @@ void GpsService::gpsTask(void* pvParameters)
                              loop_count);
             }
         }
+        else if (service->gps_initializing_)
+        {
+            if (should_log)
+            {
+                GPS_TASK_LOG("[GPS Task] GPS initialization in progress, waiting (loop %lu)\n", loop_count);
+            }
+        }
         else if (gps_ready)
         {
-            static uint32_t last_total_chars = 0;
-            uint32_t total_chars = service->gps_adapter_.loop();
-            uint32_t chars_this_loop = (total_chars > last_total_chars) ? (total_chars - last_total_chars) : 0;
-            last_total_chars = total_chars;
-
-            if (should_log && chars_this_loop > 0)
+            if (service->takeGpsUartLock(pdMS_TO_TICKS(20)))
             {
-                GPS_TASK_LOG("[GPS Task] GPS loop processed %lu characters this cycle (total: %lu)\n",
-                             chars_this_loop, total_chars);
+                total_chars = service->gps_adapter_.loop();
+                uart_read_bytes = service->gps_adapter_.lastLoopReadBytes();
+                total_uart_reads += uart_read_bytes;
+                chars_this_loop = (total_chars > last_total_chars) ? (total_chars - last_total_chars) : 0;
+                last_total_chars = total_chars;
+                service->gps_chars_total_ = total_chars;
+                if (uart_read_bytes > 0)
+                {
+                    service->gps_last_rx_ms_ = now_ms;
+                }
+                service->giveGpsUartLock();
+            }
+            else
+            {
+                total_chars = last_total_chars;
+            }
+
+            if (chars_this_loop > 0 || uart_read_bytes > 0)
+            {
+                GPS_TASK_LOG("[GPS Task] GPS loop processed %lu characters this cycle (total: %lu, read_bytes=%lu)\n",
+                             chars_this_loop,
+                             total_chars,
+                             uart_read_bytes);
+            }
+            if (uart_read_bytes != chars_this_loop && (uart_read_bytes > 0 || chars_this_loop > 0))
+            {
+                Serial.printf("[GPS][COUNT_CHECK] loop=%lu read_bytes=%lu tinygps_delta=%lu total=%lu\n",
+                              static_cast<unsigned long>(loop_count),
+                              static_cast<unsigned long>(uart_read_bytes),
+                              static_cast<unsigned long>(chars_this_loop),
+                              static_cast<unsigned long>(total_chars));
             }
 
             if (service->gps_data_mutex_ != NULL && xSemaphoreTake(service->gps_data_mutex_, portMAX_DELAY) == pdTRUE)
@@ -428,8 +729,7 @@ void GpsService::gpsTask(void* pvParameters)
 
                 if (!service->gps_time_synced_)
                 {
-                    uint32_t gps_interval = service->getCollectionInterval();
-                    if (service->gps_adapter_.syncTime(gps_interval))
+                    if (service->gps_adapter_.syncTime(kGpsUartPollIntervalMs))
                     {
                         service->gps_time_synced_ = true;
                         GPS_TASK_LOG("[GPS Task] *** TIME SYNCED TO RTC (automatic) *** (loop %lu, sat=%d)\n",
@@ -501,6 +801,7 @@ void GpsService::gpsTask(void* pvParameters)
                     service->gps_state_.alt_m = 0.0;
                     service->gps_state_.speed_mps = 0.0;
                     service->gps_state_.course_deg = 0.0;
+                    service->gps_state_.satellites = sat_count;
                     if (was_valid)
                     {
                         GPS_TASK_LOG("[GPS Task] *** FIX LOST *** (loop %lu)\n", loop_count);
@@ -511,6 +812,10 @@ void GpsService::gpsTask(void* pvParameters)
                                      loop_count, sat_count, chars_this_loop);
                     }
                 }
+                health_valid = service->gps_state_.valid;
+                health_sat_count = sat_count;
+                health_sats_in_view = service->gnss_status_.sats_in_view;
+                health_sats_in_use = service->gnss_status_.sats_in_use;
                 xSemaphoreGive(service->gps_data_mutex_);
 
                 // Append GPX track points outside the GPS mutex to keep the task responsive.
@@ -524,32 +829,61 @@ void GpsService::gpsTask(void* pvParameters)
                 GPS_TASK_LOG("[GPS Task] ERROR: Failed to take mutex (loop %lu)\n", loop_count);
             }
         }
-        else
+        else if (service->gps_powered_)
         {
             static uint32_t last_retry_ms = 0;
             const uint32_t RETRY_INTERVAL_MS = 300000;
 
-            if (should_log)
-            {
-                GPS_TASK_LOG("[GPS Task] GPS not ready (loop %lu)\n", loop_count);
-            }
-
             if (last_retry_ms == 0 || (now_ms - last_retry_ms) >= RETRY_INTERVAL_MS)
             {
+                if (should_log)
+                {
+                    GPS_TASK_LOG("[GPS Task] GPS not ready (loop %lu)\n", loop_count);
+                }
+
                 GPS_TASK_LOG("[GPS Task] Attempting to reinitialize GPS (last retry: %lu ms ago, loop %lu)\n",
                              last_retry_ms > 0 ? (now_ms - last_retry_ms) : 0, loop_count);
 
-                bool retry_result = service->gps_adapter_.init();
+                bool retry_result = false;
+                bool retry_attempted = false;
+
+                service->takeGpsUartLock();
+
+                const bool ready_after_lock = service->gps_adapter_.isReady();
+                service->gps_ready_ = ready_after_lock;
+
+                if (service->gps_powered_ && !service->gps_initializing_ && !ready_after_lock)
+                {
+                    retry_attempted = true;
+                    service->gps_initializing_ = true;
+                    service->gps_ready_ = false;
+                    retry_result = service->gps_adapter_.init();
+                    service->gps_ready_ = service->gps_adapter_.isReady() || retry_result;
+                    if (retry_result)
+                    {
+                        const GnssRuntimeConfig gnss_config = service->runtime_config_.gnssConfig();
+                        service->runtime_config_.setGnssConfig(gnss_config.mode, gnss_config.sat_mask);
+                        service->applyGnssConfig();
+                        service->applyInternalNmeaConfig();
+                    }
+                    service->gps_initializing_ = false;
+                }
+
+                service->giveGpsUartLock();
                 last_retry_ms = now_ms;
 
-                if (retry_result)
+                if (!retry_attempted)
+                {
+                    if (should_log)
+                    {
+                        GPS_TASK_LOG("[GPS Task] GPS reinitialization skipped; init state changed (loop %lu)\n",
+                                     loop_count);
+                    }
+                }
+                else if (retry_result)
                 {
                     GPS_TASK_LOG("[GPS Task] *** GPS REINITIALIZATION SUCCESSFUL *** (loop %lu)\n", loop_count);
                     service->gps_ready_ = true;
-                    const GnssRuntimeConfig gnss_config = service->runtime_config_.gnssConfig();
-                    service->runtime_config_.setGnssConfig(gnss_config.mode, gnss_config.sat_mask);
-                    service->applyGnssConfig();
-                    service->applyInternalNmeaConfig();
                 }
                 else
                 {
@@ -560,7 +894,67 @@ void GpsService::gpsTask(void* pvParameters)
             }
         }
 
-        uint32_t interval_ms = service->getCollectionInterval();
+        if (service->gps_post_config_watch_active_)
+        {
+            const uint32_t watch_elapsed_ms = millis() - service->gps_post_config_start_ms_;
+            if (total_chars > service->gps_post_config_chars_)
+            {
+                Serial.printf("[GPS] post_config stream_resumed source=%s chars_before=%lu chars_now=%lu delta=%lu elapsed_ms=%lu\n",
+                              service->gps_post_config_label_,
+                              static_cast<unsigned long>(service->gps_post_config_chars_),
+                              static_cast<unsigned long>(total_chars),
+                              static_cast<unsigned long>(total_chars - service->gps_post_config_chars_),
+                              static_cast<unsigned long>(watch_elapsed_ms));
+                service->gps_post_config_watch_active_ = false;
+            }
+            else if (watch_elapsed_ms >= kGpsPostConfigWatchMs)
+            {
+                const GpsDiagnosticCode code =
+                    (service->gps_post_config_chars_ == 0 && total_chars == 0)
+                        ? GpsDiagnosticCode::NoTraffic
+                        : GpsDiagnosticCode::TrafficStalled;
+                Serial.printf("[GPS] post_config no_stream source=%s code=%s chars_before=%lu chars_now=%lu elapsed_ms=%lu powered=%d ready=%d\n",
+                              service->gps_post_config_label_,
+                              gpsDiagnosticCodeName(code),
+                              static_cast<unsigned long>(service->gps_post_config_chars_),
+                              static_cast<unsigned long>(total_chars),
+                              static_cast<unsigned long>(watch_elapsed_ms),
+                              service->gps_powered_ ? 1 : 0,
+                              gps_ready ? 1 : 0);
+                service->gps_post_config_watch_active_ = false;
+            }
+        }
+
+        now_ms = millis();
+        if (last_health_log_ms == 0 || (now_ms - last_health_log_ms) >= kGpsHealthLogIntervalMs)
+        {
+            const uint32_t chars_since_log =
+                (total_chars >= last_health_total_chars) ? (total_chars - last_health_total_chars) : 0;
+            const uint32_t reads_since_log =
+                (total_uart_reads >= last_health_total_uart_reads) ? (total_uart_reads - last_health_total_uart_reads) : 0;
+            Serial.printf("[GPS] health ready=%d powered=%d state=%s sats=%u view=%u use=%u chars_total=%lu chars_%lus=%lu read_%lus=%lu poll_ms=%lu collection_ms=%lu loops=%lu\n",
+                          gps_ready ? 1 : 0,
+                          service->gps_powered_ ? 1 : 0,
+                          gps_valid_text(health_valid),
+                          static_cast<unsigned>(health_sat_count),
+                          static_cast<unsigned>(health_sats_in_view),
+                          static_cast<unsigned>(health_sats_in_use),
+                          static_cast<unsigned long>(total_chars),
+                          static_cast<unsigned long>(kGpsHealthLogIntervalMs / 1000),
+                          static_cast<unsigned long>(chars_since_log),
+                          static_cast<unsigned long>(kGpsHealthLogIntervalMs / 1000),
+                          static_cast<unsigned long>(reads_since_log),
+                          static_cast<unsigned long>(kGpsUartPollIntervalMs),
+                          static_cast<unsigned long>(service->getCollectionInterval()),
+                          static_cast<unsigned long>(loop_count));
+            last_health_total_chars = total_chars;
+            last_health_total_uart_reads = total_uart_reads;
+            service->gps_chars_recent_ = chars_since_log;
+            last_health_log_ms = now_ms;
+        }
+
+        const uint32_t interval_ms =
+            (service->gps_powered_ && gps_ready) ? kGpsUartPollIntervalMs : kGpsIdlePollIntervalMs;
         TickType_t frequency = pdMS_TO_TICKS(interval_ms);
 
         if (should_log)
@@ -605,10 +999,14 @@ void GpsService::setGPSPowerState(bool enable)
 {
     if (enable)
     {
+        takeGpsUartLock();
         if (gps_powered_)
         {
+            giveGpsUartLock();
             return;
         }
+        gps_initializing_ = true;
+        gps_ready_ = false;
         gps_adapter_.powerOn();
         gps_powered_ = true;
         bool init_ok = gps_adapter_.init();
@@ -622,6 +1020,8 @@ void GpsService::setGPSPowerState(bool enable)
             applyGnssConfig();
             applyInternalNmeaConfig();
         }
+        gps_initializing_ = false;
+        giveGpsUartLock();
         if (gps_task_handle_ != nullptr)
         {
             vTaskResume(gps_task_handle_);
@@ -629,10 +1029,14 @@ void GpsService::setGPSPowerState(bool enable)
     }
     else
     {
+        takeGpsUartLock();
         if (!gps_powered_)
         {
+            gps_initializing_ = false;
+            giveGpsUartLock();
             return;
         }
+        gps_initializing_ = true;
         if (gps_task_handle_ != nullptr)
         {
             vTaskSuspend(gps_task_handle_);
@@ -640,6 +1044,9 @@ void GpsService::setGPSPowerState(bool enable)
         gps_adapter_.powerOff();
         gps_powered_ = false;
         gps_ready_ = false;
+        gps_post_config_watch_active_ = false;
+        gps_initializing_ = false;
+        giveGpsUartLock();
     }
 }
 

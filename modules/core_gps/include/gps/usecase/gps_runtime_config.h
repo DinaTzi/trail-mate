@@ -7,6 +7,43 @@ namespace gps
 
 constexpr uint8_t kDefaultGnssSatelliteMask = 0x1 | 0x8 | 0x4;
 
+enum class GpsReceiverProtocol : uint8_t
+{
+    Unknown = 0,
+    NoTraffic = 1,
+    Nmea = 2,
+    Ubx = 3,
+    OtherTraffic = 4,
+};
+
+inline const char* gpsReceiverProtocolName(GpsReceiverProtocol protocol)
+{
+    switch (protocol)
+    {
+    case GpsReceiverProtocol::Unknown:
+        return "unknown";
+    case GpsReceiverProtocol::NoTraffic:
+        return "no_traffic";
+    case GpsReceiverProtocol::Nmea:
+        return "nmea";
+    case GpsReceiverProtocol::Ubx:
+        return "ubx";
+    case GpsReceiverProtocol::OtherTraffic:
+        return "other_traffic";
+    }
+    return "unknown";
+}
+
+struct GpsReceiverInitConfig
+{
+    uint32_t baud = 0;
+    uint32_t probe_ms = 900;
+    uint8_t profile = 0;
+    uint8_t rxm_policy = 0;
+    uint8_t gnss_policy = 0;
+    uint8_t nmea_policy = 0;
+};
+
 struct GnssRuntimeConfig
 {
     uint8_t mode = 0;

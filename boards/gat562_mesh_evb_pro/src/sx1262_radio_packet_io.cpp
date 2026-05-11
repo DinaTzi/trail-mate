@@ -3,21 +3,19 @@
 #include "boards/gat562_mesh_evb_pro/board_profile.h"
 #include "boards/gat562_mesh_evb_pro/gat562_board.h"
 #include "chat/infra/meshcore/mc_region_presets.h"
-#include "chat/infra/meshtastic/mt_region.h"
+#include "chat/infra/meshtastic/mt_radio_config.h"
 
 #include <Arduino.h>
 #include <RadioLib.h>
 #include <SPI.h>
 
 #include <algorithm>
-#include <cmath>
 
 namespace boards::gat562_mesh_evb_pro
 {
 namespace
 {
 
-constexpr uint8_t kMeshtasticSyncWord = 0x2B;
 constexpr uint8_t kMeshCoreSyncWord = 0x12;
 constexpr uint16_t kDefaultPreambleLen = 16;
 constexpr uint8_t kDefaultCrcLen = 2;
@@ -33,106 +31,19 @@ float normalizeBandwidthKhz(float bw_khz)
     return bw_khz;
 }
 
-void modemPresetToParams(meshtastic_Config_LoRaConfig_ModemPreset preset,
-                         bool wide_lora,
-                         float& bw_khz,
-                         uint8_t& sf,
-                         uint8_t& cr_denom)
-{
-    switch (preset)
-    {
-    case meshtastic_Config_LoRaConfig_ModemPreset_LONG_SLOW:
-        bw_khz = 125.0f;
-        sf = 12;
-        cr_denom = 8;
-        break;
-    case meshtastic_Config_LoRaConfig_ModemPreset_LONG_FAST:
-        bw_khz = 250.0f;
-        sf = 11;
-        cr_denom = 5;
-        break;
-    case meshtastic_Config_LoRaConfig_ModemPreset_MEDIUM_SLOW:
-        bw_khz = 250.0f;
-        sf = 10;
-        cr_denom = 8;
-        break;
-    case meshtastic_Config_LoRaConfig_ModemPreset_MEDIUM_FAST:
-        bw_khz = 250.0f;
-        sf = 9;
-        cr_denom = 5;
-        break;
-    case meshtastic_Config_LoRaConfig_ModemPreset_SHORT_SLOW:
-        bw_khz = 250.0f;
-        sf = 8;
-        cr_denom = 8;
-        break;
-    case meshtastic_Config_LoRaConfig_ModemPreset_SHORT_FAST:
-    default:
-        bw_khz = wide_lora ? 500.0f : 250.0f;
-        sf = wide_lora ? 7 : 8;
-        cr_denom = 5;
-        break;
-    }
-}
-
 Sx1262RadioPacketIo::AppliedRadioConfig deriveMeshtasticRadioConfig(const ::chat::MeshConfig& config)
 {
     Sx1262RadioPacketIo::AppliedRadioConfig out{};
-    auto region_code = static_cast<meshtastic_Config_LoRaConfig_RegionCode>(config.region);
-    if (region_code == meshtastic_Config_LoRaConfig_RegionCode_UNSET)
-    {
-        region_code = meshtastic_Config_LoRaConfig_RegionCode_CN;
-    }
-
-    const ::chat::meshtastic::RegionInfo* region = ::chat::meshtastic::findRegion(region_code);
-    if (!region)
-    {
-        region = ::chat::meshtastic::findRegion(meshtastic_Config_LoRaConfig_RegionCode_CN);
-    }
-
-    float bw_khz = 250.0f;
-    uint8_t sf = 11;
-    uint8_t cr_denom = 5;
-    if (config.use_preset && region)
-    {
-        modemPresetToParams(static_cast<meshtastic_Config_LoRaConfig_ModemPreset>(config.modem_preset),
-                            region->wide_lora,
-                            bw_khz,
-                            sf,
-                            cr_denom);
-    }
-    else
-    {
-        bw_khz = normalizeBandwidthKhz(config.bandwidth_khz);
-        sf = std::clamp<uint8_t>(config.spread_factor, 5, 12);
-        cr_denom = std::clamp<uint8_t>(config.coding_rate, 5, 8);
-        if (region)
-        {
-            if (bw_khz < 7.8f) bw_khz = 7.8f;
-            if (!region->wide_lora && bw_khz > 500.0f) bw_khz = 500.0f;
-            if (region->wide_lora && bw_khz > 1625.0f) bw_khz = 1625.0f;
-        }
-    }
-
-    float freq_mhz = ::chat::meshtastic::estimateFrequencyMhz(config.region, config.modem_preset);
-    if (config.override_frequency_mhz > 0.0f)
-    {
-        freq_mhz = config.override_frequency_mhz;
-    }
-    freq_mhz += config.frequency_offset_mhz;
-
-    out.freq_mhz = freq_mhz;
-    out.bw_khz = bw_khz;
-    out.sf = sf;
-    out.cr = cr_denom;
-    out.tx_power = std::clamp<int8_t>(config.tx_power == 0 ? 17 : config.tx_power, -9, 20);
-    if (region && region->power_limit_dbm > 0 && out.tx_power > static_cast<int8_t>(region->power_limit_dbm))
-    {
-        out.tx_power = static_cast<int8_t>(region->power_limit_dbm);
-    }
-    out.preamble_len = kDefaultPreambleLen;
-    out.sync_word = kMeshtasticSyncWord;
-    out.crc_len = kDefaultCrcLen;
+    const ::chat::meshtastic::RadioConfig radio =
+        ::chat::meshtastic::deriveRadioConfig(config);
+    out.freq_mhz = radio.freq_mhz;
+    out.bw_khz = radio.bw_khz;
+    out.sf = radio.sf;
+    out.cr = radio.cr_denom;
+    out.tx_power = std::clamp<int8_t>(radio.tx_power_dbm, -9, 20);
+    out.preamble_len = radio.preamble_len;
+    out.sync_word = radio.sync_word;
+    out.crc_len = radio.crc_len;
     return out;
 }
 

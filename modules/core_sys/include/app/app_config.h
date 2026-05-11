@@ -101,6 +101,12 @@ struct AppConfig
 
     // GPS settings
     bool gps_enabled;
+    uint32_t gps_init_baud;
+    uint32_t gps_init_probe_ms;
+    uint8_t gps_init_profile;
+    uint8_t gps_init_rxm_policy;
+    uint8_t gps_init_gnss_policy;
+    uint8_t gps_init_nmea_policy;
     uint32_t gps_interval_ms;
     uint8_t gps_mode;
     uint8_t gps_sat_mask;
@@ -170,6 +176,12 @@ struct AppConfig
         secondary_downlink_enabled = false;
         memset(secondary_key, 0, 16);
         gps_enabled = true;
+        gps_init_baud = 0;
+        gps_init_probe_ms = 900;
+        gps_init_profile = 0;
+        gps_init_rxm_policy = 0;
+        gps_init_gnss_policy = 0;
+        gps_init_nmea_policy = 0;
         gps_interval_ms = 60000;
         gps_mode = 0;
         gps_sat_mask = 0x1 | 0x8 | 0x4;

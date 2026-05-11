@@ -15,6 +15,11 @@ bool gps_get_gnss_snapshot(gps::GnssSatInfo* out, size_t max, size_t* out_count,
     return GpsService::getInstance().getGnssSnapshot(out, max, out_count, status);
 }
 
+GpsDiagnosticsSnapshot gps_get_diagnostics()
+{
+    return GpsService::getInstance().getDiagnostics();
+}
+
 uint32_t gps_get_last_motion_ms()
 {
     return GpsService::getInstance().getLastMotionMs();
@@ -53,6 +58,11 @@ void gps_set_gnss_config(uint8_t mode, uint8_t sat_mask)
 void gps_set_external_nmea_config(uint8_t output_hz, uint8_t sentence_mask)
 {
     GpsService::getInstance().setExternalNmeaConfig(output_hz, sentence_mask);
+}
+
+void gps_set_receiver_init_config(const GpsReceiverInitConfig& config)
+{
+    GpsService::getInstance().setReceiverInitConfig(config);
 }
 
 void gps_set_motion_idle_timeout(uint32_t timeout_ms)

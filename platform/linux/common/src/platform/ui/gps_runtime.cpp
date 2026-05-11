@@ -7,10 +7,12 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #if defined(__linux__)
 #include <cerrno>
@@ -18,6 +20,8 @@
 #include <termios.h>
 #include <unistd.h>
 #endif
+
+#include "platform/linux/runtime_packet_log.h"
 
 namespace platform::ui::gps
 {
@@ -45,6 +49,7 @@ constexpr const char* kGpsFixEnv = "TRAIL_MATE_GPS_FIX";
 constexpr const char* kGpsDeviceEnv = "TRAIL_MATE_GPS_DEVICE";
 constexpr const char* kGpsBaudEnv = "TRAIL_MATE_GPS_BAUD";
 constexpr const char* kGpsNmeaFileEnv = "TRAIL_MATE_GPS_NMEA_FILE";
+constexpr const char* kGpsAutoSerialEnv = "TRAIL_MATE_GPS_AUTO_SERIAL";
 
 constexpr double kDefaultLat = 25.0389;
 constexpr double kDefaultLng = 102.7183;
@@ -159,6 +164,27 @@ int env_int_or_default(const char* name, int fallback)
         return fallback;
     }
     return static_cast<int>(parsed);
+}
+
+bool env_configured(const char* name)
+{
+    const char* value = std::getenv(name);
+    return value != nullptr && value[0] != '\0';
+}
+
+bool auto_serial_probe_enabled()
+{
+    if (env_configured(kGpsAutoSerialEnv))
+    {
+        return env_flag_or_default(kGpsAutoSerialEnv, false);
+    }
+
+#if defined(__linux__)
+    std::error_code ec;
+    return std::filesystem::exists("/dev/spidev1.0", ec) && !ec;
+#else
+    return false;
+#endif
 }
 
 ::gps::GnssFix env_fix_or_default()
@@ -377,6 +403,73 @@ bool verify_checksum(const char* line)
     char* end = nullptr;
     const long expected = std::strtol(text, &end, 16);
     return end != text && checksum == static_cast<uint8_t>(expected & 0xFF);
+}
+
+std::string sentence_checksum_text(const char* line)
+{
+    if (!line)
+    {
+        return {};
+    }
+    const char* star = std::strchr(line, '*');
+    if (!star || !star[1] || !star[2])
+    {
+        return {};
+    }
+    return std::string(star + 1, 2);
+}
+
+void append_nmea_log_locked(const char* sentence, bool checksum_ok)
+{
+    if (!sentence || sentence[0] != '$')
+    {
+        return;
+    }
+
+    const char* star = std::strchr(sentence, '*');
+    const char* comma = std::strchr(sentence, ',');
+    const char* header_end = comma != nullptr ? comma : (star != nullptr ? star : sentence + std::strlen(sentence));
+    std::string header(sentence, static_cast<std::size_t>(header_end - sentence));
+    std::string body{};
+    if (comma != nullptr)
+    {
+        const char* body_end = star != nullptr ? star : sentence + std::strlen(sentence);
+        body.assign(comma + 1, static_cast<std::size_t>(body_end - comma - 1));
+    }
+
+    ::platform::linux_runtime::PacketLogEntry entry{};
+    entry.source = ::platform::linux_runtime::PacketLogSource::Gps;
+    entry.direction = ::platform::linux_runtime::PacketLogDirection::Rx;
+    entry.title = header;
+    entry.summary = checksum_ok ? "NMEA sentence parsed"
+                                : "NMEA checksum failed";
+    entry.raw_hex =
+        ::platform::linux_runtime::hex_bytes(sentence, std::strlen(sentence));
+    entry.segments.push_back({
+        .kind = ::platform::linux_runtime::PacketLogSegmentKind::Header,
+        .label = "head",
+        .text = header,
+    });
+    if (!body.empty())
+    {
+        entry.segments.push_back({
+            .kind = ::platform::linux_runtime::PacketLogSegmentKind::Body,
+            .label = "body",
+            .text = body,
+        });
+    }
+    const std::string checksum = sentence_checksum_text(sentence);
+    if (!checksum.empty())
+    {
+        entry.segments.push_back({
+            .kind = checksum_ok
+                        ? ::platform::linux_runtime::PacketLogSegmentKind::Checksum
+                        : ::platform::linux_runtime::PacketLogSegmentKind::Error,
+            .label = "sum",
+            .text = checksum,
+        });
+    }
+    ::platform::linux_runtime::append_packet_log(std::move(entry));
 }
 
 std::size_t split_fields(char* sentence, std::array<char*, kMaxFields>& fields)
@@ -610,13 +703,20 @@ void parse_gsv_locked(const char* talker, const std::array<char*, kMaxFields>& f
 
 void parse_sentence_locked(const char* sentence, uint32_t ts)
 {
-    if (!sentence || sentence[0] != '$' || !verify_checksum(sentence))
+    const bool checksum_ok = verify_checksum(sentence);
+    if (sentence && sentence[0] == '$')
+    {
+        append_nmea_log_locked(sentence, checksum_ok);
+    }
+    if (!sentence || sentence[0] != '$' || !checksum_ok)
     {
         return;
     }
 
     char working[kLineBufferSize] = {};
-    std::strncpy(working, sentence + 1, sizeof(working) - 1);
+    const std::size_t copy_len =
+        std::min<std::size_t>(std::strlen(sentence + 1), sizeof(working) - 1);
+    std::memcpy(working, sentence + 1, copy_len);
     char* star = std::strchr(working, '*');
     if (star)
     {
@@ -712,6 +812,31 @@ std::string requested_source_path(bool* out_is_serial)
         return std::string(file);
     }
 
+#if defined(__linux__)
+    if (!auto_serial_probe_enabled())
+    {
+        return {};
+    }
+
+    std::error_code ec;
+    if (std::filesystem::exists("/dev/ttyS0", ec) && !ec)
+    {
+        if (out_is_serial)
+        {
+            *out_is_serial = true;
+        }
+        return "/dev/ttyS0";
+    }
+    if (std::filesystem::exists("/dev/serial0", ec) && !ec)
+    {
+        if (out_is_serial)
+        {
+            *out_is_serial = true;
+        }
+        return "/dev/serial0";
+    }
+#endif
+
     return {};
 }
 
@@ -761,7 +886,12 @@ bool open_serial_locked(const std::string& path)
     }
 
     cfmakeraw(&tio);
-    const speed_t baud = baud_to_termios(env_int_or_default(kGpsBaudEnv, 38400));
+    const int default_baud =
+        (!env_configured(kGpsBaudEnv) &&
+         (path == "/dev/ttyS0" || path == "/dev/serial0"))
+            ? 9600
+            : 38400;
+    const speed_t baud = baud_to_termios(env_int_or_default(kGpsBaudEnv, default_baud));
     cfsetispeed(&tio, baud);
     cfsetospeed(&tio, baud);
     tio.c_cflag |= (CLOCAL | CREAD);
@@ -945,11 +1075,18 @@ GpsState get_data()
     }
 
     std::lock_guard<std::mutex> lock(s_mutex);
+    bool requested_serial = false;
+    const bool source_requested =
+        !requested_source_path(&requested_serial).empty();
     poll_external_source_locked();
 
     if (external_source_active_locked())
     {
         return make_external_state_locked();
+    }
+    if (source_requested)
+    {
+        return {};
     }
 
     if (s_runtime.last_motion_ms == 0)
@@ -975,6 +1112,9 @@ bool get_gnss_snapshot(GnssSatInfo* out, std::size_t max, std::size_t* out_count
     }
 
     std::lock_guard<std::mutex> lock(s_mutex);
+    bool requested_serial = false;
+    const bool source_requested =
+        !requested_source_path(&requested_serial).empty();
     poll_external_source_locked();
 
     if (external_source_active_locked())
@@ -1013,6 +1153,18 @@ bool get_gnss_snapshot(GnssSatInfo* out, std::size_t max, std::size_t* out_count
         }
         return true;
     }
+    if (source_requested)
+    {
+        if (out_count)
+        {
+            *out_count = 0;
+        }
+        if (status)
+        {
+            *status = GnssStatus{};
+        }
+        return false;
+    }
 
     const auto satellites = default_satellites();
     const std::size_t count = std::min(max, satellites.size());
@@ -1033,6 +1185,81 @@ bool get_gnss_snapshot(GnssSatInfo* out, std::size_t max, std::size_t* out_count
         s_runtime.last_motion_ms = now_ms();
     }
     return true;
+}
+
+GpsDiagnosticsSnapshot diagnostics()
+{
+    GpsDiagnosticsSnapshot snapshot{};
+    snapshot.supported = runtime_active();
+    snapshot.enabled = is_enabled();
+    snapshot.powered = is_powered();
+    snapshot.collection_interval_ms = s_collection_interval_ms;
+    snapshot.poll_interval_ms = 1000;
+
+    if (!snapshot.supported)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::Disabled;
+        return snapshot;
+    }
+    if (!snapshot.enabled)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::NotEnabled;
+        return snapshot;
+    }
+    if (!snapshot.powered)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::PowerOff;
+        return snapshot;
+    }
+
+    std::lock_guard<std::mutex> lock(s_mutex);
+    bool requested_serial = false;
+    const bool source_requested =
+        !requested_source_path(&requested_serial).empty();
+    poll_external_source_locked();
+
+    if (external_source_active_locked())
+    {
+        snapshot.ready = true;
+        snapshot.has_fix = s_runtime.data.valid;
+        snapshot.satellites = s_runtime.data.satellites;
+        snapshot.sats_in_view = s_runtime.status.sats_in_view;
+        snapshot.sats_in_use = s_runtime.status.sats_in_use;
+        snapshot.last_rx_age_ms = s_runtime.last_rx_ms ? (now_ms() - s_runtime.last_rx_ms) : 0xFFFFFFFFUL;
+    }
+    else if (!source_requested)
+    {
+        const auto state = make_default_state();
+        const auto status = make_default_status();
+        snapshot.ready = true;
+        snapshot.has_fix = state.valid;
+        snapshot.satellites = state.satellites;
+        snapshot.sats_in_view = status.sats_in_view;
+        snapshot.sats_in_use = status.sats_in_use;
+        snapshot.last_rx_age_ms = 0;
+    }
+    else
+    {
+        snapshot.ready = false;
+    }
+
+    if (!snapshot.ready)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::TransportNotReady;
+    }
+    else if (snapshot.last_rx_age_ms != 0xFFFFFFFFUL && snapshot.last_rx_age_ms > kExternalSourceStaleMs)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::TrafficStalled;
+    }
+    else if (!snapshot.has_fix)
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::NoFix;
+    }
+    else
+    {
+        snapshot.code = ::gps::GpsDiagnosticCode::OK;
+    }
+    return snapshot;
 }
 
 uint32_t last_motion_ms()
@@ -1096,6 +1323,11 @@ void set_external_nmea_config(uint8_t output_hz, uint8_t sentence_mask)
 {
     s_external_nmea_output_hz = output_hz;
     s_external_nmea_sentence_mask = sentence_mask;
+}
+
+void set_receiver_init_config(const GpsReceiverInitConfig& config)
+{
+    (void)config;
 }
 
 void set_motion_idle_timeout(uint32_t timeout_ms)

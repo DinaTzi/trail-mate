@@ -15,6 +15,11 @@ bool get_gnss_snapshot(GnssSatInfo* out, std::size_t max, std::size_t* out_count
     return ::gps::gps_get_gnss_snapshot(out, max, out_count, status);
 }
 
+GpsDiagnosticsSnapshot diagnostics()
+{
+    return ::gps::gps_get_diagnostics();
+}
+
 uint32_t last_motion_ms()
 {
     return ::gps::gps_get_last_motion_ms();
@@ -53,6 +58,11 @@ void set_gnss_config(uint8_t mode, uint8_t sat_mask)
 void set_external_nmea_config(uint8_t output_hz, uint8_t sentence_mask)
 {
     ::gps::gps_set_external_nmea_config(output_hz, sentence_mask);
+}
+
+void set_receiver_init_config(const GpsReceiverInitConfig& config)
+{
+    ::gps::gps_set_receiver_init_config(config);
 }
 
 void set_motion_idle_timeout(uint32_t timeout_ms)

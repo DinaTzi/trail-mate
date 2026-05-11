@@ -1,9 +1,10 @@
 #include "apps/esp_idf/meshtastic_radio_adapter.h"
 
 #include "chat/domain/contact_types.h"
+#include "chat/infra/meshtastic/mt_node_payload.h"
 #include "chat/infra/meshtastic/mt_packet_wire.h"
 #include "chat/infra/meshtastic/mt_protocol_helpers.h"
-#include "chat/infra/meshtastic/mt_region.h"
+#include "chat/infra/meshtastic/mt_radio_config.h"
 #include "chat/time_utils.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -25,8 +26,6 @@ namespace
 
 constexpr const char* kTag = "idf-mt";
 constexpr uint8_t kDefaultPskIndex = 1;
-constexpr uint8_t kLoraSyncWord = 0x2B;
-constexpr uint16_t kLoraPreambleLen = 16;
 constexpr uint16_t kIrqRxDone = 0x0002;
 constexpr uint16_t kIrqHeaderErr = 0x0020;
 constexpr uint16_t kIrqCrcErr = 0x0040;
@@ -38,19 +37,6 @@ constexpr char kSecondaryChannelName[] = "Squad";
 uint32_t now_millis()
 {
     return static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
-}
-
-const char* primary_channel_name(const chat::MeshConfig& config)
-{
-    if (!config.use_preset)
-    {
-        return "Custom";
-    }
-
-    const auto preset =
-        static_cast<meshtastic_Config_LoRaConfig_ModemPreset>(config.modem_preset);
-    const char* name = chat::meshtastic::presetDisplayName(preset);
-    return (name && name[0] != '\0') ? name : "Custom";
 }
 
 uint8_t to_channel_index(chat::ChannelId channel)
@@ -489,11 +475,10 @@ void MeshtasticRadioAdapter::processReceivedPacket(const uint8_t* data, size_t s
     {
         if (decoded.payload.size > 0)
         {
-            (void)decodeUserPayload(decoded.payload.bytes,
-                                    decoded.payload.size,
-                                    rx_meta,
-                                    header.from,
-                                    to_channel_index(channel));
+            (void)publishNodePayload(decoded,
+                                     rx_meta,
+                                     header.from,
+                                     to_channel_index(channel));
         }
         if (want_response && (to_us || is_broadcast))
         {
@@ -504,11 +489,14 @@ void MeshtasticRadioAdapter::processReceivedPacket(const uint8_t* data, size_t s
 
     if (decoded.portnum == meshtastic_PortNum_POSITION_APP && decoded.payload.size > 0)
     {
-        meshtastic_Position pos = meshtastic_Position_init_zero;
-        pb_istream_t pos_stream = pb_istream_from_buffer(decoded.payload.bytes, decoded.payload.size);
-        if (pb_decode(&pos_stream, meshtastic_Position_fields, &pos))
+        chat::meshtastic::DecodedPositionPayload position{};
+        if (chat::meshtastic::decodePositionPayload(
+                decoded,
+                header.from,
+                rx_meta.rx_timestamp_s,
+                &position))
         {
-            publishPositionEvent(header.from, pos);
+            publishPositionEvent(position.node_id, position.position);
         }
     }
 
@@ -605,66 +593,39 @@ void MeshtasticRadioAdapter::configureRadio()
         return;
     }
 
-    auto region_code = static_cast<meshtastic_Config_LoRaConfig_RegionCode>(config_.region);
-    if (region_code == meshtastic_Config_LoRaConfig_RegionCode_UNSET)
-    {
-        region_code = meshtastic_Config_LoRaConfig_RegionCode_CN;
-    }
-    const chat::meshtastic::RegionInfo* region = chat::meshtastic::findRegion(region_code);
+    const chat::meshtastic::RadioConfig radio =
+        chat::meshtastic::deriveRadioConfig(config_);
 
-    float bw_khz = 250.0f;
-    uint8_t sf = 11;
-    uint8_t cr_denom = 5;
-    if (config_.use_preset)
-    {
-        const auto preset =
-            static_cast<meshtastic_Config_LoRaConfig_ModemPreset>(config_.modem_preset);
-        chat::meshtastic::modemPresetToParams(preset, region->wide_lora, bw_khz, sf, cr_denom);
-    }
-    else
-    {
-        bw_khz = config_.bandwidth_khz;
-        sf = config_.spread_factor;
-        cr_denom = config_.coding_rate;
-    }
-
-    float freq_mhz = chat::meshtastic::computeFrequencyMhz(region, bw_khz, primary_channel_name(config_));
-    if (config_.override_frequency_mhz > 0.0f)
-    {
-        freq_mhz = config_.override_frequency_mhz;
-    }
-    freq_mhz += config_.frequency_offset_mhz;
-
-    int8_t tx_power = config_.tx_power;
-    if (region->power_limit_dbm > 0)
-    {
-        tx_power = std::min<int8_t>(tx_power == 0 ? static_cast<int8_t>(region->power_limit_dbm) : tx_power,
-                                    static_cast<int8_t>(region->power_limit_dbm));
-    }
-    if (tx_power == 0)
-    {
-        tx_power = 17;
-    }
-
-    board_.configureLoraRadio(freq_mhz, bw_khz, sf, cr_denom, tx_power,
-                              kLoraPreambleLen, kLoraSyncWord, 2);
-    radio_freq_hz_ = static_cast<uint32_t>(std::lround(freq_mhz * 1000000.0f));
-    radio_bw_hz_ = static_cast<uint32_t>(std::lround(bw_khz * 1000.0f));
-    radio_sf_ = sf;
-    radio_cr_ = cr_denom;
+    board_.configureLoraRadio(radio.freq_mhz,
+                              radio.bw_khz,
+                              radio.sf,
+                              radio.cr_denom,
+                              radio.tx_power_dbm,
+                              radio.preamble_len,
+                              radio.sync_word,
+                              radio.crc_len);
+    radio_freq_hz_ = static_cast<uint32_t>(std::lround(radio.freq_mhz * 1000000.0f));
+    radio_bw_hz_ = static_cast<uint32_t>(std::lround(radio.bw_khz * 1000.0f));
+    radio_sf_ = radio.sf;
+    radio_cr_ = radio.cr_denom;
     ready_ = true;
     rx_started_ = false;
     ensureReceiveStarted();
 
     ESP_LOGI(kTag,
-             "radio ready node=%08lX region=%u freq=%.3f bw=%.1f sf=%u cr=4/%u tx=%d hash=(%02X,%02X)",
+             "radio ready node=%08lX region=%u preset=%u use_preset=%u freq=%.3f bw=%.1f sf=%u cr=4/%u tx=%d ch=%lu sync=0x%02X preamble=%u hash=(%02X,%02X)",
              static_cast<unsigned long>(node_id_),
-             static_cast<unsigned>(region_code),
-             freq_mhz,
-             bw_khz,
-             static_cast<unsigned>(sf),
-             static_cast<unsigned>(cr_denom),
-             static_cast<int>(tx_power),
+             static_cast<unsigned>(radio.region_code),
+             static_cast<unsigned>(radio.modem_preset),
+             radio.using_preset ? 1U : 0U,
+             radio.freq_mhz,
+             radio.bw_khz,
+             static_cast<unsigned>(radio.sf),
+             static_cast<unsigned>(radio.cr_denom),
+             static_cast<int>(radio.tx_power_dbm),
+             static_cast<unsigned long>(radio.channel_slot),
+             static_cast<unsigned>(radio.sync_word),
+             static_cast<unsigned>(radio.preamble_len),
              static_cast<unsigned>(primary_channel_hash_),
              static_cast<unsigned>(secondary_channel_hash_));
 }
@@ -692,9 +653,10 @@ void MeshtasticRadioAdapter::updateChannelKeys()
         secondary_psk_len_ = sizeof(secondary_psk_);
     }
 
-    primary_channel_hash_ = chat::meshtastic::computeChannelHash(primary_channel_name(config_),
-                                                                 primary_psk_,
-                                                                 primary_psk_len_);
+    primary_channel_hash_ =
+        chat::meshtastic::computeChannelHash(chat::meshtastic::primaryChannelName(config_),
+                                             primary_psk_,
+                                             primary_psk_len_);
     secondary_channel_hash_ = chat::meshtastic::computeChannelHash(kSecondaryChannelName,
                                                                    secondary_psk_len_ > 0 ? secondary_psk_ : nullptr,
                                                                    secondary_psk_len_);
@@ -718,71 +680,79 @@ void MeshtasticRadioAdapter::ensureReceiveStarted()
     }
 }
 
-bool MeshtasticRadioAdapter::decodeUserPayload(const uint8_t* payload,
-                                               size_t len,
-                                               const chat::RxMeta& rx_meta,
-                                               chat::NodeId from_node,
-                                               uint8_t channel_index)
+bool MeshtasticRadioAdapter::publishNodePayload(const meshtastic_Data& data,
+                                                const chat::RxMeta& rx_meta,
+                                                chat::NodeId from_node,
+                                                uint8_t channel_index)
 {
-    if (!payload || len == 0)
+    chat::meshtastic::NodePayloadDecodeContext context{};
+    context.fallback_node_id = from_node;
+    context.snr = static_cast<float>(rx_meta.snr_db_x10) / 10.0f;
+    context.rssi = static_cast<float>(rx_meta.rssi_dbm_x10) / 10.0f;
+    context.timestamp = rx_meta.rx_timestamp_s != 0
+                            ? rx_meta.rx_timestamp_s
+                            : chat::now_message_timestamp();
+    context.hops_away = rx_meta.hop_count;
+    context.channel = channel_index;
+    context.via_mqtt =
+        (rx_meta.wire_flags &
+         chat::meshtastic::PACKET_FLAGS_VIA_MQTT_MASK) != 0;
+
+    chat::meshtastic::DecodedNodePayload node{};
+    if (!chat::meshtastic::decodeNodeInfoPayload(data, context, &node))
     {
         return false;
     }
 
-    meshtastic_User user = meshtastic_User_init_default;
-    pb_istream_t user_stream = pb_istream_from_buffer(payload, len);
-    if (!pb_decode(&user_stream, meshtastic_User_fields, &user))
+    sys::EventBus::publish(
+        new sys::NodeInfoUpdateEvent(
+            node.node_id,
+            node.short_name.c_str(),
+            node.long_name.c_str(),
+            node.snr,
+            node.rssi,
+            node.timestamp,
+            node.protocol,
+            node.role,
+            node.hops_away,
+            node.hw_model,
+            node.channel,
+            node.has_macaddr,
+            node.has_macaddr ? node.macaddr.data() : nullptr,
+            node.via_mqtt,
+            node.is_ignored,
+            node.has_public_key,
+            node.key_manually_verified,
+            node.has_device_metrics,
+            node.has_device_metrics ? &node.device_metrics : nullptr),
+        0);
+    if (node.has_position)
     {
-        return false;
+        publishPositionEvent(node.node_id, node.position);
     }
-
-    char short_name[10] = {};
-    char long_name[32] = {};
-    const size_t short_len = strnlen(user.short_name, sizeof(user.short_name));
-    const size_t long_len = strnlen(user.long_name, sizeof(user.long_name));
-    std::memcpy(short_name, user.short_name, std::min(short_len, sizeof(short_name) - 1));
-    std::memcpy(long_name, user.long_name, std::min(long_len, sizeof(long_name) - 1));
-
-    auto* event = new sys::NodeInfoUpdateEvent(from_node,
-                                               "",
-                                               "",
-                                               static_cast<float>(rx_meta.snr_db_x10) / 10.0f,
-                                               static_cast<float>(rx_meta.rssi_dbm_x10) / 10.0f,
-                                               chat::now_message_timestamp(),
-                                               static_cast<uint8_t>(chat::contacts::NodeProtocolType::Meshtastic),
-                                               static_cast<uint8_t>(user.role),
-                                               rx_meta.hop_count,
-                                               static_cast<uint8_t>(user.hw_model),
-                                               channel_index);
-    std::memcpy(event->short_name, short_name, sizeof(short_name));
-    std::memcpy(event->long_name, long_name, sizeof(long_name));
-    sys::EventBus::publish(event, 0);
     return true;
 }
 
 void MeshtasticRadioAdapter::publishPositionEvent(chat::NodeId node_id,
-                                                  const meshtastic_Position& pos)
+                                                  const chat::contacts::NodePosition& pos)
 {
-    if (node_id == 0 || !chat::meshtastic::hasValidPosition(pos))
+    if (node_id == 0 || !pos.valid)
     {
         return;
     }
 
-    const bool has_altitude = pos.has_altitude || pos.has_altitude_hae;
-    const int32_t altitude = pos.has_altitude ? pos.altitude : pos.altitude_hae;
-    const uint32_t ts = pos.timestamp ? pos.timestamp : pos.time;
     sys::EventBus::publish(
         new sys::NodePositionUpdateEvent(node_id,
                                          pos.latitude_i,
                                          pos.longitude_i,
-                                         has_altitude,
-                                         altitude,
-                                         ts,
+                                         pos.has_altitude,
+                                         pos.altitude,
+                                         pos.timestamp,
                                          pos.precision_bits,
-                                         pos.PDOP,
-                                         pos.HDOP,
-                                         pos.VDOP,
-                                         pos.gps_accuracy),
+                                         pos.pdop,
+                                         pos.hdop,
+                                         pos.vdop,
+                                         pos.gps_accuracy_mm),
         0);
 }
 

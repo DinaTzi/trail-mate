@@ -1,6 +1,7 @@
 #pragma once
 
 #include "TLoRaPagerTypes.h"
+#include "gps/usecase/gps_runtime_config.h"
 
 class GPS;
 
@@ -10,6 +11,8 @@ class GpsBoard
   public:
     virtual ~GpsBoard() = default;
 
+    virtual void setGPSReceiverInitConfig(const gps::GpsReceiverInitConfig& config) { (void)config; }
+    virtual gps::GpsReceiverProtocol getGPSReceiverProtocol() const { return gps::GpsReceiverProtocol::Unknown; }
     virtual bool initGPS() = 0;
     virtual void setGPSOnline(bool online) = 0;
     virtual void deinitGPS() { setGPSOnline(false); }

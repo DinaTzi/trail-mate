@@ -1,12 +1,14 @@
 #pragma once
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include <Arduino.h>
 
 #include "board/GpsBoard.h"
 #include "board/MotionBoard.h"
 #include "gps/domain/gnss_satellite.h"
+#include "gps/domain/gps_diagnostics.h"
 #include "gps/domain/gps_state.h"
 #include "gps/domain/motion_config.h"
 #include "gps/motion_policy.h"
@@ -25,9 +27,11 @@ class GpsService
     static GpsService& getInstance();
 
     void begin(GpsBoard& gps_board, MotionBoard& motion_board, uint32_t disable_hw_init,
-               uint32_t gps_interval_ms, const MotionConfig& motion_config);
+               uint32_t gps_interval_ms, const MotionConfig& motion_config,
+               const GpsReceiverInitConfig& receiver_init_config = GpsReceiverInitConfig{});
     GpsState getData();
     bool getGnssSnapshot(GnssSatInfo* out, size_t max, size_t* out_count, GnssStatus* status);
+    GpsDiagnosticsSnapshot getDiagnostics();
     uint32_t getCollectionInterval() const;
     void setEnabled(bool enabled);
     void setCollectionInterval(uint32_t interval_ms);
@@ -35,6 +39,7 @@ class GpsService
     void setTeamModeActive(bool active);
     void setGnssConfig(uint8_t mode, uint8_t sat_mask);
     void setExternalNmeaConfig(uint8_t output_hz, uint8_t sentence_mask);
+    void setReceiverInitConfig(const GpsReceiverInitConfig& config);
     MotionConfig getMotionConfig() const { return motion_config_; }
     void setMotionConfig(const MotionConfig& config);
     void setMotionIdleTimeout(uint32_t timeout_ms);
@@ -57,6 +62,10 @@ class GpsService
     void updateMotionState(uint32_t now_ms);
     void applyGnssConfig();
     void applyInternalNmeaConfig();
+    bool takeGpsUartLock(TickType_t timeout = portMAX_DELAY);
+    void giveGpsUartLock();
+    bool canSendReceiverUbxConfig(const char* source) const;
+    void startPostConfigStreamWatch(const char* label, uint32_t chars_total);
 
     GpsBoard* gps_board_ = nullptr;
     MotionBoard* motion_board_ = nullptr;
@@ -65,17 +74,30 @@ class GpsService
     size_t gnss_sat_count_ = 0;
     GnssStatus gnss_status_{};
     SemaphoreHandle_t gps_data_mutex_ = nullptr;
+    // Serializes physical UART open/read/write/close paths. This matters on T-Deck
+    // because init/config code and the collector task can otherwise touch Serial1 at
+    // the same time.
+    SemaphoreHandle_t gps_init_mutex_ = nullptr;
     TaskHandle_t gps_task_handle_ = nullptr;
     TaskHandle_t motion_task_handle_ = nullptr;
 
     uint32_t gps_last_update_time_ = 0;
     GpsRuntimeState runtime_state_{};
     GpsRuntimeConfig runtime_config_{};
+    GpsReceiverInitConfig receiver_init_config_{};
     bool gps_time_synced_ = false;
     bool gps_powered_ = false;
     bool gps_disabled_ = false;
     bool user_enabled_ = true;
     bool gps_ready_ = false;
+    bool gps_initializing_ = false;
+    uint32_t gps_chars_total_ = 0;
+    uint32_t gps_chars_recent_ = 0;
+    uint32_t gps_last_rx_ms_ = 0;
+    bool gps_post_config_watch_active_ = false;
+    uint32_t gps_post_config_start_ms_ = 0;
+    uint32_t gps_post_config_chars_ = 0;
+    char gps_post_config_label_[24]{};
 
     MotionConfig motion_config_{};
     MotionPolicy motion_policy_{};

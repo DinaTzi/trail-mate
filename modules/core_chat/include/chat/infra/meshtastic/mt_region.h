@@ -32,6 +32,11 @@ struct RegionInfo
 const RegionInfo* getRegionTable(size_t* out_count);
 const RegionInfo* findRegion(meshtastic_Config_LoRaConfig_RegionCode code);
 const char* presetDisplayName(meshtastic_Config_LoRaConfig_ModemPreset preset);
+void modemPresetToParams(meshtastic_Config_LoRaConfig_ModemPreset preset,
+                         bool wide_lora,
+                         float& bw_khz,
+                         uint8_t& sf,
+                         uint8_t& cr_denom);
 float computeFrequencyMhz(const RegionInfo* region, float bw_khz, const char* channel_name);
 float estimateFrequencyMhz(uint8_t region_code, uint8_t modem_preset);
 

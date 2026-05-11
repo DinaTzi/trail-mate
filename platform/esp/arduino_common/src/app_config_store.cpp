@@ -26,6 +26,12 @@ constexpr const char* kChatKeySecondaryEnabled = "sec_enabled";
 constexpr const char* kChatKeyPrimaryDownlink = "pri_downlink";
 constexpr const char* kChatKeySecondaryUplink = "sec_uplink";
 constexpr const char* kChatKeySecondaryDownlink = "sec_downlink";
+constexpr const char* kGpsKeyInitBaud = "init_baud";
+constexpr const char* kGpsKeyInitProbeMs = "init_probe_ms";
+constexpr const char* kGpsKeyInitProfile = "init_profile";
+constexpr const char* kGpsKeyInitRxmPolicy = "init_rxm_pol";
+constexpr const char* kGpsKeyInitGnssPolicy = "init_gnss_pol";
+constexpr const char* kGpsKeyInitNmeaPolicy = "init_nmea_pol";
 constexpr const char* kGpsKeyMotionSensorId = "motion_sensor";
 constexpr const char* kGpsKeyExternalNmeaSentence = "ext_nmea_sent";
 constexpr const char* kSettingsKeyMapTrackInterval = "map_track_int";
@@ -651,6 +657,14 @@ void log_config_summary(const char* phase, const AppConfig& config)
                   static_cast<int>(config.meshtastic_config.tx_power),
                   static_cast<int>(config.meshcore_config.tx_power),
                   static_cast<int>(config.rnode_config.tx_power));
+    Serial.printf("[AppCfg][%s][gps_init] baud=%lu probe_ms=%lu profile=%u rxm=%u gnss=%u nmea=%u\n",
+                  safe_label(phase),
+                  static_cast<unsigned long>(config.gps_init_baud),
+                  static_cast<unsigned long>(config.gps_init_probe_ms),
+                  static_cast<unsigned>(config.gps_init_profile),
+                  static_cast<unsigned>(config.gps_init_rxm_policy),
+                  static_cast<unsigned>(config.gps_init_gnss_policy),
+                  static_cast<unsigned>(config.gps_init_nmea_policy));
     Serial.printf("[AppCfg][%s][gps] enabled=%s interval_ms=%lu mode=%u sat_mask=%u strategy=%u alt_ref=%u coord_fmt=%u motion_idle_ms=%lu sensor_id=%u external_nmea=%u sentence=%u\n",
                   safe_label(phase),
                   bool_label(config.gps_enabled),
@@ -713,6 +727,12 @@ bool loadAppConfigFromPreferences(AppConfig& config,
     auto& secondary_downlink_enabled = config.secondary_downlink_enabled;
     auto& secondary_key = config.secondary_key;
     auto& gps_enabled = config.gps_enabled;
+    auto& gps_init_baud = config.gps_init_baud;
+    auto& gps_init_probe_ms = config.gps_init_probe_ms;
+    auto& gps_init_profile = config.gps_init_profile;
+    auto& gps_init_rxm_policy = config.gps_init_rxm_policy;
+    auto& gps_init_gnss_policy = config.gps_init_gnss_policy;
+    auto& gps_init_nmea_policy = config.gps_init_nmea_policy;
     auto& gps_interval_ms = config.gps_interval_ms;
     auto& gps_mode = config.gps_mode;
     auto& gps_sat_mask = config.gps_sat_mask;
@@ -899,6 +919,12 @@ bool loadAppConfigFromPreferences(AppConfig& config,
         };
 
         gps_enabled = get_bool("gps_enabled", gps_enabled);
+        gps_init_baud = get_uint(kGpsKeyInitBaud, gps_init_baud);
+        gps_init_probe_ms = get_uint(kGpsKeyInitProbeMs, gps_init_probe_ms);
+        gps_init_profile = get_uchar(kGpsKeyInitProfile, gps_init_profile);
+        gps_init_rxm_policy = get_uchar(kGpsKeyInitRxmPolicy, gps_init_rxm_policy);
+        gps_init_gnss_policy = get_uchar(kGpsKeyInitGnssPolicy, gps_init_gnss_policy);
+        gps_init_nmea_policy = get_uchar(kGpsKeyInitNmeaPolicy, gps_init_nmea_policy);
         gps_interval_ms = get_uint("gps_interval", gps_interval_ms);
         gps_mode = get_uchar("gps_mode", gps_mode);
         gps_sat_mask = get_uchar("gps_sat_mask", gps_sat_mask);
@@ -1032,6 +1058,12 @@ bool saveAppConfigToPreferences(AppConfig& config,
     auto& secondary_downlink_enabled = config.secondary_downlink_enabled;
     auto& secondary_key = config.secondary_key;
     auto& gps_enabled = config.gps_enabled;
+    auto& gps_init_baud = config.gps_init_baud;
+    auto& gps_init_probe_ms = config.gps_init_probe_ms;
+    auto& gps_init_profile = config.gps_init_profile;
+    auto& gps_init_rxm_policy = config.gps_init_rxm_policy;
+    auto& gps_init_gnss_policy = config.gps_init_gnss_policy;
+    auto& gps_init_nmea_policy = config.gps_init_nmea_policy;
     auto& gps_interval_ms = config.gps_interval_ms;
     auto& gps_mode = config.gps_mode;
     auto& gps_sat_mask = config.gps_sat_mask;
@@ -1185,6 +1217,12 @@ bool saveAppConfigToPreferences(AppConfig& config,
         };
 
         put_bool("gps_enabled", gps_enabled);
+        put_uint(kGpsKeyInitBaud, gps_init_baud);
+        put_uint(kGpsKeyInitProbeMs, gps_init_probe_ms);
+        put_uchar(kGpsKeyInitProfile, gps_init_profile);
+        put_uchar(kGpsKeyInitRxmPolicy, gps_init_rxm_policy);
+        put_uchar(kGpsKeyInitGnssPolicy, gps_init_gnss_policy);
+        put_uchar(kGpsKeyInitNmeaPolicy, gps_init_nmea_policy);
         put_uint("gps_interval", gps_interval_ms);
         put_uchar("gps_mode", gps_mode);
         put_uchar("gps_sat_mask", gps_sat_mask);

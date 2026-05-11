@@ -1,8 +1,8 @@
 # TrailMateLinuxSources.cmake
 #
-# Shared source lists and helper functions for the Cardputer Zero Linux line.
-# Both apps/linux_sim and apps/linux_rpi include this file so that a single
-# source list drives the common, core-module, and ui_shell targets.
+# Shared source lists and helper functions for the Trail Mate Linux line.
+# apps/linux_sim, apps/linux_rpi, and apps/linux_uconsole include this file so
+# that a single source list drives common app services and core-module targets.
 #
 # Usage from an app CMakeLists.txt:
 #
@@ -77,9 +77,12 @@ _trailmate_set_linux_paths()
 
 set(TRAIL_MATE_LINUX_COMMON_SOURCES
     # app facade
+    "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/app/linux_app_services.cpp"
     "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/app/linux_app_facade.cpp"
     "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/app/linux_demo_world.cpp"
     "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/chat/linux_noop_mesh_adapter.cpp"
+    "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/chat/linux_raw_lora_mesh_adapter.cpp"
+    "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/chat/linux_sqlite_chat_store.cpp"
     "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/app/demo_app.cpp"
     "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/app/demo_app_runner.cpp"
     # core primitives
@@ -88,6 +91,11 @@ set(TRAIL_MATE_LINUX_COMMON_SOURCES
     # platform/linux shared infrastructure (P4)
     "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/platform/linux/runtime_paths.cpp"
     "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/platform/linux/env_config.cpp"
+    "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/platform/linux/map_contour_tile_generator.cpp"
+    "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/platform/linux/map_diagnostics.cpp"
+    "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/platform/linux/map_tile_cache.cpp"
+    "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/platform/linux/runtime_packet_log.cpp"
+    "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/platform/linux/sx126x_radio.cpp"
     # platform::ui::* runtime implementations
     "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/platform/ui/device_runtime.cpp"
     "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/platform/ui/firmware_update_runtime.cpp"
@@ -110,11 +118,31 @@ set(TRAIL_MATE_LINUX_COMMON_SOURCES
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/domain/chat_model.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/contact_store_core.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/mesh_protocol_utils.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/mc_region_presets.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshtastic/compression/unishox2.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshtastic/mt_codec_pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshtastic/mt_node_payload.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshtastic/mt_packet_wire.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshtastic/mt_protocol_helpers.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshtastic/mt_radio_config.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshtastic/mt_region.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/node_store_blob_format.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/node_store_core.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/store/ram_store.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/usecase/chat_service.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/usecase/contact_service.cpp"
+    # Meshtastic nanopb runtime + generated descriptors used by Linux LoRa RX/TX.
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_common.c"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_decode.c"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_encode.c"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/channel.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/config.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/device_ui.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/mesh.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/module_config.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/portnums.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/telemetry.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/xmodem.pb.cpp"
     # modules/core_team
     "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_chat.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_location_marker.cpp"
@@ -128,6 +156,8 @@ set(TRAIL_MATE_LINUX_COMMON_SOURCES
     "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/usecase/team_pairing_coordinator.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/usecase/team_service.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/usecase/team_track_sampler.cpp"
+    # modules/core_gps
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_gps/src/usecase/gnss_skyplot_presenter.cpp"
     # modules/core_hostlink
     "${TRAIL_MATE_REPO_ROOT}/modules/core_hostlink/src/hostlink_session.cpp"
     # modules/core_sys
@@ -264,9 +294,6 @@ set(TRAIL_MATE_LINUX_UI_SHELL_SOURCES
     "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/widgets/system_notification.cpp"
     "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/widgets/toast/toast_widget.cpp"
     "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/widgets/top_bar.cpp"
-    # region presets
-    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/mc_region_presets.cpp"
-    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshtastic/mt_region.cpp"
 )
 
 # ---------------------------------------------------------------------------
@@ -312,6 +339,10 @@ function(trailmate_apply_linux_common_warnings target_name)
 endfunction()
 
 function(trailmate_add_linux_common target_name)
+    find_package(CURL REQUIRED)
+    find_package(SQLite3 REQUIRED)
+    find_package(OpenSSL QUIET)
+
     add_library(${target_name}
         ${TRAIL_MATE_LINUX_COMMON_SOURCES}
     )
@@ -322,7 +353,20 @@ function(trailmate_add_linux_common target_name)
     target_compile_definitions(${target_name}
         PUBLIC TRAIL_MATE_LORA_TX_POWER_MAX_DBM=22
     )
-    target_link_libraries(${target_name} PUBLIC Threads::Threads)
+    target_link_libraries(${target_name}
+        PUBLIC
+            Threads::Threads
+            CURL::libcurl
+            SQLite::SQLite3
+    )
+    if(OpenSSL_FOUND)
+        target_compile_definitions(${target_name}
+            PUBLIC TRAIL_MATE_HAS_OPENSSL=1
+        )
+        target_link_libraries(${target_name}
+            PUBLIC OpenSSL::Crypto
+        )
+    endif()
     if(WIN32)
         target_link_libraries(${target_name} PUBLIC ws2_32)
     endif()

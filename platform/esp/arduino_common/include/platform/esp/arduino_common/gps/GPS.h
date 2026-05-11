@@ -42,6 +42,7 @@ class GPS : public TinyGPSPlus
 
     uint32_t loop(bool debug = false)
     {
+        last_loop_read_bytes_ = 0;
         if (_stream == nullptr)
         {
             return charsProcessed();
@@ -55,12 +56,19 @@ class GPS : public TinyGPSPlus
         while (_stream->available())
         {
             int c = _stream->read();
+            if (c < 0)
+            {
+                continue;
+            }
             chars_processed++;
+            last_loop_read_bytes_++;
+            observeDebugByte(static_cast<uint8_t>(c));
+            const bool nmea_candidate = (c == '$') || nmea_collecting_;
             if (debug)
             {
                 Serial.write(c);
             }
-            else
+            else if (nmea_candidate)
             {
                 encode(c);
             }
@@ -73,6 +81,7 @@ class GPS : public TinyGPSPlus
                 _stream->write(Serial.read());
             }
         }
+        flushDebugRawSampleIfStale(millis());
 
         // Log periodically (every 100 loops or every 5 seconds)
         loop_count++;
@@ -91,6 +100,11 @@ class GPS : public TinyGPSPlus
         }
 
         return charsProcessed();
+    }
+
+    uint32_t lastLoopReadBytes() const
+    {
+        return last_loop_read_bytes_;
     }
 
     String getModel()
@@ -114,6 +128,12 @@ class GPS : public TinyGPSPlus
     bool sendUbx(uint8_t cls, uint8_t id, const uint8_t* payload, uint16_t len, bool wait_ack);
     void calcUbxChecksum(const uint8_t* data, uint16_t len, uint8_t& ck_a, uint8_t& ck_b);
 
+    void observeDebugByte(uint8_t b);
+    void flushDebugRawSampleIfStale(uint32_t now_ms);
+    void logDebugRawSample(const char* reason);
+    void observeDebugRawBurstByte(uint8_t b, uint32_t now_ms);
+    void logDebugRawBurst(const char* reason, uint32_t now_ms);
+    void logDebugNmeaSentence(const char* sentence);
     void handleNmeaChar(char c);
     void parseNmeaSentence(char* sentence);
     void parseGsv(const char* talker, char** fields, int field_count);
@@ -137,4 +157,24 @@ class GPS : public TinyGPSPlus
     char nmea_buf_[128]{};
     uint8_t nmea_len_ = 0;
     bool nmea_collecting_ = false;
+    uint8_t debug_nmea_sentence_count_ = 0;
+    uint8_t debug_raw_sample_[64]{};
+    uint8_t debug_raw_sample_len_ = 0;
+    uint32_t debug_raw_first_ms_ = 0;
+    bool debug_raw_sample_logged_ = false;
+    bool debug_raw_saw_nmea_ = false;
+    uint8_t debug_raw_burst_sample_[64]{};
+    uint8_t debug_raw_burst_sample_len_ = 0;
+    uint16_t debug_raw_burst_count_ = 0;
+    uint32_t debug_raw_burst_first_ms_ = 0;
+    uint32_t debug_raw_burst_last_ms_ = 0;
+    uint32_t debug_raw_burst_idle_gap_ms_ = 0;
+    uint32_t debug_raw_burst_bytes_ = 0;
+    uint16_t debug_raw_burst_printable_ = 0;
+    uint16_t debug_raw_burst_comma_ = 0;
+    uint16_t debug_raw_burst_high_ = 0;
+    uint16_t debug_raw_burst_zero_ = 0;
+    uint16_t debug_raw_burst_ubx_sync_ = 0;
+    bool debug_raw_burst_logged_ = false;
+    uint32_t last_loop_read_bytes_ = 0;
 };

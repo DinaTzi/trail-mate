@@ -25,6 +25,11 @@ flag.
 keeps the receiver powered, for example always on, motion aware, or fix only. It
 must never be used as the GPS enable flag.
 
+`gps_receiver_init` is receiver transport and initialization compatibility
+policy. It covers UART baud selection, short startup probing, receiver family
+profile, and whether UBX initialization messages may be sent. It is not a
+location mode and must not be confused with `gps_mode`.
+
 `gps_powered` is hardware state. It reports whether the runtime currently has the
 receiver powered.
 
@@ -75,6 +80,13 @@ or disable GPS.
 export policy. It must not disable receiver output required for internal GPS
 operation.
 
+`diagnostics()` returns a current health snapshot. It is a non-blocking
+observation of the runtime state, not a receiver identity probe and not a
+long-running repair task. The snapshot must include a stable diagnostic code,
+enable/power/readiness/fix state, satellite counts when known, UART character
+counts when available, and the current poll and collection intervals. UI code may
+present this snapshot, but it must not block the UI while waiting for GPS traffic.
+
 ## Configuration Ownership
 
 GPS configuration belongs under the GPS domain:
@@ -86,6 +98,7 @@ GPS configuration belongs under the GPS domain:
 - `gps_strategy`
 - `gps_alt_ref`
 - `gps_coord_format`
+- `gps_receiver_init`
 - `motion_config`
 - `external_nmea_output_hz`
 - `external_nmea_sentence_mask`
@@ -98,14 +111,29 @@ I/O or runtime control.
 On startup, a runtime must load configuration and apply it in this order:
 
 1. Apply `gps_enabled`.
-2. Apply collection interval.
-3. Apply power strategy.
-4. Apply GNSS receiver configuration.
-5. Apply external NMEA export configuration.
+2. Apply receiver initialization compatibility policy.
+3. Apply collection interval.
+4. Apply power strategy.
+5. Apply GNSS receiver configuration.
+6. Apply external NMEA export configuration.
 
 The internal receiver stream must be configured by the runtime itself whenever
 the receiver is powered. A default internal stream must include the minimum
 sentences required for location and satellite diagnostics.
+
+Legacy GPS-only receivers such as u-blox 6 modules must not be forced through
+modern multi-GNSS configuration messages when the board profile identifies that
+class of hardware. Runtime configuration may still set receiver mode and NMEA
+message rates, but unsupported constellation configuration must be skipped with a
+diagnostic log rather than treated as a fatal readiness failure.
+
+Boards with user-replaceable GPS modules, such as T-Deck, must not assume a
+single fixed receiver model or UART baud. They should provide automatic short
+probing for common GPS UART speeds and expose manual compatibility settings so a
+user can select baud and initialization policy when auto-detection is
+insufficient. Auto mode must be conservative: it may listen for NMEA/UBX
+signatures and select a transport, but it must not repeatedly send
+module-specific UBX configuration to an unknown receiver.
 
 Board startup must only prepare the physical transport and publish transport
 readiness. Receiver identity probes are diagnostics, not a condition for starting

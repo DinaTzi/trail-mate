@@ -3,14 +3,17 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "gps/domain/gnss_satellite.h"
+#include "gps/domain/gps_diagnostics.h"
 #include "gps/domain/gps_state.h"
 #include "gps/domain/motion_config.h"
+#include "gps/usecase/gps_runtime_config.h"
 
 namespace gps
 {
 
 GpsState gps_get_data();
 bool gps_get_gnss_snapshot(gps::GnssSatInfo* out, size_t max, size_t* out_count, gps::GnssStatus* status);
+GpsDiagnosticsSnapshot gps_get_diagnostics();
 uint32_t gps_get_last_motion_ms();
 bool gps_is_enabled();
 bool gps_is_powered();
@@ -19,6 +22,7 @@ void gps_set_collection_interval(uint32_t interval_ms);
 void gps_set_power_strategy(uint8_t strategy);
 void gps_set_gnss_config(uint8_t mode, uint8_t sat_mask);
 void gps_set_external_nmea_config(uint8_t output_hz, uint8_t sentence_mask);
+void gps_set_receiver_init_config(const GpsReceiverInitConfig& config);
 void gps_set_motion_idle_timeout(uint32_t timeout_ms);
 void gps_set_motion_sensor_id(uint8_t sensor_id);
 TaskHandle_t gps_get_task_handle();

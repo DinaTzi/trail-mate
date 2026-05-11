@@ -4,7 +4,7 @@
 
 > 面向户外导航与通信的低功耗、离线优先手持设备
 
-[English](README.md) | [中文](README_CN.md) | [加入 Discord 社区](https://discord.gg/87PVMVUP)
+[English](README.md) | [中文](README_CN.md) | [加入 Discord 社区](https://discord.gg/UpDsAz9H3)
 
 ---
 

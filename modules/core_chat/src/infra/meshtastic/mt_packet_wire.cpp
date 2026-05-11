@@ -5,15 +5,24 @@
 
 #include "chat/infra/meshtastic/mt_packet_wire.h"
 
+#include <cstring>
+
+#if __has_include(<AES.h>) && __has_include(<CTR.h>)
 #include <AES.h>
 #include <CTR.h>
-#include <cstring>
+#define TRAILMATE_MESHTASTIC_WIRE_HAS_ARDUINO_CRYPTO 1
+#endif
+
+#ifndef TRAILMATE_MESHTASTIC_WIRE_HAS_ARDUINO_CRYPTO
+#define TRAILMATE_MESHTASTIC_WIRE_HAS_ARDUINO_CRYPTO 0
+#endif
 
 namespace chat
 {
 namespace meshtastic
 {
 
+#if TRAILMATE_MESHTASTIC_WIRE_HAS_ARDUINO_CRYPTO
 namespace
 {
 
@@ -54,6 +63,7 @@ void aesCtrCrypt(const uint8_t* key, size_t key_len, uint8_t* nonce,
 }
 
 } // namespace
+#endif
 
 bool buildWirePacket(const uint8_t* data_payload, size_t data_len,
                      uint32_t from_node, uint32_t packet_id,
@@ -73,12 +83,16 @@ bool buildWirePacket(const uint8_t* data_payload, size_t data_len,
 
     if (psk && psk_len > 0)
     {
+#if TRAILMATE_MESHTASTIC_WIRE_HAS_ARDUINO_CRYPTO
         uint8_t nonce[16];
         memset(nonce, 0, sizeof(nonce));
         const uint64_t packet_id64 = static_cast<uint64_t>(packet_id);
         memcpy(nonce, &packet_id64, sizeof(uint64_t));
         memcpy(nonce + sizeof(uint64_t), &from_node, sizeof(uint32_t));
         aesCtrCrypt(psk, psk_len, nonce, payload, payload_len);
+#else
+        return false;
+#endif
     }
 
     PacketHeaderWire hdr{};
@@ -151,14 +165,19 @@ bool decryptPayload(const PacketHeaderWire& header,
         return false;
     }
 
+    memcpy(out_plaintext, cipher, cipher_len);
+#if TRAILMATE_MESHTASTIC_WIRE_HAS_ARDUINO_CRYPTO
     uint8_t nonce[16];
     memset(nonce, 0, sizeof(nonce));
     const uint64_t packet_id64 = static_cast<uint64_t>(header.id);
     memcpy(nonce, &packet_id64, sizeof(uint64_t));
     memcpy(nonce + sizeof(uint64_t), &header.from, sizeof(uint32_t));
-
-    memcpy(out_plaintext, cipher, cipher_len);
     aesCtrCrypt(psk, psk_len, nonce, out_plaintext, cipher_len);
+#else
+    (void)header;
+    (void)psk_len;
+    return false;
+#endif
 
     *out_plain_len = cipher_len;
     return true;

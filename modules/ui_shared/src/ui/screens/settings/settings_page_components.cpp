@@ -70,6 +70,8 @@ constexpr size_t kMaxWifiNetworks = 24;
 constexpr const char* kPrefsNs = "settings";
 constexpr int kNetTxPowerMin = app::AppConfig::kTxPowerMinDbm;
 constexpr int kNetTxPowerMax = app::AppConfig::kTxPowerMaxDbm;
+constexpr int kGpsInitProbeMinMs = 250;
+constexpr int kGpsInitProbeMaxMs = 1600;
 
 struct CategoryDef
 {
@@ -91,6 +93,18 @@ struct ImeToggleClick
     settings::ui::ItemWidget* widget = nullptr;
     lv_obj_t* state_label = nullptr;
 };
+
+gps_runtime::GpsReceiverInitConfig make_gps_receiver_init_config(const app::AppConfig& config)
+{
+    gps_runtime::GpsReceiverInitConfig init{};
+    init.baud = config.gps_init_baud;
+    init.probe_ms = config.gps_init_probe_ms;
+    init.profile = config.gps_init_profile;
+    init.rxm_policy = config.gps_init_rxm_policy;
+    init.gnss_policy = config.gps_init_gnss_policy;
+    init.nmea_policy = config.gps_init_nmea_policy;
+    return init;
+}
 
 static OptionClick s_option_clicks[kMaxOptions]{};
 static constexpr size_t kMaxImeOptions = 16;
@@ -119,9 +133,11 @@ static lv_timer_t* s_firmware_update_timer = nullptr;
 static bool s_firmware_overlay_owned = false;
 static firmware_update_runtime::Phase s_last_firmware_phase = firmware_update_runtime::Phase::Unsupported;
 static bool s_last_firmware_busy = false;
+static lv_obj_t* s_gps_diagnostics_label = nullptr;
 
 static void update_item_value(settings::ui::ItemWidget& widget);
 static void open_factory_reset_modal();
+static void open_gps_diagnostics_modal();
 static void open_enabled_imes_modal(settings::ui::ItemWidget& widget);
 static bool option_labels_are_translated(const settings::ui::SettingItem& item);
 static bool option_labels_use_content_font(const settings::ui::SettingItem& item);
@@ -232,6 +248,29 @@ static void refresh_wifi_state_from_runtime()
     }
 }
 
+static void firmware_status_summary(const firmware_update_runtime::Status& status,
+                                    char* out,
+                                    size_t out_len)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+
+    const char* message = status.message[0] != '\0'
+                              ? status.message
+                              : (status.supported ? "Ready to check" : "OTA unsupported");
+    if (status.phase == firmware_update_runtime::Phase::Error &&
+        status.detail[0] != '\0' &&
+        std::strcmp(status.detail, message) != 0)
+    {
+        std::snprintf(out, out_len, "%s: %s", message, status.detail);
+        return;
+    }
+
+    copy_bounded(out, out_len, message);
+}
+
 static void refresh_firmware_update_state_from_runtime()
 {
     const firmware_update_runtime::Status status = firmware_update_runtime::status();
@@ -248,10 +287,7 @@ static void refresh_firmware_update_state_from_runtime()
                      sizeof(g_settings.fw_latest_version),
                      status.checked ? g_settings.fw_current_version : "Not checked");
     }
-    copy_bounded(g_settings.fw_update_status,
-                 sizeof(g_settings.fw_update_status),
-                 status.message[0] != '\0' ? status.message
-                                           : (status.supported ? "Ready to check" : "OTA unsupported"));
+    firmware_status_summary(status, g_settings.fw_update_status, sizeof(g_settings.fw_update_status));
 }
 
 static void refresh_visible_item_values()
@@ -317,8 +353,12 @@ static void sync_firmware_update_ui(bool notify_completion)
             ::ui::SystemNotification::show(status.message, 2600);
             break;
         case firmware_update_runtime::Phase::Error:
-            ::ui::SystemNotification::show(status.message, 3200);
+        {
+            char summary[160];
+            firmware_status_summary(status, summary, sizeof(summary));
+            ::ui::SystemNotification::show(summary, 3800);
             break;
+        }
         default:
             break;
         }
@@ -896,6 +936,12 @@ static void settings_load()
         gps_interval_seconds = 1;
     }
     g_settings.gps_enabled = cfg.gps_enabled;
+    g_settings.gps_init_baud = static_cast<int>(cfg.gps_init_baud);
+    g_settings.gps_init_probe_ms = static_cast<int>(cfg.gps_init_probe_ms);
+    g_settings.gps_init_profile = cfg.gps_init_profile;
+    g_settings.gps_init_rxm_policy = cfg.gps_init_rxm_policy;
+    g_settings.gps_init_gnss_policy = cfg.gps_init_gnss_policy;
+    g_settings.gps_init_nmea_policy = cfg.gps_init_nmea_policy;
     g_settings.gps_mode = cfg.gps_mode;
     g_settings.gps_sat_mask = cfg.gps_sat_mask;
     g_settings.gps_strategy = cfg.gps_strategy;
@@ -1190,6 +1236,7 @@ static void modal_close()
     g_state.modal_error = nullptr;
     g_state.editing_item = nullptr;
     g_state.editing_widget = nullptr;
+    s_gps_diagnostics_label = nullptr;
     s_option_click_count = 0;
     s_ime_toggle_count = 0;
     modal_restore_group();
@@ -1718,6 +1765,57 @@ static void on_option_clicked(lv_event_t* e)
         app_ctx.saveConfig();
         gps_runtime::set_collection_interval(interval_ms);
     }
+    if (payload->item->pref_key && strcmp(payload->item->pref_key, "gps_init_baud") == 0)
+    {
+        app::IAppFacade& app_ctx = app::appFacade();
+        app_ctx.getConfig().gps_init_baud = static_cast<uint32_t>(payload->value);
+        app_ctx.saveConfig();
+        gps_runtime::set_receiver_init_config(make_gps_receiver_init_config(app_ctx.getConfig()));
+    }
+    if (payload->item->pref_key && strcmp(payload->item->pref_key, "gps_init_probe_ms") == 0)
+    {
+        app::IAppFacade& app_ctx = app::appFacade();
+        int probe_ms = payload->value;
+        if (probe_ms < kGpsInitProbeMinMs)
+        {
+            probe_ms = kGpsInitProbeMinMs;
+        }
+        if (probe_ms > kGpsInitProbeMaxMs)
+        {
+            probe_ms = kGpsInitProbeMaxMs;
+        }
+        app_ctx.getConfig().gps_init_probe_ms = static_cast<uint32_t>(probe_ms);
+        app_ctx.saveConfig();
+        gps_runtime::set_receiver_init_config(make_gps_receiver_init_config(app_ctx.getConfig()));
+    }
+    if (payload->item->pref_key && strcmp(payload->item->pref_key, "gps_init_profile") == 0)
+    {
+        app::IAppFacade& app_ctx = app::appFacade();
+        app_ctx.getConfig().gps_init_profile = static_cast<uint8_t>(payload->value);
+        app_ctx.saveConfig();
+        gps_runtime::set_receiver_init_config(make_gps_receiver_init_config(app_ctx.getConfig()));
+    }
+    if (payload->item->pref_key && strcmp(payload->item->pref_key, "gps_init_rxm") == 0)
+    {
+        app::IAppFacade& app_ctx = app::appFacade();
+        app_ctx.getConfig().gps_init_rxm_policy = static_cast<uint8_t>(payload->value);
+        app_ctx.saveConfig();
+        gps_runtime::set_receiver_init_config(make_gps_receiver_init_config(app_ctx.getConfig()));
+    }
+    if (payload->item->pref_key && strcmp(payload->item->pref_key, "gps_init_gnss") == 0)
+    {
+        app::IAppFacade& app_ctx = app::appFacade();
+        app_ctx.getConfig().gps_init_gnss_policy = static_cast<uint8_t>(payload->value);
+        app_ctx.saveConfig();
+        gps_runtime::set_receiver_init_config(make_gps_receiver_init_config(app_ctx.getConfig()));
+    }
+    if (payload->item->pref_key && strcmp(payload->item->pref_key, "gps_init_nmea") == 0)
+    {
+        app::IAppFacade& app_ctx = app::appFacade();
+        app_ctx.getConfig().gps_init_nmea_policy = static_cast<uint8_t>(payload->value);
+        app_ctx.saveConfig();
+        gps_runtime::set_receiver_init_config(make_gps_receiver_init_config(app_ctx.getConfig()));
+    }
     if (payload->item->pref_key && strcmp(payload->item->pref_key, "gps_mode") == 0)
     {
         app::IAppFacade& app_ctx = app::appFacade();
@@ -2009,6 +2107,146 @@ static void open_factory_reset_modal()
     lv_group_focus_obj(cancel_btn);
 }
 
+static void format_gps_diagnostics_text(char* out, size_t out_len)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+
+    const gps_runtime::GpsDiagnosticsSnapshot diag = gps_runtime::diagnostics();
+    char last_rx[24];
+    if (diag.last_rx_age_ms == 0xFFFFFFFFUL)
+    {
+        std::snprintf(last_rx, sizeof(last_rx), "never");
+    }
+    else
+    {
+        std::snprintf(last_rx, sizeof(last_rx), "%lu ms",
+                      static_cast<unsigned long>(diag.last_rx_age_ms));
+    }
+
+    std::snprintf(out,
+                  out_len,
+                  "Code: %s\n"
+                  "Supported: %d  Enabled: %d\n"
+                  "Powered: %d  Ready: %d\n"
+                  "Fix: %d  Sats: %u\n"
+                  "View: %u  Use: %u\n"
+                  "Chars: %lu  Recent: %lu\n"
+                  "Last RX: %s\n"
+                  "Poll: %lu ms  Publish: %lu ms",
+                  ::gps::gpsDiagnosticCodeName(diag.code),
+                  diag.supported ? 1 : 0,
+                  diag.enabled ? 1 : 0,
+                  diag.powered ? 1 : 0,
+                  diag.ready ? 1 : 0,
+                  diag.has_fix ? 1 : 0,
+                  static_cast<unsigned>(diag.satellites),
+                  static_cast<unsigned>(diag.sats_in_view),
+                  static_cast<unsigned>(diag.sats_in_use),
+                  static_cast<unsigned long>(diag.chars_total),
+                  static_cast<unsigned long>(diag.chars_recent),
+                  last_rx,
+                  static_cast<unsigned long>(diag.poll_interval_ms),
+                  static_cast<unsigned long>(diag.collection_interval_ms));
+
+    std::printf("[GPS] diagnostics ui code=%s enabled=%d powered=%d ready=%d fix=%d sats=%u view=%u use=%u chars=%lu recent=%lu last_rx_age_ms=%lu\n",
+                ::gps::gpsDiagnosticCodeName(diag.code),
+                diag.enabled ? 1 : 0,
+                diag.powered ? 1 : 0,
+                diag.ready ? 1 : 0,
+                diag.has_fix ? 1 : 0,
+                static_cast<unsigned>(diag.satellites),
+                static_cast<unsigned>(diag.sats_in_view),
+                static_cast<unsigned>(diag.sats_in_use),
+                static_cast<unsigned long>(diag.chars_total),
+                static_cast<unsigned long>(diag.chars_recent),
+                static_cast<unsigned long>(diag.last_rx_age_ms));
+}
+
+static void refresh_gps_diagnostics_label()
+{
+    if (!s_gps_diagnostics_label || !lv_obj_is_valid(s_gps_diagnostics_label))
+    {
+        return;
+    }
+    char text[360];
+    format_gps_diagnostics_text(text, sizeof(text));
+    ::ui::i18n::set_label_text_raw(s_gps_diagnostics_label, text);
+}
+
+static void on_gps_diagnostics_refresh_clicked(lv_event_t* e)
+{
+    (void)e;
+    refresh_gps_diagnostics_label();
+}
+
+static void on_gps_diagnostics_close_clicked(lv_event_t* e)
+{
+    (void)e;
+    modal_close();
+}
+
+static void open_gps_diagnostics_modal()
+{
+    if (g_state.modal_root)
+    {
+        return;
+    }
+
+    modal_prepare_group();
+    g_state.modal_root = create_modal_root(300, 220);
+    lv_obj_t* win = lv_obj_get_child(g_state.modal_root, 0);
+
+    lv_obj_t* title = lv_label_create(win);
+    ::ui::i18n::set_label_text(title, "GPS Diagnostics");
+    style::apply_label_primary(title);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+
+    s_gps_diagnostics_label = lv_label_create(win);
+    lv_obj_set_width(s_gps_diagnostics_label, LV_PCT(100));
+    lv_label_set_long_mode(s_gps_diagnostics_label, LV_LABEL_LONG_WRAP);
+    style::apply_label_muted(s_gps_diagnostics_label);
+    lv_obj_align(s_gps_diagnostics_label, LV_ALIGN_TOP_LEFT, 0, 28);
+    refresh_gps_diagnostics_label();
+
+    lv_obj_t* btn_row = lv_obj_create(win);
+    lv_obj_set_size(btn_row, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_align(btn_row, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_flex_flow(btn_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(btn_row,
+                          LV_FLEX_ALIGN_SPACE_EVENLY,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(btn_row, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(btn_row, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(btn_row, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(btn_row, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t* refresh_btn = lv_btn_create(btn_row);
+    lv_obj_set_size(refresh_btn,
+                    ::ui::page_profile::resolve_control_button_min_width(),
+                    ::ui::page_profile::resolve_control_button_height());
+    lv_obj_t* refresh_label = lv_label_create(refresh_btn);
+    ::ui::i18n::set_label_text(refresh_label, "Refresh");
+    lv_obj_center(refresh_label);
+    lv_obj_add_event_cb(refresh_btn, on_gps_diagnostics_refresh_clicked, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t* close_btn = lv_btn_create(btn_row);
+    lv_obj_set_size(close_btn,
+                    ::ui::page_profile::resolve_control_button_min_width(),
+                    ::ui::page_profile::resolve_control_button_height());
+    lv_obj_t* close_label = lv_label_create(close_btn);
+    ::ui::i18n::set_label_text(close_label, "Close");
+    lv_obj_center(close_label);
+    lv_obj_add_event_cb(close_btn, on_gps_diagnostics_close_clicked, LV_EVENT_CLICKED, nullptr);
+
+    lv_group_add_obj(g_state.modal_group, refresh_btn);
+    lv_group_add_obj(g_state.modal_group, close_btn);
+    lv_group_focus_obj(refresh_btn);
+}
+
 static void on_enabled_imes_back_clicked(lv_event_t* e)
 {
     (void)e;
@@ -2284,6 +2522,32 @@ static const settings::ui::SettingOption kGpsModeOptions[] = {
     {"Power Save", 1},
     {"Fix Only", 2},
 };
+static const settings::ui::SettingOption kGpsInitBaudOptions[] = {
+    {"Auto", 0},
+    {"9600", 9600},
+    {"38400", 38400},
+    {"115200", 115200},
+    {"57600", 57600},
+    {"19200", 19200},
+    {"4800", 4800},
+};
+static const settings::ui::SettingOption kGpsInitProbeOptions[] = {
+    {"250 ms", 250},
+    {"500 ms", 500},
+    {"900 ms", 900},
+    {"1600 ms", 1600},
+};
+static const settings::ui::SettingOption kGpsInitProfileOptions[] = {
+    {"Auto", 0},
+    {"NMEA Passive", 1},
+    {"u-blox Legacy", 2},
+    {"u-blox Modern", 3},
+};
+static const settings::ui::SettingOption kGpsInitPolicyOptions[] = {
+    {"Auto", 0},
+    {"Skip", 1},
+    {"Send", 2},
+};
 static const settings::ui::SettingOption kGpsSatOptions[] = {
     {"GPS+BDS+GAL", 0x1 | 0x8 | 0x4},
     {"GPS", 0x1},
@@ -2457,8 +2721,8 @@ static const settings::ui::SettingOption kExternalNmeaOptions[] = {
     {"5Hz", 5},
 };
 static const settings::ui::SettingOption kExternalNmeaSentenceOptions[] = {
-    {"GGA+RMC+GSV", 0},
-    {"RMC+GSV", 1},
+    {"GGA+RMC+GSA+GSV", 0},
+    {"RMC+GSA+GSV", 1},
     {"GGA+RMC", 2},
 };
 
@@ -2518,6 +2782,12 @@ static const settings::ui::SettingOption kTimeZoneOptions[] = {
 
 static settings::ui::SettingItem kGpsItems[] = {
     {"GPS Enabled", settings::ui::SettingType::Toggle, nullptr, 0, nullptr, &g_settings.gps_enabled, nullptr, 0, false, "gps_enabled"},
+    {"Receiver Baud", settings::ui::SettingType::Enum, kGpsInitBaudOptions, 7, &g_settings.gps_init_baud, nullptr, nullptr, 0, false, "gps_init_baud"},
+    {"Probe Window", settings::ui::SettingType::Enum, kGpsInitProbeOptions, 4, &g_settings.gps_init_probe_ms, nullptr, nullptr, 0, false, "gps_init_probe_ms"},
+    {"Receiver Profile", settings::ui::SettingType::Enum, kGpsInitProfileOptions, 4, &g_settings.gps_init_profile, nullptr, nullptr, 0, false, "gps_init_profile"},
+    {"RXM Init", settings::ui::SettingType::Enum, kGpsInitPolicyOptions, 3, &g_settings.gps_init_rxm_policy, nullptr, nullptr, 0, false, "gps_init_rxm"},
+    {"GNSS Init", settings::ui::SettingType::Enum, kGpsInitPolicyOptions, 3, &g_settings.gps_init_gnss_policy, nullptr, nullptr, 0, false, "gps_init_gnss"},
+    {"NMEA Init", settings::ui::SettingType::Enum, kGpsInitPolicyOptions, 3, &g_settings.gps_init_nmea_policy, nullptr, nullptr, 0, false, "gps_init_nmea"},
     {"Location Mode", settings::ui::SettingType::Enum, kGpsModeOptions, 3, &g_settings.gps_mode, nullptr, nullptr, 0, false, "gps_mode"},
     {"Satellite Systems", settings::ui::SettingType::Enum, kGpsSatOptions, 5, &g_settings.gps_sat_mask, nullptr, nullptr, 0, false, "gps_sat_mask"},
     {"Position Strategy", settings::ui::SettingType::Enum, kGpsStrategyOptions, 3, &g_settings.gps_strategy, nullptr, nullptr, 0, false, "gps_strategy"},
@@ -2526,6 +2796,7 @@ static settings::ui::SettingItem kGpsItems[] = {
     {"Coordinate Format", settings::ui::SettingType::Enum, kGpsCoordOptions, 3, &g_settings.gps_coord_format, nullptr, nullptr, 0, false, "gps_coord_fmt"},
     {"NMEA Export", settings::ui::SettingType::Enum, kExternalNmeaOptions, 3, &g_settings.external_nmea_output_hz, nullptr, nullptr, 0, false, "external_nmea"},
     {"NMEA Sentences", settings::ui::SettingType::Enum, kExternalNmeaSentenceOptions, 3, &g_settings.external_nmea_sentence_mask, nullptr, nullptr, 0, false, "external_nmea_sent"},
+    {"Diagnostics", settings::ui::SettingType::Action, nullptr, 0, nullptr, nullptr, nullptr, 0, false, "gps_diagnostics"},
 };
 
 static settings::ui::SettingItem kMapItems[] = {
@@ -3137,6 +3408,10 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
         {
             open_enabled_imes_modal(widget);
         }
+        else if (item.pref_key && strcmp(item.pref_key, "gps_diagnostics") == 0)
+        {
+            open_gps_diagnostics_modal();
+        }
         else if (item.pref_key && strcmp(item.pref_key, "chat_reset_mesh") == 0)
         {
             reset_mesh_settings();
@@ -3205,10 +3480,20 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
             {
                 sync_firmware_update_ui(false);
                 const firmware_update_runtime::Status status = firmware_update_runtime::status();
-                const char* message = status.busy ? "Update task already running"
-                                                  : (status.message[0] != '\0' ? status.message
-                                                                               : "Unable to start update check");
-                ::ui::SystemNotification::show(message, 2600);
+                char message[160];
+                if (status.busy)
+                {
+                    copy_bounded(message, sizeof(message), "Update task already running");
+                }
+                else if (status.message[0] != '\0')
+                {
+                    firmware_status_summary(status, message, sizeof(message));
+                }
+                else
+                {
+                    copy_bounded(message, sizeof(message), "Unable to start update check");
+                }
+                ::ui::SystemNotification::show(message, 3000);
             }
             else
             {
@@ -3221,10 +3506,20 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
             {
                 sync_firmware_update_ui(false);
                 const firmware_update_runtime::Status status = firmware_update_runtime::status();
-                const char* message = status.busy ? "Update task already running"
-                                                  : (status.message[0] != '\0' ? status.message
-                                                                               : "Unable to start OTA install");
-                ::ui::SystemNotification::show(message, 2600);
+                char message[160];
+                if (status.busy)
+                {
+                    copy_bounded(message, sizeof(message), "Update task already running");
+                }
+                else if (status.message[0] != '\0')
+                {
+                    firmware_status_summary(status, message, sizeof(message));
+                }
+                else
+                {
+                    copy_bounded(message, sizeof(message), "Unable to start OTA install");
+                }
+                ::ui::SystemNotification::show(message, 3000);
             }
             else
             {

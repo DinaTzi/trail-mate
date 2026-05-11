@@ -45,6 +45,12 @@ struct SettingsData
 {
     // GPS
     bool gps_enabled = true;
+    int gps_init_baud = 0;
+    int gps_init_probe_ms = 900;
+    int gps_init_profile = 0;
+    int gps_init_rxm_policy = 0;
+    int gps_init_gnss_policy = 0;
+    int gps_init_nmea_policy = 0;
     int gps_mode = 0;
     int gps_sat_mask = 0x1 | 0x8 | 0x4;
     int gps_strategy = 0;

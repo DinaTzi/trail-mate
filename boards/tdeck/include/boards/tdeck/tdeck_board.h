@@ -104,6 +104,12 @@ class TDeckBoard : public BoardBase,
                             uint8_t crc_len) override;
 
     // GpsBoard
+    void setGPSReceiverInitConfig(const gps::GpsReceiverInitConfig& config) override
+    {
+        gps_init_config_ = config;
+        gps_receiver_init_configured_ = true;
+    }
+    gps::GpsReceiverProtocol getGPSReceiverProtocol() const override { return gps_receiver_protocol_; }
     bool initGPS() override;
     void deinitGPS() override;
     void setGPSOnline(bool online) override
@@ -139,6 +145,9 @@ class TDeckBoard : public BoardBase,
 
   private:
     uint32_t devices_probe_ = 0;
+    gps::GpsReceiverInitConfig gps_init_config_{};
+    bool gps_receiver_init_configured_ = false;
+    gps::GpsReceiverProtocol gps_receiver_protocol_ = gps::GpsReceiverProtocol::Unknown;
     uint8_t brightness_ = 8;
     uint8_t keyboard_brightness_ = 127;
     uint8_t rotation_ = 0;

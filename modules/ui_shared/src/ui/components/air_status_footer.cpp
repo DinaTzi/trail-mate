@@ -4,8 +4,7 @@
 #include "app/app_facade_access.h"
 #include "chat/infra/mesh_protocol_utils.h"
 #include "chat/infra/meshcore/mc_region_presets.h"
-#include "chat/infra/meshtastic/mt_protocol_helpers.h"
-#include "chat/infra/meshtastic/mt_region.h"
+#include "chat/infra/meshtastic/mt_radio_config.h"
 #include "ui/assets/fonts/font_utils.h"
 #include "ui/components/two_pane_layout.h"
 #include "ui/components/two_pane_styles.h"
@@ -72,31 +71,12 @@ void format_summary_and_detail(char* summary,
 
     if (protocol == chat::MeshProtocol::Meshtastic)
     {
-        const auto region_code =
-            static_cast<meshtastic_Config_LoRaConfig_RegionCode>(cfg.meshtastic_config.region);
-        const chat::meshtastic::RegionInfo* region = chat::meshtastic::findRegion(region_code);
-        if (cfg.meshtastic_config.use_preset && region)
-        {
-            const auto preset = static_cast<meshtastic_Config_LoRaConfig_ModemPreset>(
-                cfg.meshtastic_config.modem_preset);
-            chat::meshtastic::modemPresetToParams(
-                preset, region->wide_lora, bw_khz, sf, cr);
-            const char* channel_name = chat::meshtastic::presetDisplayName(preset);
-            freq_mhz = chat::meshtastic::computeFrequencyMhz(region, bw_khz, channel_name);
-        }
-        else
-        {
-            bw_khz = cfg.meshtastic_config.bandwidth_khz;
-            sf = cfg.meshtastic_config.spread_factor;
-            cr = cfg.meshtastic_config.coding_rate;
-            freq_mhz = cfg.meshtastic_config.override_frequency_mhz;
-        }
-        freq_mhz += cfg.meshtastic_config.frequency_offset_mhz;
-        if (freq_mhz <= 0.0f)
-        {
-            freq_mhz = chat::meshtastic::estimateFrequencyMhz(
-                cfg.meshtastic_config.region, cfg.meshtastic_config.modem_preset);
-        }
+        const chat::meshtastic::RadioConfig radio =
+            chat::meshtastic::deriveRadioConfig(cfg.meshtastic_config);
+        freq_mhz = radio.freq_mhz;
+        bw_khz = radio.bw_khz;
+        sf = radio.sf;
+        cr = radio.cr_denom;
     }
     else if (protocol == chat::MeshProtocol::MeshCore)
     {

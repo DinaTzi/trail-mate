@@ -5,6 +5,7 @@
 
 #include "chat/usecase/chat_service.h"
 #include "chat/time_utils.h"
+#include <algorithm>
 #include <cstdio>
 
 namespace chat
@@ -156,6 +157,7 @@ void ChatService::clearAllMessages()
 {
     model_.clearAll();
     store_.clearAll();
+    recent_incoming_.clear();
 }
 
 void ChatService::markConversationRead(const ConversationId& conv)
@@ -186,6 +188,17 @@ void ChatService::processIncoming()
                          static_cast<unsigned long>(msg.peer),
                          static_cast<unsigned long>(msg.timestamp),
                          static_cast<unsigned>(msg.text.size()));
+
+        if (isDuplicateIncoming(msg))
+        {
+            CHAT_SERVICE_LOG("[ChatService] duplicate incoming text ignored ch=%u from=%08lX peer=%08lX id=%08lX\n",
+                             static_cast<unsigned>(msg.channel),
+                             static_cast<unsigned long>(msg.from),
+                             static_cast<unsigned long>(msg.peer),
+                             static_cast<unsigned long>(msg.msg_id));
+            continue;
+        }
+        rememberIncoming(msg);
 
         if (model_enabled_)
         {
@@ -229,6 +242,44 @@ void ChatService::processIncoming()
                 observer->onIncomingData(incoming_data);
             }
         }
+    }
+}
+
+bool ChatService::isDuplicateIncoming(const ChatMessage& msg) const
+{
+    if (msg.msg_id == 0 || msg.status != MessageStatus::Incoming)
+    {
+        return false;
+    }
+
+    IncomingIdentity identity{};
+    identity.protocol = msg.protocol;
+    identity.channel = msg.channel;
+    identity.from = msg.from;
+    identity.peer = msg.peer;
+    identity.msg_id = msg.msg_id;
+    return std::find(recent_incoming_.begin(),
+                     recent_incoming_.end(),
+                     identity) != recent_incoming_.end();
+}
+
+void ChatService::rememberIncoming(const ChatMessage& msg)
+{
+    if (msg.msg_id == 0 || msg.status != MessageStatus::Incoming)
+    {
+        return;
+    }
+
+    IncomingIdentity identity{};
+    identity.protocol = msg.protocol;
+    identity.channel = msg.channel;
+    identity.from = msg.from;
+    identity.peer = msg.peer;
+    identity.msg_id = msg.msg_id;
+    recent_incoming_.push_back(identity);
+    while (recent_incoming_.size() > kRecentIncomingLimit)
+    {
+        recent_incoming_.pop_front();
     }
 }
 

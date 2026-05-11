@@ -55,6 +55,15 @@ uint32_t HalGps::loop()
     return board_->getGPS().loop();
 }
 
+uint32_t HalGps::lastLoopReadBytes() const
+{
+    if (board_ == nullptr)
+    {
+        return 0;
+    }
+    return board_->getGPS().lastLoopReadBytes();
+}
+
 bool HalGps::hasFix() const
 {
     return board_ != nullptr && board_->getGPS().location.isValid();
@@ -124,7 +133,7 @@ bool HalGps::syncTime(uint32_t gps_task_interval_ms)
     return board_->syncTimeFromGPS(gps_task_interval_ms);
 }
 
-bool HalGps::applyGnssConfig(uint8_t mode, uint8_t sat_mask)
+bool HalGps::applyGnssConfig(uint8_t mode, uint8_t sat_mask, bool send_rxm, bool send_gnss)
 {
     if (board_ == nullptr)
     {
@@ -132,9 +141,22 @@ bool HalGps::applyGnssConfig(uint8_t mode, uint8_t sat_mask)
     }
 
     GPS& gps = board_->getGPS();
-    bool ok_mode = gps.setReceiverMode(mode, sat_mask);
-    bool ok_gnss = gps.configureGnss(sat_mask);
+    bool ok_mode = !send_rxm || gps.setReceiverMode(mode, sat_mask);
+
+#if defined(ARDUINO_T_DECK) || defined(ARDUINO_T_DECK_PRO)
+    bool ok_gnss = !send_gnss || gps.configureGnss(sat_mask);
+    Serial.printf("[GPS] gnss config tdeck mode=%u sat_mask=0x%02X rxm_send=%d rxm=%d cfg_gnss_send=%d cfg_gnss=%d\n",
+                  static_cast<unsigned>(mode),
+                  static_cast<unsigned>(sat_mask),
+                  send_rxm ? 1 : 0,
+                  ok_mode ? 1 : 0,
+                  send_gnss ? 1 : 0,
+                  ok_gnss ? 1 : 0);
     return ok_mode && ok_gnss;
+#else
+    bool ok_gnss = !send_gnss || gps.configureGnss(sat_mask);
+    return ok_mode && ok_gnss;
+#endif
 }
 
 bool HalGps::applyNmeaConfig(uint8_t output_hz, uint8_t sentence_mask)

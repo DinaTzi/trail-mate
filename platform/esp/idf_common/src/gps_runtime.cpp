@@ -738,6 +738,57 @@ bool get_gnss_snapshot(gps::GnssSatInfo* out, std::size_t max, std::size_t* out_
     return true;
 }
 
+gps::GpsDiagnosticsSnapshot diagnostics()
+{
+    std::lock_guard<std::mutex> lock(s_mutex);
+    gps::GpsDiagnosticsSnapshot snapshot{};
+    snapshot.supported = platform::ui::device::gps_supported();
+    snapshot.enabled = snapshot.supported && s_runtime.enabled;
+    snapshot.powered = snapshot.supported && s_runtime.powered;
+    snapshot.ready = s_runtime.worker_handle != nullptr;
+    snapshot.has_fix = s_runtime.data.valid;
+    snapshot.satellites = s_runtime.data.satellites;
+    snapshot.sats_in_view = s_runtime.status.sats_in_view;
+    snapshot.sats_in_use = s_runtime.status.sats_in_use;
+    snapshot.last_rx_age_ms = s_runtime.last_rx_ms ? (now_ms() - s_runtime.last_rx_ms) : 0xFFFFFFFFUL;
+    snapshot.poll_interval_ms = 200;
+    snapshot.collection_interval_ms = s_runtime.collection_interval_ms;
+
+    if (!snapshot.supported)
+    {
+        snapshot.code = gps::GpsDiagnosticCode::Disabled;
+    }
+    else if (!snapshot.enabled)
+    {
+        snapshot.code = gps::GpsDiagnosticCode::NotEnabled;
+    }
+    else if (!snapshot.powered)
+    {
+        snapshot.code = gps::GpsDiagnosticCode::PowerOff;
+    }
+    else if (!snapshot.ready)
+    {
+        snapshot.code = gps::GpsDiagnosticCode::TransportNotReady;
+    }
+    else if (snapshot.last_rx_age_ms == 0xFFFFFFFFUL)
+    {
+        snapshot.code = gps::GpsDiagnosticCode::NoTraffic;
+    }
+    else if (snapshot.last_rx_age_ms > kNoDataWarnMs)
+    {
+        snapshot.code = gps::GpsDiagnosticCode::TrafficStalled;
+    }
+    else if (!snapshot.has_fix)
+    {
+        snapshot.code = gps::GpsDiagnosticCode::NoFix;
+    }
+    else
+    {
+        snapshot.code = gps::GpsDiagnosticCode::OK;
+    }
+    return snapshot;
+}
+
 uint32_t last_motion_ms()
 {
     std::lock_guard<std::mutex> lock(s_mutex);
@@ -811,6 +862,11 @@ void set_external_nmea_config(uint8_t output_hz, uint8_t sentence_mask)
     std::lock_guard<std::mutex> lock(s_mutex);
     s_runtime.external_nmea_output_hz = output_hz;
     s_runtime.external_nmea_sentence_mask = sentence_mask;
+}
+
+void set_receiver_init_config(const gps::GpsReceiverInitConfig& config)
+{
+    (void)config;
 }
 
 void set_motion_idle_timeout(uint32_t timeout_ms)

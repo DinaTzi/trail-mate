@@ -9,11 +9,9 @@ namespace platform::esp::boards::detail
 
 inline void initializeBoard(bool waking_from_sleep)
 {
-#if HAS_GPS
-    ::boards::tdeck::board.begin();
-#else
+    // Defer GPS UART open until AppConfig is loaded so saved baud/profile policy is
+    // applied on the first and only GPS init.
     ::boards::tdeck::board.begin(NO_HW_GPS);
-#endif
 
     if (waking_from_sleep)
     {
