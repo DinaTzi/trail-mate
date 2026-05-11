@@ -106,13 +106,12 @@
           <div class="section-heading">
             <div>
               <p class="eyebrow">Localization</p>
-              <h2>0.1.24-alpha makes language packs versioned, reviewable, and installable without bloating firmware images.</h2>
+              <h2>0.1.25-alpha adds GPS receiver controls, diagnostics, and T-Deck UART noise guidance.</h2>
             </div>
             <p class="section-note">
-              English remains built in for safe defaults. Additional locale, font, and IME
-              resources are published as versioned bundles. Release-quality locales can appear in
-              Settings, while review packs remain downloadable for validation without surprising
-              everyday users.
+              The release keeps the installable language-pack catalog from 0.1.24-alpha and
+              adds clearer GPS setup paths for receiver baud, receiver profile, initialization
+              policy, diagnostics, and ordinary T-Deck hardware checks.
             </p>
           </div>
 
@@ -139,8 +138,8 @@
               <p class="feature-kicker">Release Gate</p>
               <h3>Review packs are visible in the catalog but kept out of the runtime language picker.</h3>
               <p>
-                The 0.1.24-alpha catalog carries translation status, archive hashes, and package
-                versions so updates are visible without pretending unfinished locales are ready.
+                The catalog carries translation status, archive hashes, and package versions so
+                updates are visible without pretending unfinished locales are ready.
               </p>
             </article>
 
@@ -162,6 +161,21 @@
                 Published locale bundles from the current Pages build will appear here.
               </p>
             </article>
+          </div>
+        </section>
+
+        <section class="overview-ribbon" aria-label="GPS release update">
+          <p class="overview-copy">
+            0.1.25-alpha separates GPS transport readiness from receiver health, exposes UART
+            traffic diagnostics in Settings, and documents the ordinary T-Deck case where LoRa TX
+            can induce non-NMEA bytes on a floating or weakly driven GPS UART RX line.
+          </p>
+          <div class="overview-tags">
+            <span>GPS Settings</span>
+            <span>Receiver Profiles</span>
+            <span>UART Diagnostics</span>
+            <span>T-Deck Hardware Notes</span>
+            <span>LoRa TX Noise Checks</span>
           </div>
         </section>
 
