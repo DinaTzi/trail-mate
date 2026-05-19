@@ -6,6 +6,7 @@ using Host = gps::ui::shell::Host;
 #include "app/app_facade_access.h"
 #include "platform/ui/device_runtime.h"
 #include "platform/ui/gps_runtime.h"
+#include "sys/clock.h"
 #include "ui/localization.h"
 #include "ui/page/page_profile.h"
 #include "ui/screens/gps/gps_constants.h"
@@ -21,6 +22,7 @@ using Host = gps::ui::shell::Host;
 #include "ui/screens/gps/gps_tracker_overlay.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/map/map_tiles.h"
+#include "ui_gps_runtime/gps_page_runtime_pump.h"
 
 #include <cmath>
 #include <cstdio>
@@ -243,6 +245,90 @@ static void title_update_timer_cb(lv_timer_t* timer)
     update_title_and_status();
 }
 
+namespace
+{
+
+class EspGpsRuntimeRefreshModel final : public ::ui::screens::gps::IGpsStatusRefreshModel
+{
+  public:
+    void refresh() override
+    {
+        // If there's no GPS fix and nothing explicitly requested a refresh,
+        // avoid driving full UI/map updates on every runtime cadence tick.
+        GPSData gps_data = platform::ui::gps::get_data();
+        const bool has_fix_now = gps_data.valid || g_gps_state.has_fix;
+
+        if (g_gps_state.pending_refresh)
+        {
+            GPS_FLOW_LOG("[GPS][MAP][flow] pending_refresh consume zoom=%d fix=%d pan=%d,%d\n",
+                         g_gps_state.zoom_level,
+                         g_gps_state.has_fix,
+                         g_gps_state.pan_x,
+                         g_gps_state.pan_y);
+            g_gps_state.pending_refresh = false;
+            update_map_tiles(false);
+            log_map_tile_state("pending_refresh");
+        }
+
+        refresh_member_panel(false);
+        refresh_team_markers_from_posring();
+        refresh_team_signal_markers_from_chatlog();
+
+        if (g_gps_state.zoom_modal.is_open())
+        {
+            tick_gps_update(false);
+            return;
+        }
+
+        if (modal_is_open(g_gps_state.tracker_modal))
+        {
+            tick_gps_update(false);
+            return;
+        }
+        if (modal_is_open(g_gps_state.layer_modal))
+        {
+            tick_gps_update(false);
+            return;
+        }
+
+        if (!has_fix_now && !g_gps_state.pending_refresh)
+        {
+            return;
+        }
+
+        tick_gps_update(true);
+    }
+};
+
+class EspGpsUiRefreshSink final : public ::ui::screens::gps::IGpsUiRefreshSink
+{
+  public:
+    void onGpsRuntimeUpdated() override {}
+};
+
+EspGpsRuntimeRefreshModel& gps_runtime_refresh_model()
+{
+    static EspGpsRuntimeRefreshModel model;
+    return model;
+}
+
+EspGpsUiRefreshSink& gps_runtime_refresh_sink()
+{
+    static EspGpsUiRefreshSink sink;
+    return sink;
+}
+
+::ui::screens::gps::GpsPageRuntimePump& gps_runtime_pump()
+{
+    static ::ui::screens::gps::GpsPageRuntimePump pump(
+        gps_runtime_refresh_model(),
+        &gps_runtime_refresh_sink(),
+        500);
+    return pump;
+}
+
+} // namespace
+
 static void gps_update_timer_cb(lv_timer_t* timer)
 {
     (void)timer;
@@ -251,50 +337,7 @@ static void gps_update_timer_cb(lv_timer_t* timer)
         return;
     }
 
-    // If there's no GPS fix and nothing explicitly requested a refresh,
-    // avoid driving full UI/map updates on every tick.
-    GPSData gps_data = platform::ui::gps::get_data();
-    const bool has_fix_now = gps_data.valid || g_gps_state.has_fix;
-
-    if (g_gps_state.pending_refresh)
-    {
-        GPS_FLOW_LOG("[GPS][MAP][flow] pending_refresh consume zoom=%d fix=%d pan=%d,%d\n",
-                     g_gps_state.zoom_level,
-                     g_gps_state.has_fix,
-                     g_gps_state.pan_x,
-                     g_gps_state.pan_y);
-        g_gps_state.pending_refresh = false;
-        update_map_tiles(false);
-        log_map_tile_state("pending_refresh");
-    }
-
-    refresh_member_panel(false);
-    refresh_team_markers_from_posring();
-    refresh_team_signal_markers_from_chatlog();
-
-    if (g_gps_state.zoom_modal.is_open())
-    {
-        tick_gps_update(false);
-        return;
-    }
-
-    if (modal_is_open(g_gps_state.tracker_modal))
-    {
-        tick_gps_update(false);
-        return;
-    }
-    if (modal_is_open(g_gps_state.layer_modal))
-    {
-        tick_gps_update(false);
-        return;
-    }
-
-    if (!has_fix_now && !g_gps_state.pending_refresh)
-    {
-        return;
-    }
-
-    tick_gps_update(true);
+    gps_runtime_pump().update(sys::millis_now());
 }
 
 static void gps_loader_timer_cb(lv_timer_t* timer)
@@ -382,6 +425,7 @@ void enter(const shell::Host* host, lv_obj_t* parent)
                         nullptr,
                         &g_gps_state.anchor,
                         &g_gps_state.tiles,
+                        &g_gps_state.tile_render_queue,
                         &g_gps_state.has_map_data,
                         &g_gps_state.has_visible_map_data);
     g_gps_state.tile_ctx.map_container = g_gps_state.map;
@@ -484,6 +528,7 @@ void enter(const shell::Host* host, lv_obj_t* parent)
     }
 
     // Split timers: fast tile loading + slower GPS refresh.
+    gps_runtime_pump().setActive(true);
     g_gps_state.loader_timer = gps::ui::lifetime::add_timer(gps_loader_timer_cb, 200, NULL);
     g_gps_state.timer = gps::ui::lifetime::add_timer(gps_update_timer_cb, 500, NULL);
     g_gps_state.title_timer = gps::ui::lifetime::add_timer(title_update_timer_cb, 30000, NULL);
@@ -503,6 +548,7 @@ void exit(lv_obj_t* parent)
 
     // Prevent re-entrant exit.
     g_gps_state.exiting = true;
+    gps_runtime_pump().setActive(false);
 
     // Mirror Contacts cleanup order: stop inputs/timers, close modals, delete root, reset state.
 #ifdef USING_INPUT_DEV_TOUCHPAD
@@ -606,16 +652,25 @@ using Host = gps::ui::shell::Host;
 #include "app/app_config.h"
 #include "app/app_facade_access.h"
 #include "platform/ui/device_runtime.h"
-#include "platform/ui/gps_runtime.h"
+#include "platform/ui/team_ui_store_runtime.h"
+#include "sys/clock.h"
 #include "ui/app_runtime.h"
 #include "ui/localization.h"
+#include "ui/presentation_sources/legacy_gps_status_source.h"
+#include "ui/presentation_sources/legacy_map_action_sink.h"
+#include "ui/presentation_sources/legacy_map_presentation_source.h"
 #include "ui/screens/gps/gps_constants.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/map/map_viewport.h"
 #include "ui/widgets/top_bar.h"
+#include "ui_gps_runtime/gps_page_runtime_pump.h"
+#include "ui_map_runtime/map_overlay_snapshot_source.h"
+#include "ui_presentation/map/map_overlay_snapshot.h"
+#include "ui_presentation/map/map_workspace_model.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <vector>
 
 #if !defined(LV_FONT_MONTSERRAT_12) || !LV_FONT_MONTSERRAT_12
 #define lv_font_montserrat_12 lv_font_montserrat_14
@@ -638,6 +693,7 @@ lv_timer_t* s_timer = nullptr;
 int s_map_zoom = kCardputerZeroMapDefaultZoom;
 int s_map_pan_x = 0;
 int s_map_pan_y = 0;
+::ui::map::MapOverlaySnapshot s_overlay_snapshot;
 
 void request_exit()
 {
@@ -649,19 +705,151 @@ void request_exit()
     ui_request_exit_to_menu();
 }
 
-::ui::widgets::map::Model build_map_model(const platform::ui::gps::GpsState& gps_data)
+::ui::map::MapWorkspaceModel& map_workspace_model()
+{
+    static ::ui::presentation_sources::LegacyMapPresentationSource source(
+        ::ui::presentation_sources::legacy_gps_status_source(),
+        ::ui::presentation_sources::legacy_map_presentation_state(),
+        &::team::ui::team_ui_get_store());
+    static ::ui::presentation_sources::LegacyMapActionSink sink(
+        ::ui::presentation_sources::legacy_gps_status_source(),
+        ::ui::presentation_sources::legacy_map_presentation_state());
+    static ::ui::map::MapWorkspaceModel model(source, sink);
+    return model;
+}
+
+class LinuxMapOverlayGpsSource final : public ::ui::map_overlay::IMapOverlayGpsSource
+{
+  public:
+    bool currentFix(double& lat, double& lon, bool& valid) const override
+    {
+        ::ui::gps::GpsStatusSnapshot gps;
+        if (!::ui::presentation_sources::legacy_gps_status_source().buildGpsStatusSnapshot(gps))
+        {
+            return false;
+        }
+
+        lat = gps.latitude;
+        lon = gps.longitude;
+        valid = gps.header.valid && gps.fix_valid;
+        return true;
+    }
+};
+
+class LinuxMapOverlayTeamSource final : public ::ui::map_overlay::IMapOverlayTeamSource
+{
+  public:
+    std::size_t latestTeamPoints(TeamPoint* out, std::size_t capacity) const override
+    {
+        if (out == nullptr || capacity == 0)
+        {
+            return 0;
+        }
+
+        ::team::ui::TeamUiSnapshot team_snapshot;
+        if (!::team::ui::team_ui_get_store().load(team_snapshot) ||
+            !team_snapshot.in_team ||
+            !team_snapshot.has_team_id)
+        {
+            return 0;
+        }
+
+        std::vector<::team::ui::TeamPosSample> samples;
+        if (!::team::ui::team_ui_posring_load_latest(team_snapshot.team_id, samples))
+        {
+            return 0;
+        }
+
+        std::size_t count = 0;
+        for (const auto& sample : samples)
+        {
+            if (count >= capacity)
+            {
+                break;
+            }
+
+            out[count].node_id = sample.member_id;
+            out[count].label = labelForMember(team_snapshot, sample.member_id, count);
+            out[count].lat = static_cast<double>(sample.lat_e7) / 10000000.0;
+            out[count].lon = static_cast<double>(sample.lon_e7) / 10000000.0;
+            out[count].valid = sample.lat_e7 != 0 || sample.lon_e7 != 0;
+            ++count;
+        }
+        return count;
+    }
+
+  private:
+    static const char* labelForMember(const ::team::ui::TeamUiSnapshot& snapshot,
+                                      uint32_t node_id,
+                                      std::size_t index)
+    {
+        static char labels[::ui::map::MapOverlaySnapshot::kMaxItems][32]{};
+        if (index >= ::ui::map::MapOverlaySnapshot::kMaxItems)
+        {
+            return nullptr;
+        }
+
+        for (const auto& member : snapshot.members)
+        {
+            if (member.node_id == node_id && !member.name.empty())
+            {
+                std::snprintf(labels[index], sizeof(labels[index]), "%s", member.name.c_str());
+                return labels[index];
+            }
+        }
+        return nullptr;
+    }
+};
+
+::ui::map::IMapOverlayPresentationSource& map_overlay_source()
+{
+    static LinuxMapOverlayGpsSource gps;
+    static LinuxMapOverlayTeamSource team;
+    static ::ui::map_overlay::MapOverlaySnapshotSource source(&gps, &team);
+    return source;
+}
+
+uint8_t current_map_zoom()
+{
+    return static_cast<uint8_t>(
+        std::clamp(s_map_zoom,
+                   ::ui::widgets::map::kMinZoom,
+                   ::ui::widgets::map::kMaxZoom));
+}
+
+void sync_workspace_layers_from_legacy_renderer()
+{
+    auto& state = ::ui::presentation_sources::legacy_map_presentation_state();
+    const auto layers = ::ui::widgets::map::current_layer_state();
+    state.layers.osm = layers.map_source == 0;
+    state.layers.terrain = layers.map_source == 1;
+    state.layers.satellite = layers.map_source == 2;
+    state.layers.contour = layers.contour_enabled;
+}
+
+void sync_workspace_viewport_from_legacy_renderer()
+{
+    auto& model = map_workspace_model();
+    auto viewport = model.viewport();
+    viewport.zoom = current_map_zoom();
+    (void)model.setViewport(viewport);
+    (void)model.setActiveTool(::ui::map::MapToolKind::Pan);
+}
+
+::ui::widgets::map::Model build_map_model(
+    const ::ui::map::MapWorkspaceSnapshot& snapshot)
 {
     const auto& config = app::configFacade().getConfig();
 
     ::ui::widgets::map::Model model{};
-    model.focus_point.valid = gps_data.valid;
-    model.focus_point.lat = gps_data.lat;
-    model.focus_point.lon = gps_data.lng;
-    model.zoom = s_map_zoom;
+    model.focus_point.valid = snapshot.self.valid;
+    model.focus_point.lat = snapshot.self.lat;
+    model.focus_point.lon = snapshot.self.lon;
+    model.zoom = snapshot.viewport.zoom == 0 ? s_map_zoom : snapshot.viewport.zoom;
     model.pan_x = s_map_pan_x;
     model.pan_y = s_map_pan_y;
     model.map_source = config.map_source;
-    model.contour_enabled = config.map_contour_enabled;
+    model.contour_enabled = snapshot.layers.contour;
     model.coord_system = config.map_coord_system;
     return model;
 }
@@ -713,11 +901,14 @@ void refresh_view()
     ui_update_top_bar_battery(s_top_bar);
     apply_compact_top_bar_style(s_top_bar);
 
-    const platform::ui::gps::GpsState gps_data = platform::ui::gps::get_data();
+    sync_workspace_layers_from_legacy_renderer();
+    const auto snapshot = map_workspace_model().snapshot();
+    (void)map_overlay_source().buildMapOverlaySnapshot(s_overlay_snapshot);
 
-    if (gps_data.valid)
+    if (snapshot.header.valid && snapshot.self.valid)
     {
-        ::ui::widgets::map::apply_model(s_map_runtime, build_map_model(gps_data));
+        ::ui::widgets::map::apply_model(s_map_runtime, build_map_model(snapshot));
+        ::ui::widgets::map::apply_overlay(s_map_runtime, s_overlay_snapshot);
     }
     else
     {
@@ -725,10 +916,46 @@ void refresh_view()
     }
 }
 
+class LinuxGpsRuntimeRefreshModel final : public ::ui::screens::gps::IGpsStatusRefreshModel
+{
+  public:
+    void refresh() override {}
+};
+
+class LinuxGpsUiRefreshSink final : public ::ui::screens::gps::IGpsUiRefreshSink
+{
+  public:
+    void onGpsRuntimeUpdated() override
+    {
+        refresh_view();
+    }
+};
+
+LinuxGpsRuntimeRefreshModel& gps_runtime_refresh_model()
+{
+    static LinuxGpsRuntimeRefreshModel model;
+    return model;
+}
+
+LinuxGpsUiRefreshSink& gps_runtime_refresh_sink()
+{
+    static LinuxGpsUiRefreshSink sink;
+    return sink;
+}
+
+::ui::screens::gps::GpsPageRuntimePump& gps_runtime_pump()
+{
+    static ::ui::screens::gps::GpsPageRuntimePump pump(
+        gps_runtime_refresh_model(),
+        &gps_runtime_refresh_sink(),
+        750);
+    return pump;
+}
+
 void refresh_timer_cb(lv_timer_t* timer)
 {
     (void)timer;
-    refresh_view();
+    gps_runtime_pump().update(sys::millis_now());
 }
 
 void consume_key_event(lv_event_t* e)
@@ -770,10 +997,19 @@ bool handle_map_key(uint32_t key, lv_event_t* e)
     case '_':
         s_map_zoom = std::max(s_map_zoom - 1, ::ui::widgets::map::kMinZoom);
         break;
+    case 'c':
+    case 'C':
+        if (map_workspace_model().centerOnSelf().ok)
+        {
+            s_map_pan_x = 0;
+            s_map_pan_y = 0;
+        }
+        break;
     default:
         return false;
     }
 
+    sync_workspace_viewport_from_legacy_renderer();
     refresh_view();
     consume_key_event(e);
     return true;
@@ -814,6 +1050,7 @@ void enter(const shell::Host* host, lv_obj_t* parent)
     s_map_zoom = kCardputerZeroMapDefaultZoom;
     s_map_pan_x = 0;
     s_map_pan_y = 0;
+    sync_workspace_viewport_from_legacy_renderer();
 
     lv_group_t* prev_group = lv_group_get_default();
     set_default_group(nullptr);
@@ -886,6 +1123,7 @@ void enter(const shell::Host* host, lv_obj_t* parent)
     }
 
     refresh_view();
+    gps_runtime_pump().setActive(true);
     if (!s_timer)
     {
         s_timer = lv_timer_create(refresh_timer_cb, 750, nullptr);
@@ -901,6 +1139,7 @@ void exit(lv_obj_t* parent)
         lv_timer_del(s_timer);
         s_timer = nullptr;
     }
+    gps_runtime_pump().setActive(false);
     ::ui::widgets::map::destroy(s_map_runtime);
     if (s_root)
     {

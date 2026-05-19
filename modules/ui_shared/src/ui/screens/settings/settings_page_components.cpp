@@ -21,6 +21,7 @@
 #include "platform/ui/firmware_update_runtime.h"
 #include "platform/ui/gps_runtime.h"
 #include "platform/ui/screen_runtime.h"
+#include "platform/ui/settings_backup_runtime.h"
 #include "platform/ui/settings_store.h"
 #include "platform/ui/team_ui_store_runtime.h"
 #include "platform/ui/time_runtime.h"
@@ -32,6 +33,8 @@
 #include "ui/localization.h"
 #include "ui/menu/menu_layout.h"
 #include "ui/page/page_profile.h"
+#include "ui/presentation_sources/legacy_settings_action_sink.h"
+#include "ui/presentation_sources/legacy_settings_source.h"
 #include "ui/screens/settings/settings_page_components.h"
 #include "ui/screens/settings/settings_page_input.h"
 #include "ui/screens/settings/settings_page_layout.h"
@@ -41,6 +44,7 @@
 #include "ui/widgets/busy_overlay.h"
 #include "ui/widgets/system_notification.h"
 #include "ui/widgets/top_bar.h"
+#include "ui_presentation/settings/settings_model.h"
 
 #if defined(ESP_PLATFORM)
 #include "esp_log.h"
@@ -60,6 +64,7 @@ namespace device_runtime = ::platform::ui::device;
 namespace firmware_update_runtime = ::platform::ui::firmware_update;
 namespace gps_runtime = ::platform::ui::gps;
 namespace screen_runtime = ::platform::ui::screen;
+namespace settings_backup_runtime = ::platform::ui::settings_backup;
 namespace settings_store = ::platform::ui::settings_store;
 namespace tracker_runtime = ::platform::ui::tracker;
 namespace wifi_runtime = ::platform::ui::wifi;
@@ -68,6 +73,9 @@ constexpr size_t kMaxItems = 32;
 constexpr size_t kMaxOptions = 40;
 constexpr size_t kMaxWifiNetworks = 24;
 constexpr const char* kPrefsNs = "settings";
+constexpr int kChatContactAlertsNone = 0;
+constexpr int kChatContactAlertsContacts = 1;
+constexpr int kChatContactAlertsAll = 2;
 constexpr int kNetTxPowerMin = app::AppConfig::kTxPowerMinDbm;
 constexpr int kNetTxPowerMax = app::AppConfig::kTxPowerMaxDbm;
 constexpr int kGpsInitProbeMinMs = 250;
@@ -135,13 +143,31 @@ static firmware_update_runtime::Phase s_last_firmware_phase = firmware_update_ru
 static bool s_last_firmware_busy = false;
 static lv_obj_t* s_gps_diagnostics_label = nullptr;
 
+static ::ui::settings::SettingsModel& settings_model()
+{
+    static ::ui::settings::SettingsModel model(
+        ::ui::presentation_sources::legacy_settings_source(),
+        ::ui::presentation_sources::legacy_settings_action_sink());
+    return model;
+}
+
+static bool apply_settings_bool_patch(const char* key, bool value)
+{
+    ::ui::settings::SettingsPatchView patch;
+    ::ui::copyText(patch.key, key);
+    ::ui::copyText(patch.value, value ? "1" : "0");
+    return settings_model().apply(patch).ok;
+}
+
 static void update_item_value(settings::ui::ItemWidget& widget);
 static void open_factory_reset_modal();
+static void open_settings_restore_modal();
 static void open_gps_diagnostics_modal();
 static void open_enabled_imes_modal(settings::ui::ItemWidget& widget);
 static bool option_labels_are_translated(const settings::ui::SettingItem& item);
 static bool option_labels_use_content_font(const settings::ui::SettingItem& item);
 static void apply_locale_preview_font(lv_obj_t* label, const settings::ui::SettingItem& item, int value);
+static void refresh_language_pack_options();
 
 static void copy_bounded(char* out, size_t out_len, const char* text)
 {
@@ -288,6 +314,17 @@ static void refresh_firmware_update_state_from_runtime()
                      status.checked ? g_settings.fw_current_version : "Not checked");
     }
     firmware_status_summary(status, g_settings.fw_update_status, sizeof(g_settings.fw_update_status));
+}
+
+static void refresh_settings_backup_state_from_runtime()
+{
+    const settings_backup_runtime::Status status = settings_backup_runtime::status();
+    const char* message = status.message[0] != '\0'
+                              ? status.message
+                              : (status.supported ? "No backup found" : "Backup unsupported");
+    copy_bounded(g_settings.settings_backup_status,
+                 sizeof(g_settings.settings_backup_status),
+                 ::ui::i18n::tr(message));
 }
 
 static void refresh_visible_item_values()
@@ -522,7 +559,9 @@ static bool is_settings_store_owned_enum_setting(const char* key)
         return false;
     }
     return strcmp(key, "screen_brightness") == 0 ||
-           strcmp(key, "speaker_volume") == 0;
+           strcmp(key, "speaker_volume") == 0 ||
+           strcmp(key, "chat_message_alerts") == 0 ||
+           strcmp(key, "chat_contact_alerts") == 0;
 }
 
 static bool is_settings_store_owned_toggle_setting(const char* key)
@@ -652,11 +691,15 @@ static bool parse_hex_char(char c, uint8_t& out)
     return false;
 }
 
-static bool parse_psk(const char* text, uint8_t* out, size_t out_len)
+static bool parse_psk(const char* text, uint8_t* out, size_t out_len, size_t* parsed_len = nullptr)
 {
     if (!out || out_len == 0)
     {
         return false;
+    }
+    if (parsed_len)
+    {
+        *parsed_len = 0;
     }
     if (!text || text[0] == '\0')
     {
@@ -664,9 +707,10 @@ static bool parse_psk(const char* text, uint8_t* out, size_t out_len)
         return true;
     }
     size_t len = strlen(text);
-    if (len == 32)
+    if ((len == 32 || len == 64) && out_len >= len / 2)
     {
-        for (size_t i = 0; i < 16; ++i)
+        const size_t byte_len = len / 2;
+        for (size_t i = 0; i < byte_len; ++i)
         {
             uint8_t hi = 0;
             uint8_t lo = 0;
@@ -676,11 +720,19 @@ static bool parse_psk(const char* text, uint8_t* out, size_t out_len)
             }
             out[i] = static_cast<uint8_t>((hi << 4) | lo);
         }
+        if (parsed_len)
+        {
+            *parsed_len = byte_len;
+        }
         return true;
     }
-    if (len == 16)
+    if ((len == 16 || len == 32) && out_len >= len)
     {
-        memcpy(out, text, 16);
+        memcpy(out, text, len);
+        if (parsed_len)
+        {
+            *parsed_len = len;
+        }
         return true;
     }
     return false;
@@ -900,26 +952,7 @@ static void settings_load()
         }
     }
 
-    kLocaleOptionCount = 0;
-    const size_t locale_limit = sizeof(kLocaleOptions) / sizeof(kLocaleOptions[0]);
-    for (size_t index = 0; index < ::ui::i18n::locale_count() && kLocaleOptionCount < locale_limit; ++index)
-    {
-        const ::ui::i18n::LocaleInfo* locale = ::ui::i18n::locale_at(index);
-        if (!locale)
-        {
-            continue;
-        }
-
-        const char* display_name =
-            (locale->native_name && locale->native_name[0] != '\0') ? locale->native_name : locale->display_name;
-        std::snprintf(kLocaleOptionLabels[kLocaleOptionCount],
-                      sizeof(kLocaleOptionLabels[kLocaleOptionCount]),
-                      "%s",
-                      display_name ? display_name : "");
-        kLocaleOptions[kLocaleOptionCount].label = kLocaleOptionLabels[kLocaleOptionCount];
-        kLocaleOptions[kLocaleOptionCount].value = static_cast<int>(index);
-        ++kLocaleOptionCount;
-    }
+    refresh_language_pack_options();
 
     app_ctx.getEffectiveUserInfo(g_settings.user_name,
                                  sizeof(g_settings.user_name),
@@ -964,23 +997,35 @@ static void settings_load()
 
     g_settings.chat_region = mt_cfg.region;
     g_settings.chat_channel = cfg.chat_channel;
+    g_settings.chat_message_alerts = prefs_get_int("chat_message_alerts", 1) ? 1 : 0;
+    g_settings.chat_contact_alerts = prefs_get_int("chat_contact_alerts", kChatContactAlertsContacts);
+    if (g_settings.chat_contact_alerts < kChatContactAlertsNone ||
+        g_settings.chat_contact_alerts > kChatContactAlertsAll)
+    {
+        g_settings.chat_contact_alerts = kChatContactAlertsContacts;
+    }
     const uint8_t* active_psk = nullptr;
+    size_t active_psk_len = 0;
     if (cfg.mesh_protocol == chat::MeshProtocol::MeshCore)
     {
         active_psk = mc_cfg.secondary_key;
+        active_psk_len = chat::kMeshCoreChannelKeyLen;
     }
     else if (cfg.mesh_protocol == chat::MeshProtocol::Meshtastic)
     {
         active_psk = mt_cfg.secondary_key;
+        active_psk_len = chat::normalizeMeshtasticChannelKeyLen(mt_cfg.secondary_key,
+                                                                sizeof(mt_cfg.secondary_key),
+                                                                mt_cfg.secondary_key_len);
     }
-    if (!active_psk || is_zero_key(active_psk, sizeof(mt_cfg.secondary_key)))
+    if (!active_psk || active_psk_len == 0 || is_zero_key(active_psk, active_psk_len))
     {
         g_settings.chat_psk[0] = '\0';
     }
     else
     {
         bytes_to_hex(active_psk,
-                     sizeof(mt_cfg.secondary_key),
+                     active_psk_len,
                      g_settings.chat_psk,
                      sizeof(g_settings.chat_psk));
     }
@@ -1044,13 +1089,13 @@ static void settings_load()
     g_settings.mc_channel_slot = mc_cfg.meshcore_channel_slot;
     strncpy(g_settings.mc_channel_name, mc_cfg.meshcore_channel_name, sizeof(g_settings.mc_channel_name) - 1);
     g_settings.mc_channel_name[sizeof(g_settings.mc_channel_name) - 1] = '\0';
-    if (is_zero_key(mc_cfg.secondary_key, sizeof(mc_cfg.secondary_key)))
+    if (is_zero_key(mc_cfg.secondary_key, chat::kMeshCoreChannelKeyLen))
     {
         g_settings.mc_channel_key[0] = '\0';
     }
     else
     {
-        bytes_to_hex(mc_cfg.secondary_key, sizeof(mc_cfg.secondary_key),
+        bytes_to_hex(mc_cfg.secondary_key, chat::kMeshCoreChannelKeyLen,
                      g_settings.mc_channel_key, sizeof(g_settings.mc_channel_key));
     }
 
@@ -1077,6 +1122,7 @@ static void settings_load()
     g_settings.vibration_enabled = prefs_get_bool("vibration_enabled", true);
     refresh_wifi_state_from_runtime();
     refresh_firmware_update_state_from_runtime();
+    refresh_settings_backup_state_from_runtime();
 
     g_settings.advanced_debug_logs = prefs_get_bool("adv_debug", false);
 
@@ -1102,6 +1148,31 @@ static void settings_load()
              wifi_runtime::is_supported() ? 1 : 0,
              static_cast<unsigned>(kWifiNetworkOptionCount));
 #endif
+}
+
+static void refresh_language_pack_options()
+{
+    kLocaleOptionCount = 0;
+    const size_t locale_limit = sizeof(kLocaleOptions) / sizeof(kLocaleOptions[0]);
+    for (size_t index = 0; index < ::ui::i18n::locale_count() && kLocaleOptionCount < locale_limit; ++index)
+    {
+        const ::ui::i18n::LocaleInfo* locale = ::ui::i18n::locale_at(index);
+        if (!locale)
+        {
+            continue;
+        }
+
+        const char* display_name =
+            (locale->native_name && locale->native_name[0] != '\0') ? locale->native_name : locale->display_name;
+        std::snprintf(kLocaleOptionLabels[kLocaleOptionCount],
+                      sizeof(kLocaleOptionLabels[kLocaleOptionCount]),
+                      "%s",
+                      display_name ? display_name : "");
+        kLocaleOptions[kLocaleOptionCount].label = kLocaleOptionLabels[kLocaleOptionCount];
+        kLocaleOptions[kLocaleOptionCount].value = static_cast<int>(index);
+        ++kLocaleOptionCount;
+    }
+    g_settings.display_locale_index = ::ui::i18n::current_locale_index();
 }
 
 static void format_value(const settings::ui::SettingItem& item, char* out, size_t out_len)
@@ -1309,20 +1380,33 @@ static void on_text_save_clicked(lv_event_t* e)
         if (g_state.editing_item->pref_key && strcmp(g_state.editing_item->pref_key, "chat_psk") == 0)
         {
             app::IAppFacade& app_ctx = app::appFacade();
-            uint8_t key[16] = {};
-            if (!parse_psk(g_state.editing_item->text_value, key, sizeof(key)))
+            uint8_t key[chat::kMeshtasticChannelKeyMaxLen] = {};
+            size_t parsed_key_len = 0;
+            const size_t key_capacity =
+                (app_ctx.getConfig().mesh_protocol == chat::MeshProtocol::MeshCore)
+                    ? chat::kMeshCoreChannelKeyLen
+                    : chat::kMeshtasticChannelKeyMaxLen;
+            if (!parse_psk(g_state.editing_item->text_value, key, key_capacity, &parsed_key_len))
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("PSK must be 32 hex or 16 chars"), 4000);
+                ::ui::SystemNotification::show(::ui::i18n::tr("PSK must be 32/64 hex or 16/32 chars"), 4000);
                 modal_close();
                 return;
             }
             if (app_ctx.getConfig().mesh_protocol == chat::MeshProtocol::MeshCore)
             {
-                memcpy(app_ctx.getConfig().meshcore_config.secondary_key, key, sizeof(key));
+                memset(app_ctx.getConfig().meshcore_config.secondary_key, 0,
+                       sizeof(app_ctx.getConfig().meshcore_config.secondary_key));
+                memcpy(app_ctx.getConfig().meshcore_config.secondary_key, key, chat::kMeshCoreChannelKeyLen);
             }
             else
             {
-                memcpy(app_ctx.getConfig().meshtastic_config.secondary_key, key, sizeof(key));
+                auto& mesh = app_ctx.getConfig().meshtastic_config;
+                memset(mesh.secondary_key, 0, sizeof(mesh.secondary_key));
+                memcpy(mesh.secondary_key, key, parsed_key_len);
+                mesh.secondary_key_len =
+                    chat::normalizeMeshtasticChannelKeyLen(mesh.secondary_key,
+                                                           sizeof(mesh.secondary_key),
+                                                           static_cast<uint8_t>(parsed_key_len));
             }
             app_ctx.saveConfig();
             app_ctx.applyMeshConfig();
@@ -1929,10 +2013,12 @@ static void on_option_clicked(lv_event_t* e)
                 mc_cfg.meshcore_bw_khz = preset->bw_khz;
                 mc_cfg.meshcore_sf = preset->sf;
                 mc_cfg.meshcore_cr = preset->cr;
+                mc_cfg.tx_power = preset->tx_power_dbm;
                 float_to_text(mc_cfg.meshcore_freq_mhz, g_settings.mc_freq, sizeof(g_settings.mc_freq), 3);
                 float_to_text(mc_cfg.meshcore_bw_khz, g_settings.mc_bw, sizeof(g_settings.mc_bw), 3);
                 g_settings.mc_sf = mc_cfg.meshcore_sf;
                 g_settings.mc_cr = mc_cfg.meshcore_cr;
+                g_settings.mc_tx_power = mc_cfg.tx_power;
             }
         }
         app_ctx.saveConfig();
@@ -1961,6 +2047,8 @@ static void on_option_clicked(lv_event_t* e)
     {
         app::IAppFacade& app_ctx = app::appFacade();
         app_ctx.getConfig().meshcore_config.tx_power = static_cast<int8_t>(payload->value);
+        app_ctx.getConfig().meshcore_config.meshcore_region_preset = 0;
+        g_settings.mc_region_preset = 0;
         app_ctx.saveConfig();
         app_ctx.applyMeshConfig();
     }
@@ -2046,6 +2134,87 @@ static void on_factory_reset_cancel_clicked(lv_event_t* e)
 {
     (void)e;
     modal_close();
+}
+
+static void on_settings_restore_confirm_clicked(lv_event_t* e)
+{
+    (void)e;
+    modal_close();
+    if (!settings_backup_runtime::restore())
+    {
+        refresh_settings_backup_state_from_runtime();
+        ::ui::SystemNotification::show(::ui::i18n::tr("Restore failed"), 3500);
+        refresh_visible_item_values();
+        return;
+    }
+    ::ui::SystemNotification::show(::ui::i18n::tr("Settings restored. Restarting..."), 1500);
+    platform_delay_ms(300);
+    platform_restart();
+}
+
+static void on_settings_restore_cancel_clicked(lv_event_t* e)
+{
+    (void)e;
+    modal_close();
+}
+
+static void open_settings_restore_modal()
+{
+    if (g_state.modal_root)
+    {
+        return;
+    }
+
+    modal_prepare_group();
+    g_state.modal_root = create_modal_root(300, 180);
+    lv_obj_t* win = lv_obj_get_child(g_state.modal_root, 0);
+
+    lv_obj_t* title = lv_label_create(win);
+    ::ui::i18n::set_label_text(title, "Restore Settings");
+    style::apply_label_primary(title);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+
+    lv_obj_t* body = lv_label_create(win);
+    lv_obj_set_width(body, LV_PCT(100));
+    ::ui::i18n::set_label_text(body, "Overwrite current settings and restart?");
+    style::apply_label_muted(body);
+    lv_obj_set_style_text_align(body, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(body, LV_ALIGN_CENTER, 0, -8);
+
+    lv_obj_t* btn_row = lv_obj_create(win);
+    lv_obj_set_size(btn_row, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_align(btn_row, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_flex_flow(btn_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(btn_row,
+                          LV_FLEX_ALIGN_SPACE_EVENLY,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(btn_row, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(btn_row, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(btn_row, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(btn_row, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t* cancel_btn = lv_btn_create(btn_row);
+    lv_obj_set_size(cancel_btn,
+                    ::ui::page_profile::resolve_control_button_min_width(),
+                    ::ui::page_profile::resolve_control_button_height());
+    lv_obj_t* cancel_label = lv_label_create(cancel_btn);
+    ::ui::i18n::set_label_text(cancel_label, "Cancel");
+    lv_obj_center(cancel_label);
+    lv_obj_add_event_cb(cancel_btn, on_settings_restore_cancel_clicked, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t* confirm_btn = lv_btn_create(btn_row);
+    lv_obj_set_size(confirm_btn,
+                    ::ui::page_profile::resolve_control_button_min_width(),
+                    ::ui::page_profile::resolve_control_button_height());
+    lv_obj_t* confirm_label = lv_label_create(confirm_btn);
+    ::ui::i18n::set_label_text(confirm_label, "Restore");
+    lv_obj_center(confirm_label);
+    lv_obj_add_event_cb(confirm_btn, on_settings_restore_confirm_clicked, LV_EVENT_CLICKED, nullptr);
+
+    lv_group_add_obj(g_state.modal_group, cancel_btn);
+    lv_group_add_obj(g_state.modal_group, confirm_btn);
+    lv_group_focus_obj(cancel_btn);
 }
 
 static void open_factory_reset_modal()
@@ -2303,6 +2472,9 @@ static void open_enabled_imes_modal(settings::ui::ItemWidget& widget)
         return;
     }
 
+    refresh_language_pack_options();
+    update_item_value(widget);
+
     const std::size_t ime_total = ::ui::i18n::ime_count();
     if (ime_total == 0)
     {
@@ -2418,6 +2590,11 @@ static void open_option_modal(const settings::ui::SettingItem& item, settings::u
     if (g_state.modal_root)
     {
         return;
+    }
+    if (item.pref_key && std::strcmp(item.pref_key, "display_locale") == 0)
+    {
+        refresh_language_pack_options();
+        update_item_value(widget);
     }
     modal_prepare_group();
 
@@ -2625,6 +2802,11 @@ static const settings::ui::SettingOption kBoolOptions[] = {
     {"OFF", 0},
     {"ON", 1},
 };
+static const settings::ui::SettingOption kChatContactAlertOptions[] = {
+    {"OFF", kChatContactAlertsNone},
+    {"Contacts Only", kChatContactAlertsContacts},
+    {"All", kChatContactAlertsAll},
+};
 static const settings::ui::SettingOption kNetManualBwOptions[] = {
     {"125 kHz", 125},
     {"250 kHz", 250},
@@ -2816,6 +2998,8 @@ static settings::ui::SettingItem kChatItems[] = {
     {"Channel", settings::ui::SettingType::Enum, kChatChannelOptions, 2, &g_settings.chat_channel, nullptr, nullptr, 0, false, "chat_channel"},
     {"Channel Key / PSK", settings::ui::SettingType::Text, nullptr, 0, nullptr, nullptr, g_settings.chat_psk, sizeof(g_settings.chat_psk), true, "chat_psk"},
     {"Encryption Mode", settings::ui::SettingType::Enum, kPrivacyEncryptOptions, 3, &g_settings.privacy_encrypt_mode, nullptr, nullptr, 0, false, "privacy_encrypt"},
+    {"Message Alerts", settings::ui::SettingType::Enum, kBoolOptions, sizeof(kBoolOptions) / sizeof(kBoolOptions[0]), &g_settings.chat_message_alerts, nullptr, nullptr, 0, false, "chat_message_alerts"},
+    {"Contact Alerts", settings::ui::SettingType::Enum, kChatContactAlertOptions, sizeof(kChatContactAlertOptions) / sizeof(kChatContactAlertOptions[0]), &g_settings.chat_contact_alerts, nullptr, nullptr, 0, false, "chat_contact_alerts"},
     {"Reset Mesh Profiles", settings::ui::SettingType::Action, nullptr, 0, nullptr, nullptr, nullptr, 0, false, "chat_reset_mesh"},
     {"Reset Node DB", settings::ui::SettingType::Action, nullptr, 0, nullptr, nullptr, nullptr, 0, false, "chat_reset_nodes"},
     {"Clear Message DB", settings::ui::SettingType::Action, nullptr, 0, nullptr, nullptr, nullptr, 0, false, "chat_clear_messages"},
@@ -2890,6 +3074,9 @@ static settings::ui::SettingItem kAdvancedItems[] = {
     {"OTA Status", settings::ui::SettingType::Info, nullptr, 0, nullptr, nullptr, g_settings.fw_update_status, sizeof(g_settings.fw_update_status), false, "fw_status"},
     {"Check for Updates", settings::ui::SettingType::Action, nullptr, 0, nullptr, nullptr, nullptr, 0, false, "fw_check"},
     {"Install Update", settings::ui::SettingType::Action, nullptr, 0, nullptr, nullptr, nullptr, 0, false, "fw_install"},
+    {"Backup Status", settings::ui::SettingType::Info, nullptr, 0, nullptr, nullptr, g_settings.settings_backup_status, sizeof(g_settings.settings_backup_status), false, "settings_backup_status"},
+    {"Backup Settings", settings::ui::SettingType::Action, nullptr, 0, nullptr, nullptr, nullptr, 0, false, "settings_backup"},
+    {"Restore Settings", settings::ui::SettingType::Action, nullptr, 0, nullptr, nullptr, nullptr, 0, false, "settings_restore"},
     {"Debug Logs", settings::ui::SettingType::Toggle, nullptr, 0, nullptr, &g_settings.advanced_debug_logs, nullptr, 0, false, "adv_debug"},
 };
 
@@ -3043,6 +3230,13 @@ static bool should_show_item(const settings::ui::SettingItem& item)
          has_pref_key(item, "fw_status") || has_pref_key(item, "fw_check") ||
          has_pref_key(item, "fw_install")) &&
         !firmware_update_runtime::is_supported())
+    {
+        return false;
+    }
+    if ((has_pref_key(item, "settings_backup_status") ||
+         has_pref_key(item, "settings_backup") ||
+         has_pref_key(item, "settings_restore")) &&
+        !settings_backup_runtime::is_supported())
     {
         return false;
     }
@@ -3307,10 +3501,10 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
             }
             if (item.pref_key && strcmp(item.pref_key, "gps_enabled") == 0)
             {
-                app::IAppFacade& app_ctx = app::appFacade();
-                app_ctx.getConfig().gps_enabled = *item.bool_value;
-                app_ctx.saveConfig();
-                gps_runtime::set_enabled(*item.bool_value);
+                if (!apply_settings_bool_patch("gps_enabled", *item.bool_value))
+                {
+                    ::ui::SystemNotification::show(::ui::i18n::tr("Unable to apply GPS setting"), 3000);
+                }
             }
             if (item.pref_key && strcmp(item.pref_key, "net_duty_cycle") == 0)
             {
@@ -3394,6 +3588,11 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
     }
     if (item.type == settings::ui::SettingType::Enum)
     {
+        if (item.pref_key && strcmp(item.pref_key, "display_locale") == 0)
+        {
+            refresh_language_pack_options();
+            update_item_value(widget);
+        }
         open_option_modal(item, widget);
         return true;
     }
@@ -3406,6 +3605,8 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
     {
         if (item.pref_key && strcmp(item.pref_key, "enabled_imes") == 0)
         {
+            refresh_language_pack_options();
+            update_item_value(widget);
             open_enabled_imes_modal(widget);
         }
         else if (item.pref_key && strcmp(item.pref_key, "gps_diagnostics") == 0)
@@ -3525,6 +3726,43 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
             {
                 sync_firmware_update_ui(false);
             }
+        }
+        else if (item.pref_key && strcmp(item.pref_key, "settings_backup") == 0)
+        {
+            const settings_backup_runtime::Status before = settings_backup_runtime::status();
+            if (!before.sd_present)
+            {
+                ::ui::SystemNotification::show(::ui::i18n::tr("Insert SD card to backup settings"), 3000);
+            }
+            else if (!settings_backup_runtime::backup())
+            {
+                refresh_settings_backup_state_from_runtime();
+                ::ui::SystemNotification::show(::ui::i18n::tr("Backup failed"), 3000);
+            }
+            else
+            {
+                refresh_settings_backup_state_from_runtime();
+                ::ui::SystemNotification::show(::ui::i18n::tr("Settings backup saved to SD"), 2500);
+            }
+            refresh_visible_item_values();
+        }
+        else if (item.pref_key && strcmp(item.pref_key, "settings_restore") == 0)
+        {
+            const settings_backup_runtime::Status status = settings_backup_runtime::status();
+            if (!status.sd_present)
+            {
+                ::ui::SystemNotification::show(::ui::i18n::tr("Insert SD card to restore settings"), 3000);
+            }
+            else if (!status.has_backup)
+            {
+                ::ui::SystemNotification::show(::ui::i18n::tr("No settings backup found"), 3000);
+            }
+            else
+            {
+                open_settings_restore_modal();
+            }
+            refresh_settings_backup_state_from_runtime();
+            refresh_visible_item_values();
         }
         return true;
     }

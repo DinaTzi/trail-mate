@@ -72,7 +72,9 @@ struct SettingsData
     int chat_protocol = 1;
     int chat_region = 0;
     int chat_channel = 0;
-    char chat_psk[33] = {};
+    char chat_psk[65] = {};
+    int chat_message_alerts = 1;
+    int chat_contact_alerts = 1;
 
     // Network
     int net_use_preset = 1;
@@ -136,6 +138,7 @@ struct SettingsData
     char fw_current_version[24] = "";
     char fw_latest_version[24] = "";
     char fw_update_status[96] = "";
+    char settings_backup_status[96] = "";
     bool advanced_debug_logs = false;
 };
 

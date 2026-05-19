@@ -1,0 +1,3 @@
+#pragma once
+
+#include "ui_map_runtime/map_tiles/map_tile_decoder_cache.h"

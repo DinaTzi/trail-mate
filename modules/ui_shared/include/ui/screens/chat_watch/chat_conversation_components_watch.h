@@ -2,7 +2,13 @@
 
 #include "chat/domain/chat_types.h"
 #include "lvgl.h"
+#include "ui_presentation/chat/chat_message_ref.h"
 #include <vector>
+
+namespace ui::chat
+{
+struct MessageRow;
+}
 
 namespace chat::ui
 {
@@ -18,7 +24,7 @@ class ChatConversationScreen
     ChatConversationScreen(lv_obj_t* parent, chat::ConversationId conv);
     ~ChatConversationScreen();
 
-    void addMessage(const chat::ChatMessage& msg);
+    void addMessage(const ::ui::chat::MessageRow& row);
     void clearMessages();
     void scrollToBottom();
     bool updateMessageStatus(chat::MessageId msg_id, chat::MessageStatus status);
@@ -62,7 +68,9 @@ class ChatConversationScreen
 
     struct MessageItem
     {
-        chat::ChatMessage msg;
+        ::ui::chat::MessageRef ref;
+        ::ui::chat::MessageDeliveryState delivery =
+            ::ui::chat::MessageDeliveryState::Unknown;
         lv_obj_t* container = nullptr;
         lv_obj_t* text_label = nullptr;
     };
@@ -85,6 +93,8 @@ class ChatConversationScreen
 
     LifetimeGuard* guard_ = nullptr;
     bool reply_enabled_ = true;
+
+    void createMessageItem(const ::ui::chat::MessageRow& row);
 
     void schedule_action_async(ActionIntent intent);
     void schedule_back_async();

@@ -4,6 +4,7 @@
 
 #include "app/app_facades.h"
 #include "ui/app_catalog.h"
+#include "ui_presentation/menu/menu_model.h"
 
 namespace ui
 {
@@ -14,6 +15,7 @@ struct InitOptions
 {
     app::IAppMessagingFacade* messaging = nullptr;
     AppCatalog apps{};
+    const ui::menu::MenuModel* ux_menu = nullptr;
 };
 
 void init(const InitOptions& options);

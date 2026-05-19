@@ -2,7 +2,7 @@
 
 #include "app/app_config.h"
 #include "ble/ble_uuids.h"
-#include "board/BoardBase.h"
+#include "ble/meshtastic_ble_observer_bridge.h"
 #include "chat/ble/meshtastic_defaults.h"
 #include "chat/ble/meshtastic_phone_core.h"
 #include "chat/domain/contact_types.h"
@@ -13,7 +13,6 @@
 #include "meshtastic/portnums.pb.h"
 #include "meshtastic/telemetry.pb.h"
 #include "platform/esp/arduino_common/chat/infra/meshtastic/mt_adapter.h"
-#include "platform/esp/arduino_common/gps/gps_service_api.h"
 #include "screen_sleep.h"
 #include "ui/widgets/ble_pairing_popup.h"
 #include <Arduino.h>
@@ -280,8 +279,10 @@ class MeshtasticToRadioCallbacks : public NimBLECharacteristicCallbacks
         NimBLEAttValue val = characteristic->getValue();
         if (val.length() == 0 || val.length() > kMaxToRadio)
         {
+            ble_log("fromPhone drop invalid len=%u", static_cast<unsigned>(val.length()));
             return;
         }
+        ble_log("fromPhone write len=%u", static_cast<unsigned>(val.length()));
         if (owner_.last_to_radio_len_ == val.length() &&
             memcmp(owner_.last_to_radio_.data(), val.data(), val.length()) == 0)
         {
@@ -407,7 +408,8 @@ class MeshtasticNotifyStateCallbacks : public NimBLECharacteristicCallbacks
 };
 
 MeshtasticBleService::MeshtasticBleService(app::IAppBleFacade& ctx, const std::string& device_name)
-    : ctx_(ctx),
+    : phone_facade_(ctx, ble_config_, module_config_, this),
+      observer_bridge_(new MeshtasticBleObserverBridge(ctx, *this)),
       device_name_(device_name)
 {
 }
@@ -462,14 +464,19 @@ bool MeshtasticBleService::start()
     }
     startAdvertising();
 
-    ctx_.getChatService().addIncomingTextObserver(this);
-    ctx_.getChatService().addOutgoingTextObserver(this);
-    if (auto* team = ctx_.getTeamService())
+    if (observer_bridge_)
     {
-        team->addIncomingDataObserver(this);
+        observer_bridge_->registerObservers();
     }
 
-    phone_session_.reset(new MeshtasticPhoneSession(*this, *this, this, this, this, this, this, this));
+    phone_session_.reset(new phone::meshtastic::MeshtasticPhoneSession(phone_facade_,
+                                                                       *this,
+                                                                       &phone_facade_,
+                                                                       &phone_facade_,
+                                                                       &phone_facade_,
+                                                                       &phone_facade_,
+                                                                       &phone_facade_,
+                                                                       &phone_facade_));
     if (!phone_session_)
     {
         ble_log("start failed reason=phone_session_alloc");
@@ -481,11 +488,9 @@ bool MeshtasticBleService::start()
 
 void MeshtasticBleService::stop()
 {
-    ctx_.getChatService().removeIncomingTextObserver(this);
-    ctx_.getChatService().removeOutgoingTextObserver(this);
-    if (auto* team = ctx_.getTeamService())
+    if (observer_bridge_)
     {
-        team->removeIncomingDataObserver(this);
+        observer_bridge_->unregisterObservers();
     }
 
     if (server_)
@@ -549,7 +554,7 @@ void MeshtasticBleService::update()
     handleToPhone();
 }
 
-void MeshtasticBleService::onIncomingText(const chat::MeshIncomingText& msg)
+void MeshtasticBleService::handleIncomingTextFromApp(const chat::MeshIncomingText& msg)
 {
     if (phone_session_)
     {
@@ -562,7 +567,7 @@ void MeshtasticBleService::onIncomingText(const chat::MeshIncomingText& msg)
     }
 }
 
-void MeshtasticBleService::onOutgoingText(const chat::MeshIncomingText& msg)
+void MeshtasticBleService::handleOutgoingTextFromApp(const chat::MeshIncomingText& msg)
 {
     if (phone_session_)
     {
@@ -579,7 +584,7 @@ void MeshtasticBleService::onOutgoingText(const chat::MeshIncomingText& msg)
     }
 }
 
-void MeshtasticBleService::onIncomingData(const chat::MeshIncomingData& msg)
+void MeshtasticBleService::handleIncomingDataFromApp(const chat::MeshIncomingData& msg)
 {
     if (phone_session_)
     {
@@ -762,7 +767,7 @@ void MeshtasticBleService::handleToPhone()
         {
             return;
         }
-        MeshtasticBleFrame session_frame{};
+        phone::meshtastic::MeshtasticBleFrame session_frame{};
         if (!phone_session_->popToPhone(&session_frame))
         {
             if (waiting_for_read && in_send_packets)

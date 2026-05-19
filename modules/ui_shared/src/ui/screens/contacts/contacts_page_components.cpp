@@ -7,6 +7,7 @@
 #include "app/app_config.h"
 #include "app/app_facade_access.h"
 #include "chat/infra/mesh_protocol_utils.h"
+#include "chat/infra/meshtastic/mt_radio_config.h"
 #include "chat/ports/i_mesh_adapter.h"
 #include "chat/usecase/chat_service.h"
 #include "chat/usecase/contact_service.h"
@@ -35,6 +36,7 @@
 #include "ui/ui_common.h"
 #include "ui/widgets/ime/ime_widget.h"
 #include "ui/widgets/system_notification.h"
+#include "ui_presentation/chat/chat_workspace_snapshot.h"
 
 #include <cmath>
 #include <cstdint>
@@ -471,7 +473,8 @@ static std::string format_broadcast_target_label(const BroadcastTargetSpec& spec
     if (spec.protocol == chat::MeshProtocol::Meshtastic)
     {
         return std::string("[MT] ") +
-               ::ui::i18n::format("Slot %u", static_cast<unsigned>(spec.channel_index));
+               chat::meshtastic::channelName(app::appFacade().getConfig().meshtastic_config,
+                                             spec.channel);
     }
     if (spec.protocol == chat::MeshProtocol::RNode)
     {
@@ -495,7 +498,8 @@ static std::string format_broadcast_target_status(const BroadcastTargetSpec& spe
         }
         if (spec.channel_index == 1)
         {
-            return ::ui::i18n::tr("Secondary");
+            return chat::meshtastic::channelName(app::appFacade().getConfig().meshtastic_config,
+                                                 spec.channel);
         }
         return spec.chat_supported ? ::ui::i18n::tr("Ready") : ::ui::i18n::tr("Slot");
     }
@@ -626,6 +630,58 @@ static std::string format_team_chat_entry(const team::ui::TeamChatLogEntry& entr
         return ::ui::i18n::tr("Command");
     }
     return ::ui::i18n::tr("Message");
+}
+
+static void copy_team_chat_time_label(::ui::FixedText<24>& out, uint32_t timestamp)
+{
+    if (timestamp == 0)
+    {
+        out.clear();
+        return;
+    }
+
+    char buffer[24]{};
+    snprintf(buffer, sizeof(buffer), "%lu", static_cast<unsigned long>(timestamp));
+    ::ui::copyText(out, buffer);
+}
+
+static void copy_team_chat_sender_label(::ui::FixedText<32>& out,
+                                        const team::ui::TeamChatLogEntry& entry)
+{
+    if (!entry.incoming)
+    {
+        ::ui::copyText(out, "Me");
+        return;
+    }
+
+    for (const auto& member : team::ui::g_team_state.members)
+    {
+        if (member.node_id == entry.peer_id && !member.name.empty())
+        {
+            ::ui::copyText(out, member.name.c_str());
+            return;
+        }
+    }
+
+    char buffer[16]{};
+    snprintf(buffer,
+             sizeof(buffer),
+             "%04lX",
+             static_cast<unsigned long>(entry.peer_id & 0xFFFFU));
+    ::ui::copyText(out, buffer);
+}
+
+static uint64_t team_chat_message_local_id(const team::ui::TeamChatLogEntry& entry,
+                                           size_t index)
+{
+    uint64_t id = 1469598103934665603ULL;
+    id ^= entry.ts;
+    id *= 1099511628211ULL;
+    id ^= entry.peer_id;
+    id *= 1099511628211ULL;
+    id ^= static_cast<uint64_t>(index + 1U);
+    id *= 1099511628211ULL;
+    return id == 0 ? static_cast<uint64_t>(index + 1U) : id;
 }
 
 static void refresh_team_state_from_store()
@@ -1734,17 +1790,25 @@ static void refresh_team_conversation()
     std::vector<team::ui::TeamChatLogEntry> entries;
     if (team::ui::team_ui_chatlog_load_recent(team::ui::g_team_state.team_id, 50, entries))
     {
-        for (const auto& entry : entries)
+        for (size_t index = 0; index < entries.size(); ++index)
         {
-            chat::ChatMessage msg;
-            msg.protocol = app::appFacade().getConfig().mesh_protocol;
-            msg.channel = chat::ChannelId::PRIMARY;
-            msg.peer = 0;
-            msg.from = entry.incoming ? entry.peer_id : 0;
-            msg.timestamp = entry.ts;
-            msg.text = format_team_chat_entry(entry);
-            msg.status = entry.incoming ? chat::MessageStatus::Incoming : chat::MessageStatus::Sent;
-            g_contacts_state.conversation_screen->addMessage(msg);
+            const auto& entry = entries[index];
+            ::ui::chat::MessageRow row;
+            row.conversation.kind = ::ui::chat::ConversationKind::Team;
+            row.conversation.protocol = ::ui::chat::ChatProtocolKind::TrailMate;
+            row.conversation.primary = 1;
+            row.outgoing = !entry.incoming;
+            row.delivery = entry.incoming ? ::ui::chat::MessageDeliveryState::Received
+                                          : ::ui::chat::MessageDeliveryState::Sent;
+            row.failure = ::ui::chat::MessageFailureKind::None;
+            row.sender_node_id = entry.incoming ? entry.peer_id : 0;
+            row.ref.origin = entry.incoming ? ::ui::chat::MessageOrigin::RemoteStored
+                                            : ::ui::chat::MessageOrigin::LocalStored;
+            row.ref.local_id = team_chat_message_local_id(entry, index);
+            ::ui::copyText(row.text, format_team_chat_entry(entry).c_str());
+            copy_team_chat_time_label(row.time_label, entry.ts);
+            copy_team_chat_sender_label(row.sender_label, entry);
+            g_contacts_state.conversation_screen->addMessage(row);
         }
     }
     g_contacts_state.conversation_screen->scrollToBottom();

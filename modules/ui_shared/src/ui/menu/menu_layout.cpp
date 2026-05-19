@@ -693,6 +693,121 @@ void createAppButton(lv_obj_t* parent, AppScreen* app, size_t idx)
     lv_obj_add_event_cb(btn, menuButtonClickCallback, LV_EVENT_CLICKED, app);
 }
 
+const char* stableIdForScreenId(ui::menu::MenuScreenId screen_id)
+{
+    switch (screen_id)
+    {
+    case ui::menu::MenuScreenId::Chat:
+        return "chat";
+    case ui::menu::MenuScreenId::Contacts:
+        return "contacts";
+    case ui::menu::MenuScreenId::Map:
+    case ui::menu::MenuScreenId::Gps:
+        return "map";
+    case ui::menu::MenuScreenId::Team:
+        return "team";
+    case ui::menu::MenuScreenId::Tracker:
+        return "tracker";
+    case ui::menu::MenuScreenId::Settings:
+        return "settings";
+    case ui::menu::MenuScreenId::WalkieTalkie:
+        return "walkie_talkie";
+    case ui::menu::MenuScreenId::Sstv:
+        return "sstv";
+    case ui::menu::MenuScreenId::Extensions:
+        return "extensions";
+    case ui::menu::MenuScreenId::Dashboard:
+    default:
+        return nullptr;
+    }
+}
+
+bool appAlreadyAdded(AppScreen* app, size_t count)
+{
+    if (app == nullptr)
+    {
+        return false;
+    }
+
+    for (size_t index = 0; index < count && index < kMaxMenuApps; ++index)
+    {
+        if (s_menu_apps[index].app == app)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+AppScreen* findCatalogAppByStableId(const char* stable_id)
+{
+    if (stable_id == nullptr)
+    {
+        return nullptr;
+    }
+
+    const size_t app_count = ui::catalogCount(s_init_options.apps);
+    for (size_t index = 0; index < app_count; ++index)
+    {
+        AppScreen* app = ui::catalogAt(s_init_options.apps, index);
+        if (app == nullptr || app->stable_id() == nullptr)
+        {
+            continue;
+        }
+        if (std::strcmp(app->stable_id(), stable_id) == 0)
+        {
+            return app;
+        }
+    }
+    return nullptr;
+}
+
+bool createAppButtonsFromUxMenu(lv_obj_t* panel)
+{
+    const ui::menu::MenuModel* ux_menu = s_init_options.ux_menu;
+    if (ux_menu == nullptr || ux_menu->size() == 0)
+    {
+        return false;
+    }
+
+    size_t created_count = 0;
+    for (size_t index = 0; index < ux_menu->size() && created_count < kMaxMenuApps; ++index)
+    {
+        const ui::menu::MenuItem& item = ux_menu->items()[index];
+        if (!item.enabled)
+        {
+            continue;
+        }
+
+        AppScreen* app = findCatalogAppByStableId(stableIdForScreenId(item.screen_id));
+        if (app == nullptr || appAlreadyAdded(app, created_count))
+        {
+            continue;
+        }
+
+        createAppButton(panel, app, created_count);
+        lv_group_add_obj(menu_g, lv_obj_get_child(panel, static_cast<int32_t>(created_count)));
+        ++created_count;
+    }
+
+    MENU_LAYOUT_DIAG("createAppGrid ux_menu_items=%u matched_apps=%u\n",
+                     static_cast<unsigned>(ux_menu->size()),
+                     static_cast<unsigned>(created_count));
+    return created_count > 0;
+}
+
+void createAppButtonsFromCatalog(lv_obj_t* panel)
+{
+    const size_t app_count = ui::catalogCount(s_init_options.apps);
+    MENU_LAYOUT_DIAG("createAppGrid app_count=%u\n", static_cast<unsigned>(app_count));
+    for (size_t index = 0; index < app_count && index < kMaxMenuApps; ++index)
+    {
+        AppScreen* app = ui::catalogAt(s_init_options.apps, index);
+        createAppButton(panel, app, index);
+        lv_group_add_obj(menu_g, lv_obj_get_child(panel, static_cast<int32_t>(index)));
+    }
+}
+
 BottomBarChipUi createBottomBarChip(lv_obj_t* parent,
                                     const ui::menu_profile::MenuLayoutProfile& profile,
                                     lv_color_t bg_color,
@@ -888,13 +1003,9 @@ void createAppGrid()
     }
     lv_obj_add_style(panel, &frameless_style, 0);
 
-    const size_t app_count = ui::catalogCount(s_init_options.apps);
-    MENU_LAYOUT_DIAG("createAppGrid app_count=%u\n", static_cast<unsigned>(app_count));
-    for (size_t index = 0; index < app_count && index < kMaxMenuApps; ++index)
+    if (!createAppButtonsFromUxMenu(panel))
     {
-        AppScreen* app = ui::catalogAt(s_init_options.apps, index);
-        createAppButton(panel, app, index);
-        lv_group_add_obj(menu_g, lv_obj_get_child(panel, static_cast<int32_t>(index)));
+        createAppButtonsFromCatalog(panel);
     }
 
     s_desc_label = lv_label_create(s_menu_panel);

@@ -1,11 +1,12 @@
 #pragma once
 
-#include "chat/ble/meshtastic_defaults.h"
-#include "chat/ble/meshtastic_phone_core.h"
-#include "chat/ble/phone_runtime_context.h"
+#include "chat/infra/meshtastic/mt_radio_config.h"
 #include "chat/infra/meshtastic/mt_region.h"
+#include "gps/ports/i_location_source.h"
 #include "meshtastic/localonly.pb.h"
-#include "platform/ui/gps_runtime.h"
+#include "phone/common/phone_app_facade.h"
+#include "phone/meshtastic/meshtastic_defaults.h"
+#include "phone/meshtastic/meshtastic_phone_core.h"
 #include "platform/ui/settings_store.h"
 #include "platform/ui/time_runtime.h"
 
@@ -21,15 +22,11 @@ namespace platform::shared::ble_bridge
 constexpr const char* kUiSettingsNs = "settings";
 constexpr const char* kTimezoneTzdefKey = "timezone_tzdef";
 
-inline std::string meshtasticChannelDisplayName(const ::ble::MeshtasticPhoneConfigSnapshot& cfg, uint8_t idx)
+inline std::string meshtasticChannelDisplayName(const ::phone::MeshtasticPhoneConfigSnapshot& cfg, uint8_t idx)
 {
-    if (idx == 1)
-    {
-        return "Secondary";
-    }
-
-    auto preset = static_cast<meshtastic_Config_LoRaConfig_ModemPreset>(cfg.mesh.modem_preset);
-    return cfg.mesh.use_preset ? std::string(::chat::meshtastic::presetDisplayName(preset)) : std::string("Custom");
+    return std::string(::chat::meshtastic::channelName(
+        cfg.mesh,
+        idx == 1 ? ::chat::ChannelId::SECONDARY : ::chat::ChannelId::PRIMARY));
 }
 
 inline bool loadTimezoneTzdefFromSettings(char* out, std::size_t out_len)
@@ -74,7 +71,7 @@ inline void setTimezoneOffsetMinutes(int offset_min)
     platform::ui::time::set_timezone_offset_min(offset_min);
 }
 
-inline bool setMeshtasticGpsFixUnavailable(::ble::MeshtasticGpsFix* out)
+inline bool setMeshtasticGpsFixUnavailable(::phone::meshtastic::MeshtasticGpsFix* out)
 {
     if (!out)
     {
@@ -85,31 +82,38 @@ inline bool setMeshtasticGpsFixUnavailable(::ble::MeshtasticGpsFix* out)
     return false;
 }
 
-inline bool fillMeshtasticGpsFixFromUiRuntime(::ble::MeshtasticGpsFix* out)
+inline bool fillMeshtasticGpsFixFromLocationSource(const ::gps::ILocationSource& source,
+                                                   ::phone::meshtastic::MeshtasticGpsFix* out)
 {
     if (!out)
     {
         return false;
     }
 
-    const platform::ui::gps::GpsState gps_state = platform::ui::gps::get_data();
-    out->valid = gps_state.valid;
-    out->lat = gps_state.lat;
-    out->lng = gps_state.lng;
-    out->has_alt = gps_state.has_alt;
-    out->alt_m = gps_state.alt_m;
-    out->has_speed = gps_state.has_speed;
-    out->speed_mps = gps_state.speed_mps;
-    out->has_course = gps_state.has_course;
-    out->course_deg = gps_state.course_deg;
-    out->satellites = gps_state.satellites;
+    ::gps::LocationFix fix{};
+    if (!source.latestFix(fix))
+    {
+        *out = {};
+        return false;
+    }
+
+    out->valid = fix.valid;
+    out->lat = fix.latitude;
+    out->lng = fix.longitude;
+    out->has_alt = fix.has_altitude;
+    out->alt_m = static_cast<double>(fix.altitude_m);
+    out->has_speed = fix.has_speed;
+    out->speed_mps = static_cast<double>(fix.speed_mps);
+    out->has_course = fix.has_course;
+    out->course_deg = static_cast<double>(fix.course_deg);
+    out->satellites = fix.satellites;
     return out->valid;
 }
 
 template <typename Settings>
 inline void applyMeshtasticMqttProxySettings(Settings& settings,
                                              const meshtastic_LocalModuleConfig& module_config,
-                                             const ::ble::MeshtasticPhoneConfigSnapshot& cfg)
+                                             const ::phone::MeshtasticPhoneConfigSnapshot& cfg)
 {
     settings.enabled = module_config.has_mqtt && module_config.mqtt.enabled;
     settings.proxy_to_client_enabled = module_config.has_mqtt && module_config.mqtt.proxy_to_client_enabled;
@@ -118,7 +122,7 @@ inline void applyMeshtasticMqttProxySettings(Settings& settings,
     settings.primary_downlink_enabled = cfg.primary_downlink_enabled;
     settings.secondary_uplink_enabled = cfg.secondary_uplink_enabled;
     settings.secondary_downlink_enabled = cfg.secondary_downlink_enabled;
-    settings.root = module_config.mqtt.root[0] ? module_config.mqtt.root : ::ble::meshtastic_defaults::kDefaultMqttRoot;
+    settings.root = module_config.mqtt.root[0] ? module_config.mqtt.root : ::phone::meshtastic::defaults::kDefaultMqttRoot;
     settings.primary_channel_id = meshtasticChannelDisplayName(cfg, 0);
     settings.secondary_channel_id = meshtasticChannelDisplayName(cfg, 1);
 }

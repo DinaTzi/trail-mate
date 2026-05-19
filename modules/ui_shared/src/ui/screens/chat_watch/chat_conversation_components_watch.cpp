@@ -4,11 +4,41 @@
 
 #include "ui/localization.h"
 #include "ui/ui_theme.h"
+#include "ui_presentation/chat/chat_workspace_snapshot.h"
+
+#include <string>
 
 namespace
 {
 constexpr lv_coord_t kActionBarHeight = 36;
 constexpr lv_coord_t kActionButtonHeight = 26;
+
+::ui::chat::MessageDeliveryState delivery_from_message_status(
+    chat::MessageStatus status)
+{
+    switch (status)
+    {
+    case chat::MessageStatus::Incoming:
+        return ::ui::chat::MessageDeliveryState::Received;
+    case chat::MessageStatus::Queued:
+        return ::ui::chat::MessageDeliveryState::Queued;
+    case chat::MessageStatus::Sent:
+        return ::ui::chat::MessageDeliveryState::Sent;
+    case chat::MessageStatus::Failed:
+        return ::ui::chat::MessageDeliveryState::Failed;
+    }
+    return ::ui::chat::MessageDeliveryState::Unknown;
+}
+
+bool message_ref_matches_id(const ::ui::chat::MessageRef& ref,
+                            chat::MessageId msg_id)
+{
+    if (ref.protocol_id != 0)
+    {
+        return ref.protocol_id == msg_id;
+    }
+    return ref.local_id == static_cast<uint64_t>(msg_id);
+}
 } // namespace
 
 namespace chat::ui
@@ -93,7 +123,7 @@ ChatConversationScreen::~ChatConversationScreen()
     guard_ = nullptr;
 }
 
-void ChatConversationScreen::addMessage(const chat::ChatMessage& msg)
+void ChatConversationScreen::createMessageItem(const ::ui::chat::MessageRow& row)
 {
     if (!msg_list_)
     {
@@ -111,7 +141,8 @@ void ChatConversationScreen::addMessage(const chat::ChatMessage& msg)
     }
 
     MessageItem item{};
-    item.msg = msg;
+    item.ref = row.ref;
+    item.delivery = row.delivery;
     item.container = lv_obj_create(msg_list_);
     lv_obj_set_width(item.container, LV_PCT(100));
     lv_obj_set_style_bg_opa(item.container, LV_OPA_TRANSP, 0);
@@ -119,16 +150,28 @@ void ChatConversationScreen::addMessage(const chat::ChatMessage& msg)
     lv_obj_set_style_pad_top(item.container, 2, 0);
     lv_obj_set_style_pad_bottom(item.container, 2, 0);
     lv_obj_set_flex_flow(item.container, LV_FLEX_FLOW_ROW);
-    bool is_self = msg.status != chat::MessageStatus::Incoming;
+    bool is_self = row.outgoing;
     lv_obj_set_flex_align(item.container,
                           is_self ? LV_FLEX_ALIGN_END : LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_START);
 
+    std::string display_text;
+    if (!row.outgoing && !row.sender_label.empty())
+    {
+        display_text = row.sender_label.c_str();
+        display_text += ": ";
+        display_text += row.text.c_str();
+    }
+    else
+    {
+        display_text = row.text.c_str();
+    }
+
     item.text_label = lv_label_create(item.container);
     lv_label_set_long_mode(item.text_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(item.text_label, LV_PCT(80));
-    lv_label_set_text(item.text_label, msg.text.c_str());
+    lv_label_set_text(item.text_label, display_text.c_str());
     lv_obj_set_style_text_color(item.text_label, ::ui::theme::text(), 0);
     lv_obj_set_style_bg_color(item.text_label,
                               is_self ? ::ui::theme::surface_alt() : ::ui::theme::surface(),
@@ -138,6 +181,11 @@ void ChatConversationScreen::addMessage(const chat::ChatMessage& msg)
     lv_obj_set_style_radius(item.text_label, 6, 0);
 
     messages_.push_back(item);
+}
+
+void ChatConversationScreen::addMessage(const ::ui::chat::MessageRow& row)
+{
+    createMessageItem(row);
 }
 
 void ChatConversationScreen::clearMessages()
@@ -168,11 +216,11 @@ bool ChatConversationScreen::updateMessageStatus(const chat::MessageId msg_id,
 
     for (auto& item : messages_)
     {
-        if (item.msg.msg_id != msg_id)
+        if (!message_ref_matches_id(item.ref, msg_id))
         {
             continue;
         }
-        item.msg.status = status;
+        item.delivery = delivery_from_message_status(status);
         return true;
     }
 
