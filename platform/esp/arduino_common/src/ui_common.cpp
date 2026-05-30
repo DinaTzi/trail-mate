@@ -6,6 +6,7 @@
 #include "ui/ui_common.h"
 #include "board/BoardBase.h"
 #include "lvgl.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include "platform/ui/settings_store.h"
 #include "platform/ui/timezone_profile.h"
 #if LV_USE_SNAPSHOT
@@ -111,15 +112,15 @@ time_t ui_apply_timezone_offset(time_t utc_seconds)
 bool ui_take_screenshot_to_sd()
 {
 #if LV_USE_SNAPSHOT
-    if (SD.cardType() == CARD_NONE)
+    if (!::platform::esp::arduino_common::storage::sd_card_ready())
     {
         Serial.println("[Screenshot] SD not available");
         return false;
     }
 
-    if (!SD.exists("/screen"))
+    if (!::platform::esp::arduino_common::storage::sd_exists("/screen"))
     {
-        if (!SD.mkdir("/screen"))
+        if (!::platform::esp::arduino_common::storage::sd_mkdir("/screen"))
         {
             Serial.println("[Screenshot] mkdir /screen failed");
         }
@@ -168,8 +169,8 @@ bool ui_take_screenshot_to_sd()
                  static_cast<unsigned long>(millis()));
     }
 
-    File f = SD.open(path, FILE_WRITE);
-    if (!f)
+    ::platform::esp::arduino_common::storage::SdRuntimeFile f;
+    if (!f.open(path, "w"))
     {
         Serial.printf("[Screenshot] Open failed: %s\n", path);
         lv_draw_buf_destroy(snap);

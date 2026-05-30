@@ -10,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "platform/esp/arduino_common/battery_guard.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include "platform/esp/common/build_info.h"
 #if defined(ARDUINO_T_LORA_PAGER)
 #include "boards/tlora_pager/tlora_pager_board.h"
@@ -150,7 +151,7 @@ bool sd_ready()
 
 bool card_ready()
 {
-    return board.isCardReady();
+    return ::platform::esp::arduino_common::storage::sd_card_ready() || board.isCardReady();
 }
 
 bool gps_ready()

@@ -16,6 +16,7 @@
 
 #include "display/drivers/ST7796.h"
 #include "pins_arduino.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include "platform/ui/settings_store.h"
 #include "ui/widgets/system_notification.h"
 #include <Preferences.h>
@@ -772,7 +773,7 @@ bool TLoRaPagerBoard::installSD()
 
     uint8_t card_type = CARD_NONE;
     uint32_t card_size_mb = 0;
-    bool ok = sdutil::installSpiSd(*this, SD_CS, 4000000U, "/sd",
+    bool ok = sdutil::installSpiSd(*this, SD_CS, SD_SPI_FREQUENCY, "/sd",
                                    nullptr, 0, &card_type, &card_size_mb);
     if (!ok)
     {
@@ -789,7 +790,7 @@ void TLoRaPagerBoard::uninstallSD()
     // Safely unmount SD card (requires SPI lock)
     if (LilyGoDispArduinoSPI::lock(portMAX_DELAY))
     {
-        SD.end();
+        ::platform::esp::arduino_common::storage::unmount_sd_card();
         LilyGoDispArduinoSPI::unlock();
         log_d("SD card unmounted");
     }
@@ -805,7 +806,7 @@ bool TLoRaPagerBoard::isCardReady()
     bool ready = false;
     if (LilyGoDispArduinoSPI::lock(pdTICKS_TO_MS(100)))
     {
-        ready = (SD.sectorSize() != 0);
+        ready = ::platform::esp::arduino_common::storage::sd_card_ready();
         LilyGoDispArduinoSPI::unlock();
     }
     return ready;

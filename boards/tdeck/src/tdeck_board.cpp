@@ -2,6 +2,7 @@
 #include "boards/tdeck/tdeck_board.h"
 #include "board/sd_utils.h"
 #include "display/drivers/ST7789TDeck.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include <AudioFileSourcePROGMEM.h>
 #include <AudioGeneratorRTTTL.h>
 #include <AudioOutputI2S.h>
@@ -637,8 +638,7 @@ bool TDeckBoard::installSD()
 
     uint8_t cardType = CARD_NONE;
     uint32_t cardSizeMB = 0;
-    // Prefer a practical default speed; fallback ladder inside sd_utils preserves compatibility.
-    bool ok = sdutil::installSpiSd(*this, SD_CS, 4000000U, "/sd",
+    bool ok = sdutil::installSpiSd(*this, SD_CS, SD_SPI_FREQUENCY, "/sd",
                                    extra_cs, extra_cs_count,
                                    &cardType, &cardSizeMB,
                                    display_ready_);
@@ -660,7 +660,7 @@ void TDeckBoard::uninstallSD()
 {
     if (LilyGoDispArduinoSPI::lock(portMAX_DELAY))
     {
-        SD.end();
+        ::platform::esp::arduino_common::storage::unmount_sd_card();
         LilyGoDispArduinoSPI::unlock();
         Serial.println("[TDeckBoard] SD unmounted");
     }
@@ -752,7 +752,7 @@ bool TDeckBoard::isCardReady()
     bool ready = false;
     if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(100)))
     {
-        ready = (SD.sectorSize() != 0);
+        ready = ::platform::esp::arduino_common::storage::sd_card_ready();
         LilyGoDispArduinoSPI::unlock();
     }
     return ready;
