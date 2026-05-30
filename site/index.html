@@ -66,7 +66,10 @@
             <details class="nav-group" open>
               <summary data-i18n="side.devices">Devices</summary>
               <button class="side-device is-active" type="button" data-device-nav="tlora-pager-sx1262">
-                <span>T-LoRa Pager</span>
+                <span>T-LoRa Pager SX1262</span>
+              </button>
+              <button class="side-device" type="button" data-device-nav="tlora-pager-lr1121">
+                <span>T-LoRa Pager LR1121</span>
               </button>
               <button class="side-device" type="button" data-device-nav="tdeck">
                 <span>T-Deck</span>
@@ -226,7 +229,11 @@
             <div class="device-browser">
               <div class="device-switcher" role="tablist" aria-label="Supported devices">
                 <button class="device-tab is-active" type="button" data-device-target="tlora-pager-sx1262">
-                  <span>T-LoRa Pager</span>
+                  <span>T-LoRa Pager SX1262</span>
+                  <small>ESP32-S3</small>
+                </button>
+                <button class="device-tab" type="button" data-device-target="tlora-pager-lr1121">
+                  <span>T-LoRa Pager LR1121</span>
                   <small>ESP32-S3</small>
                 </button>
                 <button class="device-tab" type="button" data-device-target="tdeck">
@@ -428,8 +435,20 @@
             <div class="install-grid">
               <article class="board-card" data-board-id="tlora-pager-sx1262">
                 <p class="board-chip">ESP32-S3</p>
-                <h3>LilyGo T-LoRa Pager</h3>
+                <h3>LilyGo T-LoRa Pager SX1262</h3>
                 <p class="board-copy" data-i18n="install.pagerCopy">SX1262 build for the keyboard pager hardware.</p>
+                <div class="board-install" data-install-slot>
+                  <p class="board-hint" data-i18n="install.checking">Checking release assets...</p>
+                </div>
+                <a class="release-link" data-release-link href="https://github.com/vicliu624/trail-mate/releases" data-i18n="install.openRelease">
+                  Open latest release
+                </a>
+              </article>
+
+              <article class="board-card" data-board-id="tlora-pager-lr1121">
+                <p class="board-chip">ESP32-S3</p>
+                <h3>LilyGo T-LoRa Pager LR1121</h3>
+                <p class="board-copy" data-i18n="install.pagerLr1121Copy">LR1121 build for the Sub-GHz + 2.4 GHz keyboard pager hardware.</p>
                 <div class="board-install" data-install-slot>
                   <p class="board-hint" data-i18n="install.checking">Checking release assets...</p>
                 </div>

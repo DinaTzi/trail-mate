@@ -231,7 +231,7 @@ The table below describes the **real build targets that exist in the repository 
 - **`tdeck_pro_*`**, **`lilygo_twatch_s3`**, **`t_display_p4_tft`**, and **`t_display_p4_amoled`** are better treated as bring-up, layout, or device-adaptation targets than as the highest-maturity feature-validation path
 - For the **T-Display-P4 family**, this repo currently builds only the **ESP32-P4 firmware**. The board's ESP32-C6 companion firmware is an external flashing contract, not an in-repo build artifact.
 - “The repository has a build target” does not mean every page or capability is equally mature on that device; some features are enabled or hidden dynamically based on capabilities, RAM budget, and input hardware
-- GitHub Actions currently keeps building the main path through **`tlora_pager_sx1262`**, **`tdeck`**, and **`lilygo_twatch_s3`**
+- GitHub Actions currently keeps building the main path through **`tlora_pager_sx1262`**, **`tlora_pager_lr1121`**, **`tdeck`**, **`lilygo_twatch_s3`**, and **`gat562_mesh_evb_pro`**
 
 ---
 
