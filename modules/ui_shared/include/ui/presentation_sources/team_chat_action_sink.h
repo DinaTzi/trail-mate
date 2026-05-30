@@ -13,7 +13,7 @@ namespace ui
 {
 class ITeamUiChatLogStore;
 class ITeamUiSnapshotStore;
-}
+} // namespace ui
 } // namespace team
 
 namespace ui::presentation_sources

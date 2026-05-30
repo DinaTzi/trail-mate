@@ -6,8 +6,8 @@
 #include "platform/ui/team_ui_store_runtime.h"
 #include "ui/team_persistence/team_ui_snapshot_codec.h"
 
-#include "sys/clock.h"
 #include "platform/esp/arduino_common/storage/sd_card_runtime.h"
+#include "sys/clock.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -26,12 +26,12 @@ TeamUiSnapshot TeamUiSnapshotMemoryStore::snapshot_{};
 
 namespace
 {
-using ::platform::esp::arduino_common::storage::SdRuntimeFile;
 using ::platform::esp::arduino_common::storage::sd_card_ready;
 using ::platform::esp::arduino_common::storage::sd_exists;
 using ::platform::esp::arduino_common::storage::sd_mkdir;
 using ::platform::esp::arduino_common::storage::sd_remove;
 using ::platform::esp::arduino_common::storage::sd_rename;
+using ::platform::esp::arduino_common::storage::SdRuntimeFile;
 
 constexpr const char* kBaseDir = "/team";
 constexpr const char* kCurrentPath = "/team/current.txt";

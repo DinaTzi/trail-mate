@@ -23,9 +23,9 @@
 #include "platform/ui/team_ui_store_runtime.h"
 #include "sys/clock.h"
 #include "team/protocol/team_chat.h"
+#include "uconsole/uconsole_hardware_probe.h"
 #include "ui/presentation_sources/team_map_overlay_source.h"
 #include "ui/team_presence/team_presence_model.h"
-#include "uconsole/uconsole_hardware_probe.h"
 
 namespace trailmate::uconsole
 {

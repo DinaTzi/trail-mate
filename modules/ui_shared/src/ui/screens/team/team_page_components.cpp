@@ -18,13 +18,13 @@
 #include "ui/localization.h"
 #include "ui/page/page_profile.h"
 #include "ui/screens/team/team_page_activity_sink.h"
-#include "ui/screens/team/team_page_input.h"
 #include "ui/screens/team/team_page_command_reducer.h"
 #include "ui/screens/team/team_page_create_team_action.h"
 #include "ui/screens/team/team_page_deferred_dispatch.h"
 #include "ui/screens/team/team_page_event_effect_sink.h"
 #include "ui/screens/team/team_page_event_reducer.h"
 #include "ui/screens/team/team_page_flow_controller.h"
+#include "ui/screens/team/team_page_input.h"
 #include "ui/screens/team/team_page_key_event_log.h"
 #include "ui/screens/team/team_page_key_request_action.h"
 #include "ui/screens/team/team_page_kick_confirm_action.h"
@@ -38,8 +38,8 @@
 #include "ui/screens/team/team_page_styles.h"
 #include "ui/screens/team/team_page_transfer_leader_action.h"
 #include "ui/ui_common.h"
-#include "ui/widgets/top_bar.h"
 #include "ui/widgets/system_notification.h"
+#include "ui/widgets/top_bar.h"
 
 #include <array>
 #include <cmath>
@@ -379,8 +379,7 @@ void apply_pairing_command_failures(
     }
 }
 
-class TeamPageMemberNameResolver final : public ITeamPageMemberNameResolver
-                                       , public ITeamPageLvglNameResolver
+class TeamPageMemberNameResolver final : public ITeamPageMemberNameResolver, public ITeamPageLvglNameResolver
 {
   public:
     std::string resolveMemberName(uint32_t node_id) const override
@@ -770,8 +769,8 @@ void apply_command_runtime_effects(const TeamPageCommandEffects& effects)
 }
 
 class TeamPageRandomByteAdapter final
-    : public ITeamPageKickConfirmRandom
-    , public ITeamPageCreateTeamRandom
+    : public ITeamPageKickConfirmRandom,
+      public ITeamPageCreateTeamRandom
 {
   public:
     uint8_t nextByte() override
@@ -1282,7 +1281,7 @@ void handle_team_kick(const team::TeamKickEvent& ev)
                 TeamPageKeyEventState& state)
             {
                 return log.appendMemberKicked(state,
-                                             effects.member_kicked_id);
+                                              effects.member_kicked_id);
             });
     }
     if (effects.epoch_rotated)

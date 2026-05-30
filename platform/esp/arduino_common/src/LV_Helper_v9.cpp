@@ -9,8 +9,8 @@
 
 #include "display/DisplayInterface.h"
 #include "input/morse_engine.h"
-#include "screen_sleep.h"
 #include "platform/esp/arduino_common/storage/sd_card_runtime.h"
+#include "screen_sleep.h"
 #include "ui/LV_Helper.h"
 #include "ui/app_runtime.h"
 #include "ui/support/lvgl_fs_utils.h"
@@ -118,7 +118,7 @@ void* sd_fs_open(lv_fs_drv_t* drv, const char* path, lv_fs_mode_t mode)
         open_mode = "r+";
     }
 
-    auto* file = new (std::nothrow) ::platform::esp::arduino_common::storage::SdRuntimeFile();
+    auto* file = new (std::nothrow)::platform::esp::arduino_common::storage::SdRuntimeFile();
     if (file == nullptr)
     {
         return nullptr;
@@ -229,7 +229,7 @@ void* sd_fs_dir_open(lv_fs_drv_t* drv, const char* path)
 {
     LV_UNUSED(drv);
 
-    auto* dir = new (std::nothrow) ::platform::esp::arduino_common::storage::SdRuntimeDir();
+    auto* dir = new (std::nothrow)::platform::esp::arduino_common::storage::SdRuntimeDir();
     if (dir == nullptr)
     {
         return nullptr;

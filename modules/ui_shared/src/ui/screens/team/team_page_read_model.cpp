@@ -205,7 +205,7 @@ TeamMemberRowView TeamPageReadModel::buildMemberRow(
     row.node_id = member.node_id;
     row.name = member.name;
     row.online = ::ui::team_presence::isTeamMemberOnline(now_s_,
-                                                        member.last_seen_s);
+                                                         member.last_seen_s);
     row.leader = member.leader;
     row.color_index = member.color_index;
     return row;

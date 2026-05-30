@@ -29,8 +29,8 @@
 #include "ui/screens/contacts/contacts_page_input.h"
 #include "ui/screens/contacts/contacts_page_layout.h"
 #include "ui/screens/contacts/contacts_page_styles.h"
-#include "ui/screens/contacts/contacts_team_snapshot_source.h"
 #include "ui/screens/contacts/contacts_state.h"
+#include "ui/screens/contacts/contacts_team_snapshot_source.h"
 #include "ui/screens/node_info/node_info_page_components.h"
 #include "ui/team_actions/team_action_runtime_sink.h"
 #include "ui/team_actions/team_runtime_adapters.h"
@@ -40,8 +40,8 @@
 
 #include <cmath>
 #include <cstdint>
-#include <cstring>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <string>
 

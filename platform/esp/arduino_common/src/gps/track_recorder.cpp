@@ -10,13 +10,13 @@ namespace gps
 
 namespace
 {
-using ::platform::esp::arduino_common::storage::SdRuntimeDir;
-using ::platform::esp::arduino_common::storage::SdRuntimeFile;
 using ::platform::esp::arduino_common::storage::sd_card_ready;
 using ::platform::esp::arduino_common::storage::sd_exists;
 using ::platform::esp::arduino_common::storage::sd_is_directory;
 using ::platform::esp::arduino_common::storage::sd_mkdir;
 using ::platform::esp::arduino_common::storage::sd_remove;
+using ::platform::esp::arduino_common::storage::SdRuntimeDir;
+using ::platform::esp::arduino_common::storage::SdRuntimeFile;
 
 constexpr const char* kGpxHeader =
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"

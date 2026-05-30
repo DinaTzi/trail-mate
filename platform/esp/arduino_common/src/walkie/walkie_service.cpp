@@ -8,7 +8,7 @@
 #include "esp_efuse.h"
 #endif
 
-#if (defined(ARDUINO_T_LORA_PAGER) &&                                      \
+#if (defined(ARDUINO_T_LORA_PAGER) &&                                                 \
      (defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_LR1121))) || \
     defined(TRAIL_MATE_ESP_BOARD_TAB5)
 

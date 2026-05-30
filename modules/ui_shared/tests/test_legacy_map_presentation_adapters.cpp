@@ -83,8 +83,10 @@ void assertViewport(const ui::map::MapViewport& actual,
 
 int main()
 {
-    sys::set_millis_provider([]() -> uint32_t { return 200000U; });
-    sys::set_epoch_seconds_provider([]() -> uint32_t { return 1700000200U; });
+    sys::set_millis_provider([]() -> uint32_t
+                             { return 200000U; });
+    sys::set_epoch_seconds_provider([]() -> uint32_t
+                                    { return 1700000200U; });
 
     FakeGpsStatusSource gps;
     gps.snapshot.header.valid = true;
