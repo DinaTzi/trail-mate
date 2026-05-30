@@ -8,9 +8,11 @@
 #endif
 #include <SdFat.h>
 #include <algorithm>
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <vector>
 
 namespace platform::esp::arduino_common::storage
 {
@@ -431,6 +433,23 @@ bool SdRuntimeFile::is_open() const
     return impl_ != nullptr && impl_->backend != SdCardBackend::None;
 }
 
+int SdRuntimeFile::available() const
+{
+    if (!is_open())
+    {
+        return 0;
+    }
+    if (impl_->backend == SdCardBackend::ArduinoSd)
+    {
+        return impl_->arduino_file.available();
+    }
+    if (impl_->backend == SdCardBackend::SdFat)
+    {
+        return impl_->sdfat_file.available();
+    }
+    return 0;
+}
+
 int SdRuntimeFile::read(void* buffer, std::size_t bytes_to_read)
 {
     if (!is_open() || buffer == nullptr || bytes_to_read == 0)
@@ -448,6 +467,41 @@ int SdRuntimeFile::read(void* buffer, std::size_t bytes_to_read)
     return -1;
 }
 
+int SdRuntimeFile::read_byte()
+{
+    if (!is_open())
+    {
+        return -1;
+    }
+    if (impl_->backend == SdCardBackend::ArduinoSd)
+    {
+        return impl_->arduino_file.read();
+    }
+    if (impl_->backend == SdCardBackend::SdFat)
+    {
+        return impl_->sdfat_file.read();
+    }
+    return -1;
+}
+
+std::size_t SdRuntimeFile::read_bytes(char* buffer, std::size_t bytes_to_read)
+{
+    if (!is_open() || buffer == nullptr || bytes_to_read == 0)
+    {
+        return 0;
+    }
+    if (impl_->backend == SdCardBackend::ArduinoSd)
+    {
+        return impl_->arduino_file.readBytes(buffer, bytes_to_read);
+    }
+    if (impl_->backend == SdCardBackend::SdFat)
+    {
+        int result = impl_->sdfat_file.read(buffer, bytes_to_read);
+        return result > 0 ? static_cast<std::size_t>(result) : 0;
+    }
+    return 0;
+}
+
 std::size_t SdRuntimeFile::write(const void* buffer, std::size_t bytes_to_write)
 {
     if (!is_open() || buffer == nullptr || bytes_to_write == 0)
@@ -463,6 +517,83 @@ std::size_t SdRuntimeFile::write(const void* buffer, std::size_t bytes_to_write)
         return impl_->sdfat_file.write(buffer, bytes_to_write);
     }
     return 0;
+}
+
+std::size_t SdRuntimeFile::write_byte(uint8_t value)
+{
+    if (!is_open())
+    {
+        return 0;
+    }
+    if (impl_->backend == SdCardBackend::ArduinoSd)
+    {
+        return impl_->arduino_file.write(value);
+    }
+    if (impl_->backend == SdCardBackend::SdFat)
+    {
+        return impl_->sdfat_file.write(value);
+    }
+    return 0;
+}
+
+std::size_t SdRuntimeFile::print(const char* text)
+{
+    if (!is_open() || text == nullptr)
+    {
+        return 0;
+    }
+    if (impl_->backend == SdCardBackend::ArduinoSd)
+    {
+        return impl_->arduino_file.print(text);
+    }
+    if (impl_->backend == SdCardBackend::SdFat)
+    {
+        return impl_->sdfat_file.print(text);
+    }
+    return 0;
+}
+
+std::size_t SdRuntimeFile::print(double value, int digits)
+{
+    if (!is_open())
+    {
+        return 0;
+    }
+    const uint8_t precision = digits < 0 ? 0 : static_cast<uint8_t>(digits);
+    if (impl_->backend == SdCardBackend::ArduinoSd)
+    {
+        return impl_->arduino_file.print(value, precision);
+    }
+    if (impl_->backend == SdCardBackend::SdFat)
+    {
+        return impl_->sdfat_file.print(value, precision);
+    }
+    return 0;
+}
+
+std::size_t SdRuntimeFile::printf(const char* format, ...)
+{
+    if (!is_open() || format == nullptr)
+    {
+        return 0;
+    }
+
+    va_list args;
+    va_start(args, format);
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int len = std::vsnprintf(nullptr, 0, format, args_copy);
+    va_end(args_copy);
+    if (len <= 0)
+    {
+        va_end(args);
+        return 0;
+    }
+
+    std::vector<char> buffer(static_cast<std::size_t>(len) + 1U);
+    std::vsnprintf(buffer.data(), buffer.size(), format, args);
+    va_end(args);
+    return write(buffer.data(), static_cast<std::size_t>(len));
 }
 
 bool SdRuntimeFile::seek(uint64_t offset)

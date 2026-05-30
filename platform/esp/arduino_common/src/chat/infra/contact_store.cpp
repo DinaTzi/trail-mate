@@ -5,8 +5,9 @@
 
 #include "platform/esp/arduino_common/chat/infra/contact_store.h"
 #include "../internal/blob_store_io.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 
-#include <SD.h>
+#include <Arduino.h>
 
 namespace chat
 {
@@ -30,7 +31,9 @@ ContactStore::ContactStore()
 
 void ContactStore::begin()
 {
-    backend_ = (SD.cardType() != CARD_NONE) ? StorageBackend::Sd : StorageBackend::Flash;
+    backend_ = ::platform::esp::arduino_common::storage::sd_card_ready()
+                   ? StorageBackend::Sd
+                   : StorageBackend::Flash;
     CONTACT_STORE_LOG("[ContactStore] backend=%s\n",
                       backend_ == StorageBackend::Sd ? "sd" : "flash");
     core_.begin();

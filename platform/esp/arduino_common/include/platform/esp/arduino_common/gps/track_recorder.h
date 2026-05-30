@@ -4,7 +4,6 @@
 #include "freertos/semphr.h"
 
 #include <Arduino.h>
-#include <SD.h>
 
 namespace gps
 {

@@ -1,4 +1,5 @@
 #include "platform/esp/arduino_common/gps/track_recorder.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include "platform/esp/common/shared_spi_lock.h"
 
 #include <cmath>
@@ -9,6 +10,14 @@ namespace gps
 
 namespace
 {
+using ::platform::esp::arduino_common::storage::SdRuntimeDir;
+using ::platform::esp::arduino_common::storage::SdRuntimeFile;
+using ::platform::esp::arduino_common::storage::sd_card_ready;
+using ::platform::esp::arduino_common::storage::sd_exists;
+using ::platform::esp::arduino_common::storage::sd_is_directory;
+using ::platform::esp::arduino_common::storage::sd_mkdir;
+using ::platform::esp::arduino_common::storage::sd_remove;
+
 constexpr const char* kGpxHeader =
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
     "<gpx version=\"1.1\" creator=\"Trail-Mate\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n"
@@ -58,15 +67,15 @@ TrackRecorder& TrackRecorder::getInstance()
 
 bool TrackRecorder::ensureDir() const
 {
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         return false;
     }
-    if (SD.exists(kTrackDir))
+    if (sd_exists(kTrackDir))
     {
-        return true;
+        return sd_is_directory(kTrackDir);
     }
-    return SD.mkdir(kTrackDir);
+    return sd_mkdir(kTrackDir);
 }
 
 String TrackRecorder::makeTrackPath() const
@@ -126,8 +135,8 @@ const char* TrackRecorder::formatExtension() const
 void TrackRecorder::beginNewFile()
 {
     current_path_ = makeTrackPath();
-    File f = SD.open(current_path_.c_str(), FILE_WRITE);
-    if (!f)
+    SdRuntimeFile f;
+    if (!f.open(current_path_.c_str(), "w"))
     {
         current_path_ = "";
         return;
@@ -207,8 +216,8 @@ void TrackRecorder::stop()
 
     if (recording_ && current_path_.length() > 0)
     {
-        File f = SD.open(current_path_.c_str(), FILE_APPEND);
-        if (f)
+        SdRuntimeFile f;
+        if (f.open(current_path_.c_str(), "a"))
         {
             if (format_ == TrackFormat::GPX)
             {
@@ -250,8 +259,8 @@ void TrackRecorder::setAutoRecording(bool enabled)
     {
         if (current_path_.length() > 0)
         {
-            File f = SD.open(current_path_.c_str(), FILE_APPEND);
-            if (f)
+            SdRuntimeFile f;
+            if (f.open(current_path_.c_str(), "a"))
             {
                 if (format_ == TrackFormat::GPX)
                 {
@@ -311,8 +320,8 @@ void TrackRecorder::setFormat(TrackFormat format)
 
     if (current_path_.length() > 0)
     {
-        File f = SD.open(current_path_.c_str(), FILE_APPEND);
-        if (f)
+        SdRuntimeFile f;
+        if (f.open(current_path_.c_str(), "a"))
         {
             if (prev_format == TrackFormat::GPX)
             {
@@ -367,7 +376,7 @@ void TrackRecorder::appendPoint(const TrackPoint& pt)
         return;
     }
 
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         if (mutex_)
         {
@@ -424,8 +433,8 @@ void TrackRecorder::appendPoint(const TrackPoint& pt)
         }
     }
 
-    File f = SD.open(current_path_.c_str(), FILE_APPEND);
-    if (f)
+    SdRuntimeFile f;
+    if (f.open(current_path_.c_str(), "a"))
     {
         if (format_ == TrackFormat::CSV)
         {
@@ -489,16 +498,16 @@ bool TrackRecorder::restoreActiveSession()
     bool ok = false;
     do
     {
-        if (SD.cardType() == CARD_NONE)
+        if (!sd_card_ready())
         {
             break;
         }
-        if (!SD.exists(kActivePath))
+        if (!sd_exists(kActivePath))
         {
             break;
         }
-        File f = SD.open(kActivePath, FILE_READ);
-        if (!f)
+        SdRuntimeFile f;
+        if (!f.open(kActivePath, "r"))
         {
             break;
         }
@@ -532,7 +541,7 @@ bool TrackRecorder::restoreActiveSession()
         f.close();
 
         String path(path_buf);
-        if (path.isEmpty() || !SD.exists(path.c_str()))
+        if (path.isEmpty() || !sd_exists(path.c_str()))
         {
             clearActiveStateLocked();
             break;
@@ -577,7 +586,7 @@ void TrackRecorder::updateActiveStateLocked()
 
 bool TrackRecorder::writeActiveStateLocked() const
 {
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         return false;
     }
@@ -586,12 +595,12 @@ bool TrackRecorder::writeActiveStateLocked() const
         return false;
     }
 
-    if (SD.exists(kActivePath))
+    if (sd_exists(kActivePath))
     {
-        SD.remove(kActivePath);
+        sd_remove(kActivePath);
     }
-    File f = SD.open(kActivePath, FILE_WRITE);
-    if (!f)
+    SdRuntimeFile f;
+    if (!f.open(kActivePath, "w"))
     {
         return false;
     }
@@ -631,37 +640,38 @@ bool TrackRecorder::writeActiveStateLocked() const
 
 void TrackRecorder::clearActiveStateLocked() const
 {
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         return;
     }
-    if (SD.exists(kActivePath))
+    if (sd_exists(kActivePath))
     {
-        SD.remove(kActivePath);
+        sd_remove(kActivePath);
     }
 }
 
 size_t TrackRecorder::listTracks(String* out_names, size_t max_names) const
 {
-    if (SD.cardType() == CARD_NONE || max_names == 0 || out_names == nullptr)
+    if (!sd_card_ready() || max_names == 0 || out_names == nullptr)
     {
         return 0;
     }
 
-    File dir = SD.open(kTrackDir);
-    if (!dir || !dir.isDirectory())
+    SdRuntimeDir dir;
+    if (!dir.open(kTrackDir))
     {
         return 0;
     }
 
     size_t count = 0;
-    for (File f = dir.openNextFile(); f && count < max_names; f = dir.openNextFile())
+    char name_buf[128];
+    bool is_dir = false;
+    while (count < max_names && dir.read_next(name_buf, sizeof(name_buf), &is_dir))
     {
-        if (!f.isDirectory())
+        if (!is_dir)
         {
-            out_names[count++] = String(f.name());
+            out_names[count++] = String(name_buf);
         }
-        f.close();
     }
     dir.close();
     return count;

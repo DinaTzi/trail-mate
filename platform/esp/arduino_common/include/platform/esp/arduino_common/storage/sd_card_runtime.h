@@ -60,8 +60,15 @@ class SdRuntimeFile
     bool open(const char* path, const char* mode);
     void close();
     bool is_open() const;
+    int available() const;
     int read(void* buffer, std::size_t bytes_to_read);
+    int read_byte();
+    std::size_t read_bytes(char* buffer, std::size_t bytes_to_read);
     std::size_t write(const void* buffer, std::size_t bytes_to_write);
+    std::size_t write_byte(uint8_t value);
+    std::size_t print(const char* text);
+    std::size_t print(double value, int digits = 2);
+    std::size_t printf(const char* format, ...);
     bool seek(uint64_t offset);
     uint64_t position() const;
     uint64_t size() const;

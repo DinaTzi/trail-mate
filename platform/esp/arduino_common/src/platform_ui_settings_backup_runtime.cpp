@@ -1,8 +1,9 @@
 #include "platform/ui/settings_backup_runtime.h"
 
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
+
 #include <Arduino.h>
 #include <Preferences.h>
-#include <SD.h>
 
 #include <cmath>
 #include <cstdio>
@@ -80,22 +81,17 @@ void set_status_message(Status& out, const char* message, const char* detail = n
 
 bool sd_available()
 {
-    return ::platform::ui::device::card_ready() && SD.cardType() != CARD_NONE;
+    return ::platform::ui::device::card_ready() &&
+           ::platform::esp::arduino_common::storage::sd_card_ready();
 }
 
 bool ensure_backup_dir()
 {
-    if (SD.exists(kBackupDir))
+    if (::platform::esp::arduino_common::storage::sd_exists(kBackupDir))
     {
-        File dir = SD.open(kBackupDir, FILE_READ);
-        const bool ok = static_cast<bool>(dir) && dir.isDirectory();
-        if (dir)
-        {
-            dir.close();
-        }
-        return ok;
+        return ::platform::esp::arduino_common::storage::sd_is_directory(kBackupDir);
     }
-    return SD.mkdir(kBackupDir);
+    return ::platform::esp::arduino_common::storage::sd_mkdir(kBackupDir);
 }
 
 const char* value_type_name(ValueType type)
@@ -808,12 +804,12 @@ bool write_text_atomic(const char* path, const char* temp_path, const char* text
     {
         return false;
     }
-    if (SD.exists(temp_path))
+    if (::platform::esp::arduino_common::storage::sd_exists(temp_path))
     {
-        SD.remove(temp_path);
+        ::platform::esp::arduino_common::storage::sd_remove(temp_path);
     }
-    File file = SD.open(temp_path, FILE_WRITE);
-    if (!file)
+    ::platform::esp::arduino_common::storage::SdRuntimeFile file;
+    if (!file.open(temp_path, "w"))
     {
         return false;
     }
@@ -821,16 +817,16 @@ bool write_text_atomic(const char* path, const char* temp_path, const char* text
     file.close();
     if (!wrote)
     {
-        SD.remove(temp_path);
+        ::platform::esp::arduino_common::storage::sd_remove(temp_path);
         return false;
     }
-    if (SD.exists(path))
+    if (::platform::esp::arduino_common::storage::sd_exists(path))
     {
-        SD.remove(path);
+        ::platform::esp::arduino_common::storage::sd_remove(path);
     }
-    if (!SD.rename(temp_path, path))
+    if (!::platform::esp::arduino_common::storage::sd_rename(temp_path, path))
     {
-        SD.remove(temp_path);
+        ::platform::esp::arduino_common::storage::sd_remove(temp_path);
         return false;
     }
     return true;
@@ -839,8 +835,8 @@ bool write_text_atomic(const char* path, const char* temp_path, const char* text
 bool read_file_text(const char* path, std::string& out)
 {
     out.clear();
-    File file = SD.open(path, FILE_READ);
-    if (!file)
+    ::platform::esp::arduino_common::storage::SdRuntimeFile file;
+    if (!file.open(path, "r"))
     {
         return false;
     }
@@ -851,7 +847,7 @@ bool read_file_text(const char* path, std::string& out)
         return false;
     }
     out.resize(size);
-    const std::size_t read = file.readBytes(&out[0], size);
+    const std::size_t read = file.read_bytes(&out[0], size);
     file.close();
     if (read != size)
     {
@@ -900,7 +896,8 @@ Status status()
     Status out{};
     out.supported = true;
     out.sd_present = sd_available();
-    out.has_backup = out.sd_present && SD.exists(kBackupPath);
+    out.has_backup = out.sd_present &&
+                     ::platform::esp::arduino_common::storage::sd_exists(kBackupPath);
     out.busy = false;
     if (!out.sd_present)
     {
@@ -945,7 +942,7 @@ bool backup()
 
 bool restore()
 {
-    if (!sd_available() || !SD.exists(kBackupPath))
+    if (!sd_available() || !::platform::esp::arduino_common::storage::sd_exists(kBackupPath))
     {
         return false;
     }
@@ -983,11 +980,12 @@ bool remove()
     {
         return false;
     }
-    if (SD.exists(kBackupTempPath))
+    if (::platform::esp::arduino_common::storage::sd_exists(kBackupTempPath))
     {
-        SD.remove(kBackupTempPath);
+        ::platform::esp::arduino_common::storage::sd_remove(kBackupTempPath);
     }
-    return !SD.exists(kBackupPath) || SD.remove(kBackupPath);
+    return !::platform::esp::arduino_common::storage::sd_exists(kBackupPath) ||
+           ::platform::esp::arduino_common::storage::sd_remove(kBackupPath);
 }
 
 } // namespace platform::ui::settings_backup

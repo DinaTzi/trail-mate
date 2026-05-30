@@ -1,8 +1,8 @@
 #include "platform/ui/route_storage.h"
 
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include "platform/ui/device_runtime.h"
 
-#include <SD.h>
 #include <algorithm>
 #include <cctype>
 
@@ -40,24 +40,24 @@ bool list_routes(std::vector<std::string>& out_routes, std::size_t max_count)
         return false;
     }
 
-    File dir = SD.open(kRouteDir);
-    if (!dir || !dir.isDirectory())
+    ::platform::esp::arduino_common::storage::SdRuntimeDir dir;
+    if (!dir.open(kRouteDir))
     {
         return false;
     }
 
-    for (File file = dir.openNextFile(); file && out_routes.size() < max_count; file = dir.openNextFile())
+    char name_buf[128];
+    bool is_dir = false;
+    while (out_routes.size() < max_count && dir.read_next(name_buf, sizeof(name_buf), &is_dir))
     {
-        if (!file.isDirectory())
+        if (!is_dir)
         {
-            const char* raw_name = file.name();
-            std::string name = raw_name ? raw_name : "";
+            std::string name = name_buf;
             if (has_kml_extension(name))
             {
                 out_routes.push_back(name);
             }
         }
-        file.close();
     }
     dir.close();
 
@@ -71,7 +71,7 @@ bool remove_route(const std::string& path)
     {
         return false;
     }
-    return SD.remove(path.c_str());
+    return ::platform::esp::arduino_common::storage::sd_remove(path.c_str());
 }
 
 const char* route_dir()
