@@ -1,6 +1,7 @@
 #include "platform/esp/common/walkie_runtime.h"
 
-#if defined(ARDUINO_T_LORA_PAGER) && defined(ARDUINO_LILYGO_LORA_SX1262)
+#if defined(ARDUINO_T_LORA_PAGER) && \
+    (defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_LR1121))
 #include <Arduino.h>
 #include <RadioLib.h>
 

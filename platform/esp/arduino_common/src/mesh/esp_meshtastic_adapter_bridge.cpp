@@ -99,7 +99,8 @@ EspMeshtasticPacketRadio::EspMeshtasticPacketRadio(LoraBoard& board)
     }
 
     app::AppTasks::requestRadioReceiveRestart();
-#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280)
+#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280) || \
+    defined(ARDUINO_LILYGO_LORA_LR1121)
     const int state = board_.transmitRadio(packet.data, packet.size);
 #else
     const int state = RADIOLIB_ERR_UNSUPPORTED;

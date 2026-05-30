@@ -214,9 +214,9 @@ The table below describes the **real build targets that exist in the repository 
 | Device / Target | Build Target | Stack | Current Status |
 | --- | --- | --- | --- |
 | **LILYGO T-LoRa-Pager (SX1262)** | `tlora_pager_sx1262` | PlatformIO / Arduino | Current default environment and still the most complete day-to-day validation target |
+| **LILYGO T-LoRa-Pager (LR1121)** | `tlora_pager_lr1121` | PlatformIO / Arduino | Supported Pager RF variant with LR1121 RF switch and TCXO bring-up |
 | **LILYGO T-Deck** | `tdeck` | PlatformIO / Arduino | Primary validation target; keyboard, chat, maps, and shared UI paths are actively used |
 | **GAT562 Mesh EVB Pro** | `gat562_mesh_evb_pro` | PlatformIO / Arduino (nRF52) | Resource-constrained target focused on monochrome UI, Meshtastic, BLE, and persistence paths; some features are intentionally trimmed to fit RAM limits |
-| **LILYGO T-LoRa-Pager (SX1280)** | `tlora_pager_sx1280` | PlatformIO / Arduino | Integrated Pager RF variant for alternate hardware versions |
 | **LILYGO T-Deck Pro** | `tdeck_pro_a7682e` / `tdeck_pro_pcm512a` | PlatformIO / Arduino | Separate environments exist, but this line is still in active bring-up / adaptation work |
 | **LILYGO T-Watch S3** | `lilygo_twatch_s3` | PlatformIO / Arduino | Experimental target used more for system and UI validation than for full feature coverage |
 | **M5Stack Tab5** | `TRAIL_MATE_IDF_TARGET=tab5` | ESP-IDF | Main large-screen IDF bring-up target; the shared shell runs and hardware-specific work is still being filled in |
@@ -248,13 +248,13 @@ Common build commands:
 ```bash
 # Primary targets
 platformio run -e tlora_pager_sx1262
+platformio run -e tlora_pager_lr1121
 platformio run -e tdeck
 
 # nRF52 / resource-constrained target
 platformio run -e gat562_mesh_evb_pro
 
 # Other integrated targets
-platformio run -e tlora_pager_sx1280
 platformio run -e tdeck_pro_a7682e
 platformio run -e tdeck_pro_pcm512a
 platformio run -e lilygo_twatch_s3
@@ -264,7 +264,6 @@ If you want more verbose diagnostics, the repository also provides these debug e
 
 ```bash
 platformio run -e tlora_pager_sx1262_debug
-platformio run -e tlora_pager_sx1280_debug
 platformio run -e tdeck_debug
 platformio run -e lilygo_twatch_s3_debug
 ```

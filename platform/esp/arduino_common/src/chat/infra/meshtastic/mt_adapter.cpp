@@ -2621,7 +2621,8 @@ bool MtAdapter::sendNodeInfoTo(uint32_t dest, bool want_response, ChannelId chan
     hw_model = meshtastic_HardwareModel_T_DECK;
 #elif defined(ARDUINO_LILYGO_TWATCH_S3)
     hw_model = meshtastic_HardwareModel_T_WATCH_S3;
-#elif defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280)
+#elif defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280) || \
+    defined(ARDUINO_LILYGO_LORA_LR1121)
     hw_model = meshtastic_HardwareModel_T_LORA_PAGER;
 #endif
 
@@ -2878,7 +2879,8 @@ void MtAdapter::configureRadio()
     radio_sf_ = radio.sf;
     radio_cr_ = radio.cr_denom;
 
-#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280)
+#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280) || \
+    defined(ARDUINO_LILYGO_LORA_LR1121)
     board_.configureLoraRadio(radio.freq_mhz,
                               radio.bw_khz,
                               radio.sf,
@@ -3001,7 +3003,8 @@ void MtAdapter::startRadioReceive()
         app::AppTasks::requestRadioReceiveRestart();
         return;
     }
-#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280)
+#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280) || \
+    defined(ARDUINO_LILYGO_LORA_LR1121)
     app::AppTasks::requestRadioReceiveRestart();
     int state = board_.startRadioReceive();
     if (state == RADIOLIB_ERR_NONE)
@@ -3025,7 +3028,8 @@ bool MtAdapter::transmitWirePacket(const uint8_t* wire_data, size_t wire_size)
 
     app::AppTasks::requestRadioReceiveRestart();
 
-#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280)
+#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280) || \
+    defined(ARDUINO_LILYGO_LORA_LR1121)
     const int state = board_.transmitRadio(wire_data, wire_size);
 #else
     const int state = RADIOLIB_ERR_UNSUPPORTED;

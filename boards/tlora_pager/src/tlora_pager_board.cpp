@@ -722,6 +722,32 @@ bool TLoRaPagerBoard::initLoRa()
     }
 
     devices_probe |= HW_RADIO_ONLINE;
+#if defined(ARDUINO_LILYGO_LORA_LR1121)
+    static const uint32_t rfswitch_dio_pins[] = {
+        RADIOLIB_LR11X0_DIO5,
+        RADIOLIB_LR11X0_DIO6,
+        RADIOLIB_NC,
+        RADIOLIB_NC,
+        RADIOLIB_NC,
+    };
+    static const Module::RfSwitchMode_t rfswitch_table[] = {
+        {LR11x0::MODE_STBY, {LOW, LOW}},
+        {LR11x0::MODE_RX, {LOW, HIGH}},
+        {LR11x0::MODE_TX, {HIGH, LOW}},
+        {LR11x0::MODE_TX_HP, {HIGH, LOW}},
+        {LR11x0::MODE_TX_HF, {LOW, LOW}},
+        {LR11x0::MODE_GNSS, {LOW, LOW}},
+        {LR11x0::MODE_WIFI, {LOW, LOW}},
+        END_OF_MODE_TABLE,
+    };
+
+    radio_.setRfSwitchTable(rfswitch_dio_pins, rfswitch_table);
+    state = radio_.setTCXO(3.0f);
+    if (state != RADIOLIB_ERR_NONE)
+    {
+        log_w("LR1121 TCXO config returned code: %d", state);
+    }
+#endif
     log_i("✅Radio init succeeded");
     return true;
 }
@@ -1364,7 +1390,11 @@ float TLoRaPagerBoard::getRadioInstantRSSI()
 {
     if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20)))
     {
+#if defined(ARDUINO_LILYGO_LORA_SX1262)
         const float rssi = radio_.getRSSI(false);
+#else
+        const float rssi = radio_.getRSSI();
+#endif
         LilyGoDispArduinoSPI::unlock();
         return rssi;
     }
@@ -1396,8 +1426,13 @@ int TLoRaPagerBoard::configureFskRadio(float freq_mhz, float bit_rate_kbps, floa
         int rc = radio_.standby();
         if (rc == RADIOLIB_ERR_NONE)
         {
+#if defined(ARDUINO_LILYGO_LORA_LR1121)
+            rc = radio_.beginGFSK(freq_mhz, bit_rate_kbps, freq_dev_khz, rx_bw_khz,
+                                  tx_power, preamble_len, 3.0f);
+#else
             rc = radio_.beginFSK(freq_mhz, bit_rate_kbps, freq_dev_khz, rx_bw_khz,
                                  tx_power, preamble_len, tcxo_voltage);
+#endif
         }
         if (rc == RADIOLIB_ERR_NONE)
         {
@@ -1423,7 +1458,18 @@ int TLoRaPagerBoard::restoreLoRaRadio()
 
     if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(200)))
     {
+#if defined(ARDUINO_LILYGO_LORA_LR1121)
+        int rc = radio_.begin(cached.valid ? cached.freq_mhz : 434.0f,
+                              cached.valid ? cached.bw_khz : 125.0f,
+                              cached.valid ? cached.sf : 9,
+                              cached.valid ? cached.cr_denom : 7,
+                              cached.valid ? cached.sync_word : RADIOLIB_LR11X0_LORA_SYNC_WORD_PRIVATE,
+                              cached.valid ? cached.tx_power : 10,
+                              cached.valid ? cached.preamble_len : 8,
+                              3.0f);
+#else
         int rc = radio_.begin();
+#endif
         LilyGoDispArduinoSPI::unlock();
         if (rc != RADIOLIB_ERR_NONE)
         {

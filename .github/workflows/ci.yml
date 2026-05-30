@@ -47,6 +47,7 @@ jobs:
       matrix:
         env:
           - tlora_pager_sx1262
+          - tlora_pager_lr1121
           - tdeck
           - lilygo_twatch_s3
           - gat562_mesh_evb_pro
@@ -108,7 +109,7 @@ jobs:
           fi
 
       - name: Prepare web flasher image
-        if: matrix.env == 'tlora_pager_sx1262' || matrix.env == 'tdeck' || matrix.env == 'lilygo_twatch_s3'
+        if: matrix.env == 'tlora_pager_sx1262' || matrix.env == 'tlora_pager_lr1121' || matrix.env == 'tdeck' || matrix.env == 'lilygo_twatch_s3'
         run: |
           python scripts/prepare_webflash_release.py \
             --env ${{ matrix.env }} \

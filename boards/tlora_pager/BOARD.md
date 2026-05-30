@@ -25,6 +25,7 @@ This record describes hardware facts only.
 - rotary encoder present: yes
 - trackball present: no
 - LoRa present: yes
+- LoRa variants: SX1262, LR1121
 - GPS present: yes
 - SD card present: yes
 - audio codec present: yes

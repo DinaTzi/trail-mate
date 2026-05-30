@@ -336,6 +336,8 @@ const char* firmware_target_id()
     return "tdeck";
 #elif defined(ARDUINO_T_LORA_PAGER) && defined(ARDUINO_LILYGO_LORA_SX1262)
     return "tlora-pager-sx1262";
+#elif defined(ARDUINO_T_LORA_PAGER) && defined(ARDUINO_LILYGO_LORA_LR1121)
+    return "tlora-pager-lr1121";
 #elif defined(ARDUINO_T_WATCH_S3)
     return "lilygo-twatch-s3";
 #else
