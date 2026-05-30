@@ -5,7 +5,8 @@
 
 #pragma once
 
-#include "platform/ui/team_ui_types.h"
+#include "platform/ui/team_ui_chat_log_store.h"
+#include "platform/ui/team_ui_snapshot_store.h"
 #include "team/domain/team_types.h"
 #include "team/protocol/team_chat.h"
 #include "team/protocol/team_mgmt.h"
@@ -22,28 +23,6 @@ namespace team
 namespace ui
 {
 
-struct TeamUiSnapshot
-{
-    bool in_team = false;
-    bool pending_join = false;
-    uint32_t pending_join_started_s = 0;
-    bool kicked_out = false;
-    bool self_is_leader = false;
-    uint32_t last_event_seq = 0;
-    uint32_t team_chat_unread = 0;
-
-    TeamId team_id{};
-    bool has_team_id = false;
-
-    std::string team_name;
-    uint32_t security_round = 0;
-    uint32_t last_update_s = 0;
-    std::array<uint8_t, team::proto::kTeamChannelPskSize> team_psk{};
-    bool has_team_psk = false;
-
-    std::vector<TeamMemberUi> members;
-};
-
 enum class TeamKeyEventType : uint8_t
 {
     TeamCreated = 1,
@@ -51,15 +30,6 @@ enum class TeamKeyEventType : uint8_t
     MemberKicked = 3,
     LeaderTransferred = 4,
     EpochRotated = 5
-};
-
-struct TeamChatLogEntry
-{
-    bool incoming = false;
-    uint32_t ts = 0;
-    uint32_t peer_id = 0;
-    team::proto::TeamChatType type = team::proto::TeamChatType::Text;
-    std::vector<uint8_t> payload;
 };
 
 struct TeamPosSample
@@ -72,27 +42,8 @@ struct TeamPosSample
     uint32_t ts = 0;
 };
 
-class ITeamUiStore
-{
-  public:
-    virtual ~ITeamUiStore() = default;
-    virtual bool load(TeamUiSnapshot& out) = 0;
-    virtual void save(const TeamUiSnapshot& in) = 0;
-    virtual void clear() = 0;
-};
-
-// Simple in-memory fallback store used when no platform persistence store is installed.
-class TeamUiMemoryStore : public ITeamUiStore
-{
-  public:
-    bool load(TeamUiSnapshot& out) override;
-    void save(const TeamUiSnapshot& in) override;
-    void clear() override;
-
-  private:
-    static bool has_snapshot_;
-    static TeamUiSnapshot snapshot_;
-};
+using ITeamUiStore = ITeamUiSnapshotStore;
+using TeamUiMemoryStore = TeamUiSnapshotMemoryStore;
 
 ITeamUiStore& team_ui_get_store();
 void team_ui_set_store(ITeamUiStore* store);

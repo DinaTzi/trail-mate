@@ -76,9 +76,18 @@ The projector may read legacy payload strings after decode, but it must not allo
 
 `TeamChatPresentationSource` consumes `TeamRichPayloadProjector`.
 
-For Phase 7.8, it projects `TeamRichPayloadDisplay::summary` into existing `MessageRow::text` and conversation subtitle fields.
+It maps `TeamRichPayloadDisplay` into `MessageRow::team_rich_payload` and sets
+`MessageRow::has_team_rich_payload`.
 
-This keeps compatibility with the current chat renderer while making the display decode owner explicit.
+`MessageRow::text` and conversation subtitles may still receive
+`TeamRichPayloadDisplay::summary` as fallback text. The fallback is not the
+owner boundary. Structured Team row fields are the render contract for Team
+location and command rows.
+
+`ui_presentation` must not depend on `ui_shared` Team projector types. The row
+model carries a presentation-native `TeamMessageRichPayload` shape so Chat
+renderers can consume structured Team display data without depending on Team
+runtime or Team Page state.
 
 ## Controller Rule
 
@@ -103,11 +112,10 @@ Phase 7.8 does not:
 
 - change Team protocol packet format
 - change Team action send path
-- replace `LegacyTeamActionBridge`
+- keep Team rich display separate from `TeamActionRuntimeSink`
 - change `TeamUiStore` schema
 - add Map overlays
-- implement full Team rich cards
-- redesign `MessageRow`
+- require a full Team rich card visual redesign
 - rewrite `ChatWorkspaceModel`
 - replace the legacy `TeamUiStore` recent-log API
 

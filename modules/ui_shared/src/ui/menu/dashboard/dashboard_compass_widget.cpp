@@ -170,7 +170,7 @@ void refresh_compass_widget()
     if (self_valid)
     {
         team::ui::TeamUiSnapshot team_snap;
-        if (team::ui::team_ui_get_store().load(team_snap))
+        if (team::ui::team_ui_snapshot_store().load(team_snap))
         {
             auto& contacts = app::messagingFacade().getContactService();
             const uint32_t self_id = app::messagingFacade().getSelfNodeId();

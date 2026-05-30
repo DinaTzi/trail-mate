@@ -39,6 +39,31 @@ bool message_ref_matches_id(const ::ui::chat::MessageRef& ref,
     }
     return ref.local_id == static_cast<uint64_t>(msg_id);
 }
+
+std::string format_team_rich_payload_text(
+    const ::ui::chat::TeamMessageRichPayload& payload)
+{
+    std::string out;
+    if (!payload.badge.empty() &&
+        payload.kind != ::ui::chat::TeamMessageRichPayloadKind::Text)
+    {
+        out += payload.badge.c_str();
+        out += ": ";
+    }
+    if (!payload.summary.empty())
+    {
+        out += payload.summary.c_str();
+    }
+    else if (!payload.title.empty())
+    {
+        out += payload.title.c_str();
+    }
+    else
+    {
+        out += "Team";
+    }
+    return out;
+}
 } // namespace
 
 namespace chat::ui
@@ -157,15 +182,19 @@ void ChatConversationScreen::createMessageItem(const ::ui::chat::MessageRow& row
                           LV_FLEX_ALIGN_START);
 
     std::string display_text;
+    const std::string body_text =
+        row.has_team_rich_payload
+            ? format_team_rich_payload_text(row.team_rich_payload)
+            : std::string(row.text.c_str());
     if (!row.outgoing && !row.sender_label.empty())
     {
         display_text = row.sender_label.c_str();
         display_text += ": ";
-        display_text += row.text.c_str();
+        display_text += body_text;
     }
     else
     {
-        display_text = row.text.c_str();
+        display_text = body_text;
     }
 
     item.text_label = lv_label_create(item.container);

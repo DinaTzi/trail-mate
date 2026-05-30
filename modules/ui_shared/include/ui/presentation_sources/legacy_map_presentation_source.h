@@ -1,6 +1,6 @@
 #pragma once
 
-#include "platform/ui/team_ui_store_runtime.h"
+#include "platform/ui/team_ui_snapshot_store.h"
 #include "ui/presentation_sources/legacy_map_presentation_state.h"
 #include "ui_presentation/gps/gps_status_source.h"
 #include "ui_presentation/map/map_presentation_source.h"
@@ -28,7 +28,7 @@ class LegacyMapPresentationSource final : public ui::map::IMapPresentationSource
   public:
     LegacyMapPresentationSource(ui::gps::IGpsStatusSource& gps_source,
                                 const LegacyMapPresentationState& state,
-                                team::ui::ITeamUiStore* team_store = nullptr);
+                                team::ui::ITeamUiSnapshotStore* team_store = nullptr);
 
     bool buildMapWorkspaceSnapshot(
         const ui::map::MapWorkspaceRequest& request,
@@ -37,7 +37,7 @@ class LegacyMapPresentationSource final : public ui::map::IMapPresentationSource
   private:
     ui::gps::IGpsStatusSource& gps_source_;
     const LegacyMapPresentationState& state_;
-    team::ui::ITeamUiStore* team_store_ = nullptr;
+    team::ui::ITeamUiSnapshotStore* team_store_ = nullptr;
 };
 
 } // namespace ui::presentation_sources

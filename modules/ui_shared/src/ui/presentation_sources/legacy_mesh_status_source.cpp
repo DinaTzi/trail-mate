@@ -4,7 +4,7 @@
 #include "app/app_facade_access.h"
 #include "chat/infra/mesh_protocol_utils.h"
 #include "chat/usecase/chat_service.h"
-#include "platform/ui/team_ui_store_runtime.h"
+#include "platform/ui/team_ui_snapshot_store.h"
 #include "sys/clock.h"
 
 #include <cstdio>
@@ -29,7 +29,7 @@ bool LegacyMeshStatusSource::buildMeshStatusSnapshot(ui::mesh::MeshStatusSnapsho
     out.radio_ready = true;
 
     team::ui::TeamUiSnapshot team_snapshot;
-    const bool has_team = team::ui::team_ui_get_store().load(team_snapshot) && team_snapshot.in_team;
+    const bool has_team = team::ui::team_ui_snapshot_store().load(team_snapshot) && team_snapshot.in_team;
     const uint32_t team_unread = has_team ? team_snapshot.team_chat_unread : 0U;
     const uint32_t chat_unread =
         static_cast<uint32_t>(app::messagingFacade().getChatService().getTotalUnread());

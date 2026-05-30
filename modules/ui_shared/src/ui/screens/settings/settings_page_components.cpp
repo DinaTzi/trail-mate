@@ -885,7 +885,7 @@ static void perform_factory_reset()
         prefs_clear_ns(ns);
     }
 
-    team::ui::team_ui_get_store().clear();
+    team::ui::team_ui_snapshot_store().clear();
 
     ::ui::SystemNotification::show(::ui::i18n::tr("Resetting..."), 1500);
     platform_delay_ms(300);

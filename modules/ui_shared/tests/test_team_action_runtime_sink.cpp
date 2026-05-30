@@ -1,4 +1,4 @@
-#include "ui/team_actions/legacy_team_action_bridge.h"
+#include "ui/team_actions/team_action_runtime_sink.h"
 
 #include "team/protocol/team_chat.h"
 #include "team/protocol/team_location_marker.h"
@@ -79,8 +79,8 @@ team::ui::TeamUiSnapshot readySnapshot()
 
 int main()
 {
-    team::ui::TeamUiMemoryStore store;
-    team::ui::team_ui_set_store(&store);
+    team::ui::TeamUiSnapshotMemoryStore store;
+    team::ui::team_ui_set_snapshot_store(&store);
     store.clear();
 
     FakeTeamCommandPort port;
@@ -93,9 +93,10 @@ int main()
     location_source.snapshot.accuracy_m = 6.0f;
     location_source.snapshot.timestamp = 12345;
 
-    ui::team_actions::LegacyTeamActionBridge bridge(store,
-                                                    &port,
-                                                    &location_source);
+    ui::team_actions::TeamActionRuntimeSink sink(store,
+                                                 team::ui::team_ui_chat_log_store(),
+                                                 &port,
+                                                 &location_source);
 
     ui::team_actions::TeamActionRequest location;
     location.kind = ui::team_actions::TeamActionKind::LocationMarker;
@@ -103,12 +104,12 @@ int main()
     location.location.lon = 121.4737;
     location.location.marker_icon =
         static_cast<uint8_t>(team::proto::TeamLocationMarkerIcon::Rally);
-    assert(bridge.sendTeamAction(location).failure == ui::UiActionFailure::NotReady);
+    assert(sink.sendTeamAction(location).failure == ui::UiActionFailure::NotReady);
 
     store.save(readySnapshot());
 
     location.location.marker_icon = 99;
-    assert(bridge.sendTeamAction(location).failure ==
+    assert(sink.sendTeamAction(location).failure ==
            ui::UiActionFailure::InvalidInput);
 
     location.location.marker_icon =
@@ -116,7 +117,7 @@ int main()
     location.location.has_altitude = true;
     location.location.altitude_m = 123.4;
     location.location.accuracy_m = 7.0f;
-    const auto location_result = bridge.sendTeamAction(location);
+    const auto location_result = sink.sendTeamAction(location);
     assert(location_result.ok);
     assert(port.set_keys_count == 1);
     assert(port.send_count == 1);
@@ -139,7 +140,7 @@ int main()
     current_location.location.use_current_location = true;
     current_location.location.marker_icon =
         static_cast<uint8_t>(team::proto::TeamLocationMarkerIcon::GoodFind);
-    const auto current_location_result = bridge.sendTeamAction(current_location);
+    const auto current_location_result = sink.sendTeamAction(current_location);
     assert(current_location_result.ok);
     assert(location_source.read_count == 1);
     assert(port.last_message.header.type == team::proto::TeamChatType::Location);
@@ -154,42 +155,65 @@ int main()
     assert(decoded_location.ts == 12345);
 
     location_source.snapshot.valid = false;
-    assert(bridge.sendTeamAction(current_location).failure ==
+    assert(sink.sendTeamAction(current_location).failure ==
            ui::UiActionFailure::NotReady);
     location_source.snapshot.valid = true;
 
-    ui::team_actions::LegacyTeamActionBridge bridge_without_location_source(
+    ui::team_actions::TeamActionRequest share_location;
+    share_location.kind = ui::team_actions::TeamActionKind::LocationShare;
+    share_location.location_share.use_current_location = true;
+    share_location.location_share.label = "camp";
+    const auto share_location_result = sink.sendTeamAction(share_location);
+    assert(share_location_result.ok);
+    assert(location_source.read_count == 3);
+    assert(port.last_message.header.type == team::proto::TeamChatType::Location);
+    assert(team::proto::decodeTeamChatLocation(
+        port.last_message.payload.data(),
+        port.last_message.payload.size(),
+        &decoded_location));
+    assert(decoded_location.lat_e7 == 302672000);
+    assert(decoded_location.lon_e7 == -977431000);
+    assert(decoded_location.source == 0);
+    assert(decoded_location.label == "camp");
+
+    ui::team_actions::TeamActionRuntimeSink sink_without_location_source(
         store,
+        team::ui::team_ui_chat_log_store(),
         &port);
-    assert(bridge_without_location_source.sendTeamAction(current_location).failure ==
+    assert(sink_without_location_source.sendTeamAction(current_location).failure ==
+           ui::UiActionFailure::NotReady);
+    assert(sink_without_location_source.sendTeamAction(share_location).failure ==
            ui::UiActionFailure::NotReady);
 
     std::vector<team::ui::TeamChatLogEntry> log;
-    assert(team::ui::team_ui_chatlog_load_recent(readySnapshot().team_id, 4, log));
+    assert(team::ui::team_ui_chat_log_store().loadRecent(
+        readySnapshot().team_id,
+        4,
+        log));
     assert(!log.empty());
     assert(log.back().type == team::proto::TeamChatType::Location);
 
     ui::team_actions::TeamActionRequest text;
     text.kind = ui::team_actions::TeamActionKind::Text;
     text.text = "team hello";
-    const auto text_result = bridge.sendTeamAction(text);
+    const auto text_result = sink.sendTeamAction(text);
     assert(text_result.ok);
     assert(port.last_message.header.type == team::proto::TeamChatType::Text);
 
     ui::team_actions::TeamActionRequest command;
     command.kind = ui::team_actions::TeamActionKind::Command;
-    assert(bridge.sendTeamAction(command).failure ==
+    assert(sink.sendTeamAction(command).failure ==
            ui::UiActionFailure::InvalidInput);
 
     command.command.kind = ui::team_actions::TeamCommandKind::Custom;
-    assert(bridge.sendTeamAction(command).failure ==
+    assert(sink.sendTeamAction(command).failure ==
            ui::UiActionFailure::Unsupported);
 
     command.command.kind = ui::team_actions::TeamCommandKind::MoveTo;
     command.command.lat = 31.2304;
     command.command.lon = 121.4737;
     command.command.payload = "move";
-    const auto command_result = bridge.sendTeamAction(command);
+    const auto command_result = sink.sendTeamAction(command);
     assert(command_result.ok);
     assert(port.last_message.header.type == team::proto::TeamChatType::Command);
 
@@ -202,6 +226,6 @@ int main()
     assert(decoded_command.note == "move");
 
     store.clear();
-    team::ui::team_ui_set_store(nullptr);
+    team::ui::team_ui_set_snapshot_store(nullptr);
     return 0;
 }

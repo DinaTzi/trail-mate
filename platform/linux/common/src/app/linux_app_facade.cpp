@@ -35,6 +35,7 @@ bool isTeamUiEvent(const ::sys::Event& event)
     return event.type == ::sys::EventType::TeamKick ||
            event.type == ::sys::EventType::TeamTransferLeader ||
            event.type == ::sys::EventType::TeamKeyDist ||
+           event.type == ::sys::EventType::TeamKeyRequest ||
            event.type == ::sys::EventType::TeamStatus ||
            event.type == ::sys::EventType::TeamPosition ||
            event.type == ::sys::EventType::TeamWaypoint ||

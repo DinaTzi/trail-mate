@@ -93,6 +93,46 @@ uint32_t timestamp_from_presentation_label(const ::ui::FixedText<24>& label)
     }
     return static_cast<uint32_t>(value);
 }
+
+bool is_structured_team_payload(
+    const ::ui::chat::TeamMessageRichPayload& payload)
+{
+    return payload.kind == ::ui::chat::TeamMessageRichPayloadKind::Location ||
+           payload.kind == ::ui::chat::TeamMessageRichPayloadKind::Command;
+}
+
+std::string rich_payload_kind_label(
+    ::ui::chat::TeamMessageRichPayloadKind kind)
+{
+    switch (kind)
+    {
+    case ::ui::chat::TeamMessageRichPayloadKind::Location:
+        return "Location";
+    case ::ui::chat::TeamMessageRichPayloadKind::Command:
+        return "Command";
+    case ::ui::chat::TeamMessageRichPayloadKind::Unsupported:
+        return "Unsupported";
+    case ::ui::chat::TeamMessageRichPayloadKind::Text:
+        return "Text";
+    case ::ui::chat::TeamMessageRichPayloadKind::None:
+        break;
+    }
+    return "Team";
+}
+
+std::string format_team_rich_payload_text(
+    const ::ui::chat::TeamMessageRichPayload& payload)
+{
+    if (!payload.summary.empty())
+    {
+        return payload.summary.c_str();
+    }
+    if (!payload.title.empty())
+    {
+        return payload.title.c_str();
+    }
+    return rich_payload_kind_label(payload.kind);
+}
 } // namespace
 
 static bool is_valid_epoch_ts(uint32_t ts)
@@ -475,7 +515,10 @@ void ChatConversationScreen::createMessageItem(const ::ui::chat::MessageRow& row
     chat::ui::conversation::styles::apply_message_row(item.container);
 
     const bool is_self = row.outgoing;
-    std::string display_text = row.text.c_str();
+    std::string display_text =
+        row.has_team_rich_payload
+            ? format_team_rich_payload_text(row.team_rich_payload)
+            : std::string(row.text.c_str());
     std::string inferred_sender;
     if (!is_self &&
         conv_.protocol == chat::MeshProtocol::MeshCore &&
@@ -564,6 +607,36 @@ void ChatConversationScreen::createMessageItem(const ::ui::chat::MessageRow& row
 
     item.text_label = chat::ui::layout::create_bubble_text(bubble);
     chat::ui::conversation::styles::apply_bubble_text(item.text_label);
+    if (row.has_team_rich_payload &&
+        is_structured_team_payload(row.team_rich_payload))
+    {
+        lv_obj_t* badge_label = chat::ui::layout::create_bubble_text(bubble);
+        chat::ui::conversation::styles::apply_bubble_time(badge_label);
+        const std::string badge =
+            row.team_rich_payload.badge.empty()
+                ? rich_payload_kind_label(row.team_rich_payload.kind)
+                : std::string(row.team_rich_payload.badge.c_str());
+        lv_label_set_text(badge_label, badge.c_str());
+        ::ui::fonts::apply_localized_font(
+            badge_label,
+            lv_label_get_text(badge_label),
+            ::ui::fonts::ui_chrome_font());
+        const lv_coord_t max_badge_w =
+            std::max<lv_coord_t>(max_bubble_w - 2 * kBubblePadX, 24);
+        lv_obj_set_width(badge_label, max_badge_w);
+
+        if (!row.team_rich_payload.title.empty())
+        {
+            lv_obj_t* title_label = chat::ui::layout::create_bubble_text(bubble);
+            chat::ui::conversation::styles::apply_bubble_text(title_label);
+            lv_label_set_text(title_label,
+                              row.team_rich_payload.title.c_str());
+            ::ui::fonts::apply_chat_content_font(
+                title_label,
+                row.team_rich_payload.title.c_str());
+            lv_obj_set_width(title_label, max_badge_w);
+        }
+    }
     lv_label_set_text(item.text_label, display_text.c_str());
     ::ui::fonts::apply_chat_content_font(item.text_label, display_text.c_str());
 

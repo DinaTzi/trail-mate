@@ -37,6 +37,9 @@ class TeamController
     bool onKeyDistPlain(const team::proto::TeamKeyDist& msg,
                         chat::ChannelId channel, chat::NodeId dest,
                         bool want_ack = false, bool want_response = false);
+    bool onKeyRequest(const team::proto::TeamKeyRequest& msg,
+                      chat::ChannelId channel, chat::NodeId dest = 0,
+                      bool want_ack = false, bool want_response = false);
     bool onStatus(const team::proto::TeamStatus& status,
                   chat::ChannelId channel, chat::NodeId dest = 0,
                   bool want_ack = false, bool want_response = false);

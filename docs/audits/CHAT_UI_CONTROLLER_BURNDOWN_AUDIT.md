@@ -15,7 +15,7 @@ This audit prevents new Chat / Team / key verification ownership from being adde
 | Textarea input parsing | Compose and verification number inputs are widget concerns | Must not encode runtime payloads or access protocol APIs |
 | Button callback dispatch | LVGL callbacks still enter the controller | Callback must submit to model/action sink, not own runtime state |
 | Conversation screen navigation | Existing chat UI state machine remains controller-local | Must not define delivery/key/team ownership |
-| Team position picker workflow coordination | Controller starts picker workflow and handles selected/cancel results | Widget lifecycle belongs to `TeamPositionPickerRenderer`; send path submits `TeamActionRequest` |
+| Team position picker workflow coordination | Controller starts picker workflow and handles selected/cancel results | Widget lifecycle belongs to `TeamPositionPickerRenderer`; send path delegates through `ChatTeamWorkflow` |
 | IME attach / detach | Existing LVGL input integration remains widget lifecycle | Does not affect Chat/Team runtime state |
 
 ## B. Migrated Runtime Responsibilities
@@ -25,7 +25,7 @@ This audit prevents new Chat / Team / key verification ownership from being adde
 | Delivery read state | `ChatDeliveryReadModel` owned by runtime/composition | Controller must not own or clear the read model |
 | Delivery event projection | `ChatDeliveryEventProjector` behind `IChatDeliveryEventPort` | Controller may only forward legacy events while event pump is legacy |
 | Delivery actions | `ChatDeliveryActionService` / `IChatDeliveryActionSink` | Controller must not directly retry/cancel/clear delivery records |
-| Team location/command payload encoding | `LegacyTeamActionBridge` / Team action runtime adapter | Controller submits `TeamActionRequest` only |
+| Team location/command payload encoding | `ChatTeamWorkflow` / `TeamActionRuntimeSink` / Team action runtime adapter | Controller must not construct `TeamActionRequest` |
 | Team rich payload display projection | `TeamRichPayloadProjector` / `TeamChatPresentationSource` | Controller consumes `team_chat_model_.snapshot()` rows only |
 | Key verification state/session | `KeyVerificationModel` plus `LegacyKeyVerificationSource` | Controller selects peer and renders snapshot only |
 | Key verification submit/trust runtime calls | `LegacyKeyVerificationActionSink` | Controller calls `KeyVerificationModel` actions only |
@@ -40,7 +40,7 @@ This audit prevents new Chat / Team / key verification ownership from being adde
 | `ChatService::processIncoming` | `ChatPageRuntimeEventPump::update()` | App-wide runtime scheduler owns cadence outside page runtime | burned down from controller |
 | `ChatService::flushStore` | `ChatPageRuntimeEventPump::update()` | App-wide runtime scheduler owns cadence outside page runtime | burned down from controller |
 | EventBus forwarding | `ChatPageRuntimeFacade` / `ChatPageRuntimeEventPump` | App-wide runtime scheduler owns EventBus routing outside page runtime | burned down from controller |
-| Team position picker selection workflow | `onTeamPositionIconSelected(...)` / `onTeamPositionCancel(...)` | Future workflow coordinator or UX pack-specific picker flow owns selection routing | contained |
+| Team position picker selection workflow | `ChatTeamWorkflow` plus controller open/close callbacks | Controller only closes picker and requests workflow send | burned down from controller action ownership |
 | Legacy Team log formatting outside Chat UI | Contacts/GPS/team-page legacy paths | Shared Team presentation projection is reused by those screens | remaining legacy |
 | Protocol mismatch UX | Reply guard notifications | Protocol support model exposes UI-ready disabled reason | remaining legacy |
 
@@ -55,3 +55,4 @@ This audit prevents new Chat / Team / key verification ownership from being adde
 - maps Team to DirectPeer or Channel conversation semantics
 - decodes or formats Team location/command payloads for chat display
 - creates or stores Team position picker overlay, panel, hint label, group, or icon event contexts
+- constructs `TeamActionRequest` or calls `sendTeamAction(...)` directly

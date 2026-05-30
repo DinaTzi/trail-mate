@@ -11,6 +11,7 @@ class TeamEventBusSink : public team::ITeamEventSink
     void onTeamKick(const TeamKickEvent& event) override;
     void onTeamTransferLeader(const TeamTransferLeaderEvent& event) override;
     void onTeamKeyDist(const TeamKeyDistEvent& event) override;
+    void onTeamKeyRequest(const TeamKeyRequestEvent& event) override;
     void onTeamStatus(const TeamStatusEvent& event) override;
     void onTeamPosition(const TeamPositionEvent& event) override;
     void onTeamWaypoint(const TeamWaypointEvent& event) override;

@@ -253,7 +253,7 @@ UConsoleMapWorkspaceModel::UConsoleMapWorkspaceModel(
     : services_(services),
       legacy_map_source_(legacy_gps_source_,
                          legacy_map_state_,
-                         &::team::ui::team_ui_get_store()),
+                         &::team::ui::team_ui_snapshot_store()),
       legacy_map_sink_(legacy_gps_source_, legacy_map_state_),
       presentation_model_(legacy_map_source_, legacy_map_sink_),
       zoom_(std::clamp(

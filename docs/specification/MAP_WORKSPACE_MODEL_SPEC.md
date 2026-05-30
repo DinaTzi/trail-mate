@@ -161,7 +161,9 @@ It must not expose:
 - marker widget objects
 - rich Team location/command payloads
 
-Rich Team map markers require a later bounded map overlay presentation phase.
+Team member position rows are projected through `TeamMapOverlaySource` /
+`MapOverlaySnapshotSource`. `TeamOverlaySummary` remains only the workspace
+summary; rich map marker facts must stay in the overlay source path.
 
 ## Legacy Adapters
 

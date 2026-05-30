@@ -67,6 +67,8 @@ const char* mgmtTypeName(team::proto::TeamMgmtType type)
         return "TransferLeader";
     case team::proto::TeamMgmtType::KeyDist:
         return "KeyDist";
+    case team::proto::TeamMgmtType::KeyRequest:
+        return "KeyRequest";
     default:
         return "Unknown";
     }
@@ -171,6 +173,15 @@ void logTeamKeyDist(const team::proto::TeamKeyDist& msg, const char* dir)
              static_cast<unsigned long>(msg.key_id),
              static_cast<unsigned>(msg.channel_psk_len),
              psk_hex.c_str());
+}
+
+void logTeamKeyRequest(const team::proto::TeamKeyRequest& msg, const char* dir)
+{
+    TEAM_LOG("[TEAM] %s KeyRequest team_id=%s current_key_id=%lu requester=%08lX\n",
+             dir,
+             hexFromArray(msg.team_id).c_str(),
+             static_cast<unsigned long>(msg.current_key_id),
+             static_cast<unsigned long>(msg.requester_id));
 }
 
 void logTeamStatus(const team::proto::TeamStatus& msg, const char* dir)
@@ -454,6 +465,30 @@ void TeamService::processIncoming()
                 }
                 break;
             }
+            case team::proto::TeamMgmtType::KeyRequest:
+            {
+                if (!decoded_encrypted)
+                {
+                    break;
+                }
+                team::proto::TeamKeyRequest msg;
+                if (!team::proto::decodeTeamKeyRequest(payload.data(), payload.size(), &msg))
+                {
+                    emitError(data, TeamProtocolError::DecodeFail,
+                              decoded_encrypted ? &envelope : nullptr);
+                    break;
+                }
+                auto ctx = makeContext(data, &envelope, runtime_);
+                if (msg.requester_id == 0)
+                {
+                    msg.requester_id = ctx.from;
+                }
+                logTeamKeyRequest(msg, "RX");
+                TeamKeyRequestEvent event{ctx, msg};
+                sink_.onTeamKeyRequest(event);
+                rememberTeamMember(event.ctx.from);
+                break;
+            }
             case team::proto::TeamMgmtType::Status:
             {
                 team::proto::TeamStatus msg;
@@ -683,6 +718,29 @@ bool TeamService::sendKeyDistPlain(const team::proto::TeamKeyDist& msg,
              payload_hex.c_str());
     return sendMgmtPlain(team::proto::TeamMgmtType::KeyDist, payload, channel, dest,
                          want_ack, want_response);
+}
+
+bool TeamService::sendKeyRequest(const team::proto::TeamKeyRequest& msg,
+                                 chat::ChannelId channel, chat::NodeId dest,
+                                 bool want_ack, bool want_response)
+{
+    std::vector<uint8_t> payload;
+    if (!team::proto::encodeTeamKeyRequest(msg, payload))
+    {
+        last_send_error_ = SendError::EncodeFail;
+        return false;
+    }
+    logTeamKeyRequest(msg, "TX");
+    std::string payload_hex = toHex(payload.data(), payload.size(), payload.size());
+    TEAM_LOG("[TEAM] TX TEAM_MGMT KeyRequest payload_len=%u payload_hex=%s\n",
+             static_cast<unsigned>(payload.size()),
+             payload_hex.c_str());
+    return sendMgmtEncrypted(team::proto::TeamMgmtType::KeyRequest,
+                             payload,
+                             channel,
+                             dest,
+                             want_ack,
+                             want_response);
 }
 
 bool TeamService::sendStatus(const team::proto::TeamStatus& msg,

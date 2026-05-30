@@ -1,4 +1,5 @@
-#include "platform/ui/team_ui_store_runtime.h"
+#include "platform/ui/team_ui_snapshot_store.h"
+#include "sys/clock.h"
 #include "ui/presentation_sources/legacy_map_action_sink.h"
 #include "ui/presentation_sources/legacy_map_presentation_source.h"
 #include "ui_presentation/common/fixed_text.h"
@@ -29,7 +30,7 @@ class FakeGpsStatusSource final : public ui::gps::IGpsStatusSource
     ui::gps::GpsStatusSnapshot snapshot{};
 };
 
-class FakeTeamStore final : public team::ui::ITeamUiStore
+class FakeTeamStore final : public team::ui::ITeamUiSnapshotStore
 {
   public:
     bool load(team::ui::TeamUiSnapshot& out) override
@@ -82,6 +83,9 @@ void assertViewport(const ui::map::MapViewport& actual,
 
 int main()
 {
+    sys::set_millis_provider([]() -> uint32_t { return 200000U; });
+    sys::set_epoch_seconds_provider([]() -> uint32_t { return 1700000200U; });
+
     FakeGpsStatusSource gps;
     gps.snapshot.header.valid = true;
     gps.snapshot.receiver_enabled = true;
@@ -99,11 +103,11 @@ int main()
     team::ui::TeamMemberUi ada;
     ada.node_id = 1;
     ada.name = "Ada";
-    ada.online = true;
+    ada.last_seen_s = 200;
     team::ui::TeamMemberUi grace;
     grace.node_id = 2;
     grace.name = "Grace";
-    grace.online = false;
+    grace.last_seen_s = 10;
     team_store.snapshot.members.push_back(ada);
     team_store.snapshot.members.push_back(grace);
 
@@ -142,6 +146,15 @@ int main()
     assert(snapshot.team.visible_members == 2);
     assert(snapshot.team.stale_members == 1);
     assert(std::strcmp(snapshot.status_line.c_str(), "GPS fix") == 0);
+
+    team_store.snapshot.members.clear();
+    ada.last_seen_s = 1700000200U;
+    grace.last_seen_s = 1700000000U;
+    team_store.snapshot.members.push_back(ada);
+    team_store.snapshot.members.push_back(grace);
+    assert(source.buildMapWorkspaceSnapshot(request, snapshot));
+    assert(snapshot.team.visible_members == 2);
+    assert(snapshot.team.stale_members == 1);
 
     const auto center = sink.centerOnSelf();
     assert(center.ok);

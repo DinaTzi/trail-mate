@@ -1,6 +1,7 @@
 #include "ui/presentation_sources/team_chat_action_sink.h"
 
-#include "platform/ui/team_ui_store_runtime.h"
+#include "platform/ui/team_ui_chat_log_store.h"
+#include "platform/ui/team_ui_snapshot_store.h"
 #include "sys/clock.h"
 #include "team/protocol/team_chat.h"
 
@@ -31,10 +32,12 @@ uint32_t currentTimestamp()
 
 } // namespace
 
-TeamChatActionSink::TeamChatActionSink(::team::ui::ITeamUiStore& team_store,
+TeamChatActionSink::TeamChatActionSink(::team::ui::ITeamUiSnapshotStore& snapshot_store,
+                                       ::team::ui::ITeamUiChatLogStore& chat_log_store,
                                        ITeamChatCommandPort* command_port,
                                        uint8_t team_channel_raw)
-    : team_store_(team_store),
+    : snapshot_store_(snapshot_store),
+      chat_log_store_(chat_log_store),
       command_port_(command_port),
       team_channel_raw_(team_channel_raw)
 {
@@ -69,7 +72,7 @@ ui::UiActionResult TeamChatActionSink::sendMessage(
     }
 
     ::team::ui::TeamUiSnapshot snap;
-    if (!team_store_.load(snap) || !snap.has_team_id)
+    if (!snapshot_store_.load(snap) || !snap.has_team_id)
     {
         return ui::UiActionResult::fail(ui::UiActionFailure::NotReady);
     }
@@ -105,12 +108,12 @@ ui::UiActionResult TeamChatActionSink::sendMessage(
         return ui::UiActionResult::fail(ui::UiActionFailure::Rejected);
     }
 
-    (void)team::ui::team_ui_chatlog_append_structured(snap.team_id,
-                                                      0,
-                                                      false,
-                                                      ts,
-                                                      team::proto::TeamChatType::Text,
-                                                      team_message.payload);
+    (void)chat_log_store_.appendStructured(snap.team_id,
+                                           0,
+                                           false,
+                                           ts,
+                                           team::proto::TeamChatType::Text,
+                                           team_message.payload);
     return ui::UiActionResult::success();
 }
 
@@ -126,13 +129,13 @@ ui::UiActionResult TeamChatActionSink::markRead(ui::chat::ConversationId id)
     }
 
     ::team::ui::TeamUiSnapshot snap;
-    if (!team_store_.load(snap) || !snap.has_team_id)
+    if (!snapshot_store_.load(snap) || !snap.has_team_id)
     {
         return ui::UiActionResult::fail(ui::UiActionFailure::NotReady);
     }
 
     snap.team_chat_unread = 0;
-    team_store_.save(snap);
+    snapshot_store_.save(snap);
     return ui::UiActionResult::success();
 }
 

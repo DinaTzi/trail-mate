@@ -14,14 +14,13 @@
 #include "platform/ui/gps_runtime.h"
 #include "platform/ui/team_ui_store_runtime.h"
 #include "sys/clock.h"
-#include "team/protocol/team_chat.h"
 #include "team/protocol/team_position.h"
 #include "team/usecase/team_controller.h"
 #include "ui/app_runtime.h"
 #include "ui/components/info_card.h"
-#include "ui/formatters.h"
 #include "ui/localization.h"
 #include "ui/page/page_profile.h"
+#include "ui/presentation_sources/team_chat_presentation_source.h"
 #include "ui/screens/chat/chat_compose_components.h"
 #include "ui/screens/chat/chat_conversation_components.h"
 #include "ui/screens/chat/chat_page_shell.h"
@@ -30,19 +29,20 @@
 #include "ui/screens/contacts/contacts_page_input.h"
 #include "ui/screens/contacts/contacts_page_layout.h"
 #include "ui/screens/contacts/contacts_page_styles.h"
+#include "ui/screens/contacts/contacts_team_snapshot_source.h"
 #include "ui/screens/contacts/contacts_state.h"
 #include "ui/screens/node_info/node_info_page_components.h"
-#include "ui/screens/team/team_state.h"
+#include "ui/team_actions/team_action_runtime_sink.h"
+#include "ui/team_actions/team_runtime_adapters.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/ime/ime_widget.h"
 #include "ui/widgets/system_notification.h"
-#include "ui_presentation/chat/chat_workspace_snapshot.h"
 
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
-#include <ctime>
+#include <cstdio>
+#include <memory>
 #include <string>
 
 #define CONTACTS_DEBUG 0
@@ -91,9 +91,12 @@ static lv_group_t* s_conv_group = nullptr;
 static lv_group_t* s_conv_prev_group = nullptr;
 static bool s_compose_from_conversation = false;
 static bool s_compose_is_team = false;
-static std::string s_last_sent_text;
-static uint32_t s_last_sent_ts = 0;
-static uint32_t s_team_msg_id = 1;
+static std::unique_ptr<::ui::presentation_sources::ITeamChatCommandPort> s_team_chat_command_port;
+static std::unique_ptr<::ui::team_actions::ITeamLocationSource> s_team_location_source;
+static std::unique_ptr<::ui::team_actions::TeamActionRuntimeSink> s_team_action_sink;
+static std::unique_ptr<::ui::presentation_sources::TeamChatPresentationSource> s_team_chat_source;
+static team::TeamController* s_team_action_controller = nullptr;
+static std::unique_ptr<contacts::ui::ContactsTeamSnapshotSource> s_team_snapshot_source;
 
 static bool show_second_column_back()
 {
@@ -151,7 +154,6 @@ static void close_team_conversation();
 static void refresh_team_conversation();
 static void on_team_conversation_action(chat::ui::ChatConversationScreen::ActionIntent intent, void* user_data);
 static void on_team_conversation_back(void* user_data);
-static uint32_t current_timestamp_seconds();
 static void send_team_position();
 static void refresh_filter_checked_state();
 
@@ -524,195 +526,117 @@ static bool get_discovery_action_spec(int index, DiscoveryActionSpec* out)
     return true;
 }
 
-static const char* team_command_name(team::proto::TeamCommandType type)
+static contacts::ui::ContactsTeamSnapshotSource& contacts_team_snapshot_source()
 {
-    switch (type)
+    if (!s_team_snapshot_source)
     {
-    case team::proto::TeamCommandType::RallyTo:
-        return "RallyTo";
-    case team::proto::TeamCommandType::MoveTo:
-        return "MoveTo";
-    case team::proto::TeamCommandType::Hold:
-        return "Hold";
-    default:
-        return "Command";
+        s_team_snapshot_source =
+            std::unique_ptr<contacts::ui::ContactsTeamSnapshotSource>(
+                new contacts::ui::ContactsTeamSnapshotSource(
+                    team::ui::team_ui_snapshot_store()));
     }
+    return *s_team_snapshot_source;
 }
 
-static std::string truncate_text(const std::string& text, size_t max_len)
+static bool load_contacts_team_snapshot(
+    contacts::ui::ContactsTeamSnapshot& snapshot)
 {
-    if (text.size() <= max_len)
-    {
-        return text;
-    }
-    if (max_len <= 3)
-    {
-        return text.substr(0, max_len);
-    }
-    return text.substr(0, max_len - 3) + "...";
-}
-
-static std::string format_team_chat_entry(const team::ui::TeamChatLogEntry& entry)
-{
-    if (entry.type == team::proto::TeamChatType::Text)
-    {
-        std::string text(entry.payload.begin(), entry.payload.end());
-        return truncate_text(text, 160);
-    }
-    if (entry.type == team::proto::TeamChatType::Location)
-    {
-        team::proto::TeamChatLocation loc;
-        if (team::proto::decodeTeamChatLocation(entry.payload.data(), entry.payload.size(), &loc))
-        {
-            double lat = static_cast<double>(loc.lat_e7) / 1e7;
-            double lon = static_cast<double>(loc.lon_e7) / 1e7;
-            char buf[128];
-            char coord_buf[64];
-            uint8_t coord_fmt = app::appFacade().getConfig().gps_coord_format;
-            ui_format_coords(lat, lon, coord_fmt, coord_buf, sizeof(coord_buf));
-            if (!loc.label.empty())
-            {
-                snprintf(buf,
-                         sizeof(buf),
-                         "%s",
-                         ::ui::i18n::format("Location: %s %s", loc.label.c_str(), coord_buf).c_str());
-            }
-            else
-            {
-                snprintf(buf, sizeof(buf), "%s", ::ui::i18n::format("Location: %s", coord_buf).c_str());
-            }
-            return std::string(buf);
-        }
-        return ::ui::i18n::tr("Location");
-    }
-    if (entry.type == team::proto::TeamChatType::Command)
-    {
-        team::proto::TeamChatCommand cmd;
-        if (team::proto::decodeTeamChatCommand(entry.payload.data(), entry.payload.size(), &cmd))
-        {
-            const char* name = team_command_name(cmd.cmd_type);
-            double lat = static_cast<double>(cmd.lat_e7) / 1e7;
-            double lon = static_cast<double>(cmd.lon_e7) / 1e7;
-            char buf[160];
-            char coord_buf[64];
-            uint8_t coord_fmt = app::appFacade().getConfig().gps_coord_format;
-            ui_format_coords(lat, lon, coord_fmt, coord_buf, sizeof(coord_buf));
-            if (cmd.lat_e7 != 0 || cmd.lon_e7 != 0)
-            {
-                if (!cmd.note.empty())
-                {
-                    snprintf(buf,
-                             sizeof(buf),
-                             "%s",
-                             ::ui::i18n::format("Command: %s %s %s", name, coord_buf, cmd.note.c_str()).c_str());
-                }
-                else
-                {
-                    snprintf(buf,
-                             sizeof(buf),
-                             "%s",
-                             ::ui::i18n::format("Command: %s %s", name, coord_buf).c_str());
-                }
-            }
-            else if (!cmd.note.empty())
-            {
-                snprintf(buf,
-                         sizeof(buf),
-                         "%s",
-                         ::ui::i18n::format("Command: %s %s", name, cmd.note.c_str()).c_str());
-            }
-            else
-            {
-                snprintf(buf, sizeof(buf), "%s", ::ui::i18n::format("Command: %s", name).c_str());
-            }
-            return std::string(buf);
-        }
-        return ::ui::i18n::tr("Command");
-    }
-    return ::ui::i18n::tr("Message");
-}
-
-static void copy_team_chat_time_label(::ui::FixedText<24>& out, uint32_t timestamp)
-{
-    if (timestamp == 0)
-    {
-        out.clear();
-        return;
-    }
-
-    char buffer[24]{};
-    snprintf(buffer, sizeof(buffer), "%lu", static_cast<unsigned long>(timestamp));
-    ::ui::copyText(out, buffer);
-}
-
-static void copy_team_chat_sender_label(::ui::FixedText<32>& out,
-                                        const team::ui::TeamChatLogEntry& entry)
-{
-    if (!entry.incoming)
-    {
-        ::ui::copyText(out, "Me");
-        return;
-    }
-
-    for (const auto& member : team::ui::g_team_state.members)
-    {
-        if (member.node_id == entry.peer_id && !member.name.empty())
-        {
-            ::ui::copyText(out, member.name.c_str());
-            return;
-        }
-    }
-
-    char buffer[16]{};
-    snprintf(buffer,
-             sizeof(buffer),
-             "%04lX",
-             static_cast<unsigned long>(entry.peer_id & 0xFFFFU));
-    ::ui::copyText(out, buffer);
-}
-
-static uint64_t team_chat_message_local_id(const team::ui::TeamChatLogEntry& entry,
-                                           size_t index)
-{
-    uint64_t id = 1469598103934665603ULL;
-    id ^= entry.ts;
-    id *= 1099511628211ULL;
-    id ^= entry.peer_id;
-    id *= 1099511628211ULL;
-    id ^= static_cast<uint64_t>(index + 1U);
-    id *= 1099511628211ULL;
-    return id == 0 ? static_cast<uint64_t>(index + 1U) : id;
-}
-
-static void refresh_team_state_from_store()
-{
-    if (team::ui::g_team_state.in_team && team::ui::g_team_state.has_team_id)
-    {
-        return;
-    }
-    team::ui::TeamUiSnapshot snap;
-    if (!team::ui::team_ui_get_store().load(snap))
-    {
-        return;
-    }
-    team::ui::g_team_state.in_team = snap.in_team;
-    team::ui::g_team_state.has_team_id = snap.has_team_id;
-    team::ui::g_team_state.team_id = snap.team_id;
-    team::ui::g_team_state.team_name = snap.team_name;
-    team::ui::g_team_state.has_team_psk = snap.has_team_psk;
-    team::ui::g_team_state.security_round = snap.security_round;
-    if (snap.has_team_psk)
-    {
-        team::ui::g_team_state.team_psk = snap.team_psk;
-    }
-    team::ui::g_team_state.members = snap.members;
+    // Team chat should be reachable once we know a team_id (e.g. after receiving TEAM_CHAT).
+    return contacts_team_snapshot_source().load(snapshot) && snapshot.available;
 }
 
 static bool is_team_available()
 {
-    refresh_team_state_from_store();
-    // Team chat should be reachable once we know a team_id (e.g. after receiving TEAM_CHAT).
-    return team::ui::g_team_state.has_team_id;
+    return contacts_team_snapshot_source().isAvailable();
+}
+
+static std::string contacts_team_title()
+{
+    contacts::ui::ContactsTeamSnapshot snapshot;
+    (void)load_contacts_team_snapshot(snapshot);
+    return contacts::ui::contactsTeamDisplayName(snapshot, "Team");
+}
+
+static void reset_contacts_team_action_seam()
+{
+    s_team_action_sink.reset();
+    s_team_location_source.reset();
+    s_team_chat_command_port.reset();
+    s_team_action_controller = nullptr;
+    s_team_snapshot_source.reset();
+}
+
+static ::ui::team_actions::ITeamActionSink* contacts_team_action_sink()
+{
+    team::TeamController* controller = app::teamFacade().getTeamController();
+    if (controller == nullptr)
+    {
+        reset_contacts_team_action_seam();
+        return nullptr;
+    }
+    if (controller != s_team_action_controller)
+    {
+        reset_contacts_team_action_seam();
+        s_team_action_controller = controller;
+    }
+
+    if (!s_team_chat_command_port)
+    {
+        s_team_chat_command_port =
+            std::unique_ptr<::ui::presentation_sources::ITeamChatCommandPort>(
+                new ::ui::team_actions::TeamControllerChatCommandPort(
+                    *controller));
+    }
+    if (!s_team_location_source)
+    {
+        s_team_location_source =
+            std::unique_ptr<::ui::team_actions::ITeamLocationSource>(
+                new ::ui::team_actions::GpsTeamLocationSource());
+    }
+    if (!s_team_action_sink)
+    {
+        s_team_action_sink =
+            std::unique_ptr<::ui::team_actions::TeamActionRuntimeSink>(
+                new ::ui::team_actions::TeamActionRuntimeSink(
+                    team::ui::team_ui_snapshot_store(),
+                    team::ui::team_ui_chat_log_store(),
+                    s_team_chat_command_port.get(),
+                    s_team_location_source.get()));
+    }
+    return s_team_action_sink.get();
+}
+
+static ::ui::presentation_sources::TeamChatPresentationSource& contacts_team_chat_source()
+{
+    if (!s_team_chat_source)
+    {
+        s_team_chat_source =
+            std::unique_ptr<::ui::presentation_sources::TeamChatPresentationSource>(
+                new ::ui::presentation_sources::TeamChatPresentationSource(
+                    team::ui::team_ui_snapshot_store(),
+                    team::ui::team_ui_chat_log_store()));
+    }
+    return *s_team_chat_source;
+}
+
+static const char* team_action_failure_message(
+    ::ui::UiActionResult result,
+    const char* default_message,
+    bool location_action = false)
+{
+    if (result.failure == ::ui::UiActionFailure::NotReady)
+    {
+        return location_action ? "Team location not ready" : "Team keys not ready";
+    }
+    if (result.failure == ::ui::UiActionFailure::Unsupported)
+    {
+        return "Team chat unsupported";
+    }
+    if (result.failure == ::ui::UiActionFailure::InvalidInput)
+    {
+        return "Message unavailable";
+    }
+    return default_message;
 }
 
 static uint32_t current_timestamp_seconds()
@@ -1421,9 +1345,7 @@ static void open_chat_compose()
         }
         channel = chat::ChannelId::PRIMARY;
         peer_id = 0;
-        title = team::ui::g_team_state.team_name.empty()
-                    ? "Team"
-                    : team::ui::g_team_state.team_name;
+        title = contacts_team_title();
     }
     else
     {
@@ -1586,90 +1508,21 @@ static void on_compose_action(chat::ui::ChatComposeScreen::ActionIntent intent, 
     {
         if (s_compose_is_team)
         {
-            app::IAppFacade& app_ctx = app::appFacade();
-            team::TeamController* controller = app_ctx.getTeamController();
-            if (!controller || !is_team_available())
+            auto* action_sink = contacts_team_action_sink();
+            if (!action_sink || !is_team_available())
             {
                 ::ui::SystemNotification::show("Team chat send failed", 2000);
                 close_chat_compose();
                 return;
             }
-            if (!team::ui::g_team_state.has_team_psk)
-            {
-                ::ui::SystemNotification::show("Team keys not ready", 2000);
-                close_chat_compose();
-                return;
-            }
-            if (!controller->setKeysFromPsk(team::ui::g_team_state.team_id,
-                                            team::ui::g_team_state.security_round,
-                                            team::ui::g_team_state.team_psk.data(),
-                                            team::ui::g_team_state.team_psk.size()))
-            {
-                ::ui::SystemNotification::show("Team keys not ready", 2000);
-                close_chat_compose();
-                return;
-            }
-            uint32_t ts = current_timestamp_seconds();
 
+            ::ui::team_actions::TeamActionRequest request;
             if (intent == chat::ui::ChatComposeScreen::ActionIntent::Position)
             {
                 std::string label = g_contacts_state.compose_screen->getText();
-                ::gps::GpsState gps_state = platform::ui::gps::get_data();
-                if (!gps_state.valid)
-                {
-                    ::ui::SystemNotification::show("No GPS fix", 2000);
-                    return;
-                }
-
-                team::proto::TeamChatLocation loc;
-                loc.lat_e7 = static_cast<int32_t>(gps_state.lat * 1e7);
-                loc.lon_e7 = static_cast<int32_t>(gps_state.lng * 1e7);
-                if (gps_state.has_alt)
-                {
-                    double alt = gps_state.alt_m;
-                    if (alt > 32767.0) alt = 32767.0;
-                    if (alt < -32768.0) alt = -32768.0;
-                    loc.alt_m = static_cast<int16_t>(lround(alt));
-                }
-                loc.ts = ts;
-                if (!label.empty())
-                {
-                    loc.label = label;
-                }
-
-                std::vector<uint8_t> payload;
-                if (!team::proto::encodeTeamChatLocation(loc, payload))
-                {
-                    ::ui::SystemNotification::show("Team location encode failed", 2000);
-                    close_chat_compose();
-                    return;
-                }
-
-                team::proto::TeamChatMessage msg;
-                msg.header.type = team::proto::TeamChatType::Location;
-                msg.header.ts = ts;
-                msg.header.msg_id = s_team_msg_id++;
-                if (s_team_msg_id == 0)
-                {
-                    s_team_msg_id = 1;
-                }
-                msg.payload = payload;
-
-                bool ok = controller->onChat(msg, chat::ChannelId::PRIMARY);
-                if (ok)
-                {
-                    team::ui::team_ui_chatlog_append_structured(
-                        team::ui::g_team_state.team_id,
-                        0,
-                        false,
-                        ts,
-                        team::proto::TeamChatType::Location,
-                        payload);
-                }
-                else
-                {
-                    ::ui::SystemNotification::show("Team chat send failed", 2000);
-                }
+                request.kind = ::ui::team_actions::TeamActionKind::LocationShare;
+                request.location_share.use_current_location = true;
+                request.location_share.label = label.empty() ? nullptr : label.c_str();
             }
             else
             {
@@ -1679,30 +1532,28 @@ static void on_compose_action(chat::ui::ChatComposeScreen::ActionIntent intent, 
                     close_chat_compose();
                     return;
                 }
-                team::proto::TeamChatMessage msg;
-                msg.header.type = team::proto::TeamChatType::Text;
-                msg.header.ts = ts;
-                msg.header.msg_id = s_team_msg_id++;
-                if (s_team_msg_id == 0)
-                {
-                    s_team_msg_id = 1;
-                }
-                msg.payload.assign(text.begin(), text.end());
+                request.kind = ::ui::team_actions::TeamActionKind::Text;
+                request.text = text.c_str();
+            }
 
-                bool ok = controller->onChat(msg, chat::ChannelId::PRIMARY);
-                if (ok)
+            const auto result = action_sink->sendTeamAction(request);
+            if (!result.ok)
+            {
+                const char* default_message =
+                    (intent == chat::ui::ChatComposeScreen::ActionIntent::Position)
+                        ? "Team location send failed"
+                        : "Team chat send failed";
+                const bool location_action =
+                    intent == chat::ui::ChatComposeScreen::ActionIntent::Position;
+                ::ui::SystemNotification::show(
+                    team_action_failure_message(result,
+                                                default_message,
+                                                location_action),
+                    2000);
+                if (location_action &&
+                    result.failure == ::ui::UiActionFailure::NotReady)
                 {
-                    team::ui::team_ui_chatlog_append_structured(
-                        team::ui::g_team_state.team_id,
-                        0,
-                        false,
-                        ts,
-                        team::proto::TeamChatType::Text,
-                        msg.payload);
-                }
-                else
-                {
-                    ::ui::SystemNotification::show("Team chat send failed", 2000);
+                    return;
                 }
             }
             close_chat_compose();
@@ -1732,8 +1583,6 @@ static void on_compose_action(chat::ui::ChatComposeScreen::ActionIntent intent, 
         {
             if (g_contacts_state.chat_service)
             {
-                s_last_sent_text = text;
-                s_last_sent_ts = sys::epoch_seconds_now();
                 const chat::ConversationId conv(s_compose_channel, s_compose_peer_id, s_compose_protocol);
                 chat::ui::send_flow::begin_local_text_send(g_contacts_state.compose_screen,
                                                            g_contacts_state.chat_service,
@@ -1755,24 +1604,8 @@ static void on_compose_back(void* /*user_data*/)
 
 static void on_compose_send_done(bool ok, bool /*timeout*/, void* /*user_data*/)
 {
-    if (ok && s_compose_is_team &&
-        team::ui::g_team_state.has_team_id &&
-        !s_last_sent_text.empty())
-    {
-        uint32_t ts = s_last_sent_ts;
-        if (ts == 0)
-        {
-            ts = sys::epoch_seconds_now();
-        }
-        team::ui::team_ui_chatlog_append(team::ui::g_team_state.team_id,
-                                         0,
-                                         false,
-                                         ts,
-                                         s_last_sent_text);
-    }
+    (void)ok;
     close_chat_compose();
-    s_last_sent_text.clear();
-    s_last_sent_ts = 0;
     if (g_contacts_state.conversation_screen)
     {
         refresh_team_conversation();
@@ -1787,28 +1620,19 @@ static void refresh_team_conversation()
     }
     g_contacts_state.conversation_screen->clearMessages();
 
-    std::vector<team::ui::TeamChatLogEntry> entries;
-    if (team::ui::team_ui_chatlog_load_recent(team::ui::g_team_state.team_id, 50, entries))
+    ::ui::chat::ChatWorkspaceRequest request;
+    ::ui::chat::ChatWorkspaceSnapshot snapshot;
+    if (contacts_team_chat_source().buildChatWorkspaceSnapshot(request, snapshot) &&
+        snapshot.conversation_count > 0)
     {
-        for (size_t index = 0; index < entries.size(); ++index)
+        request.selected = snapshot.conversations[0].id;
+        if (contacts_team_chat_source().buildChatWorkspaceSnapshot(request, snapshot))
         {
-            const auto& entry = entries[index];
-            ::ui::chat::MessageRow row;
-            row.conversation.kind = ::ui::chat::ConversationKind::Team;
-            row.conversation.protocol = ::ui::chat::ChatProtocolKind::TrailMate;
-            row.conversation.primary = 1;
-            row.outgoing = !entry.incoming;
-            row.delivery = entry.incoming ? ::ui::chat::MessageDeliveryState::Received
-                                          : ::ui::chat::MessageDeliveryState::Sent;
-            row.failure = ::ui::chat::MessageFailureKind::None;
-            row.sender_node_id = entry.incoming ? entry.peer_id : 0;
-            row.ref.origin = entry.incoming ? ::ui::chat::MessageOrigin::RemoteStored
-                                            : ::ui::chat::MessageOrigin::LocalStored;
-            row.ref.local_id = team_chat_message_local_id(entry, index);
-            ::ui::copyText(row.text, format_team_chat_entry(entry).c_str());
-            copy_team_chat_time_label(row.time_label, entry.ts);
-            copy_team_chat_sender_label(row.sender_label, entry);
-            g_contacts_state.conversation_screen->addMessage(row);
+            for (size_t index = 0; index < snapshot.message_count; ++index)
+            {
+                g_contacts_state.conversation_screen->addMessage(
+                    snapshot.messages[index]);
+            }
         }
     }
     g_contacts_state.conversation_screen->scrollToBottom();
@@ -1864,10 +1688,8 @@ static void on_team_conversation_back(void* /*user_data*/)
     g_contacts_state.conversation_screen->setActionCallback(on_team_conversation_action, nullptr);
     g_contacts_state.conversation_screen->setBackCallback(on_team_conversation_back, nullptr);
 
-    const char* title = team::ui::g_team_state.team_name.empty()
-                            ? "Team"
-                            : team::ui::g_team_state.team_name.c_str();
-    g_contacts_state.conversation_screen->setHeaderText(title, nullptr);
+    const std::string title = contacts_team_title();
+    g_contacts_state.conversation_screen->setHeaderText(title.c_str(), nullptr);
     g_contacts_state.conversation_screen->updateBatteryFromBoard();
     refresh_team_conversation();
 
@@ -1930,7 +1752,8 @@ static void close_team_conversation()
 
 static void send_team_position()
 {
-    if (!is_team_available())
+    contacts::ui::ContactsTeamSnapshot team_snapshot;
+    if (!load_contacts_team_snapshot(team_snapshot))
     {
         return;
     }
@@ -2013,7 +1836,7 @@ static void send_team_position()
             if (dmps > 65535.0) dmps = 65535.0;
             speed_dmps = static_cast<uint16_t>(lround(dmps));
         }
-        team::ui::team_ui_posring_append(team::ui::g_team_state.team_id,
+        team::ui::team_ui_posring_append(team_snapshot.team_id,
                                          0,
                                          lat_e7,
                                          lon_e7,
@@ -2625,15 +2448,17 @@ void refresh_ui()
     }
     else if (g_contacts_state.current_mode == ContactsMode::Team)
     {
+        contacts::ui::ContactsTeamSnapshot team_snapshot;
+        (void)load_contacts_team_snapshot(team_snapshot);
         chat::contacts::NodeInfo team_node{};
         team_node.node_id = 0;
         team_node.last_seen = 0;
         team_node.snr = 0.0f;
         team_node.is_contact = false;
         team_node.protocol = chat::contacts::NodeProtocolType::Unknown;
-        team_node.display_name = team::ui::g_team_state.team_name.empty()
-                                     ? ::ui::i18n::tr("Team")
-                                     : team::ui::g_team_state.team_name;
+        team_node.display_name =
+            contacts::ui::contactsTeamDisplayName(team_snapshot,
+                                                  ::ui::i18n::tr("Team"));
         team_list.push_back(team_node);
         current_list = &team_list;
     }

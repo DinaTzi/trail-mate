@@ -224,6 +224,11 @@ void ChatService::processIncoming()
         }
     }
 
+    if (incoming_data_observers_.empty())
+    {
+        return;
+    }
+
     MeshIncomingData incoming_data;
     while (adapter_.pollIncomingData(&incoming_data))
     {

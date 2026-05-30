@@ -28,6 +28,56 @@ struct ConversationRow
     MessageDeliveryState last_delivery = MessageDeliveryState::Unknown;
 };
 
+enum class TeamMessageRichPayloadKind : uint8_t
+{
+    None,
+    Text,
+    Location,
+    Command,
+    Unsupported,
+};
+
+enum class TeamMessageCommandKind : uint8_t
+{
+    Unknown,
+    MoveTo,
+    RallyPoint,
+    Hold,
+    Help,
+    CheckIn,
+    Custom,
+};
+
+struct TeamMessageLocationPayload
+{
+    double lat = 0.0;
+    double lon = 0.0;
+    bool has_altitude = false;
+    float altitude_m = 0.0f;
+    uint8_t marker_icon = 0;
+};
+
+struct TeamMessageCommandPayload
+{
+    TeamMessageCommandKind kind = TeamMessageCommandKind::Unknown;
+    double lat = 0.0;
+    double lon = 0.0;
+    float radius_m = 0.0f;
+    uint8_t priority = 0;
+};
+
+struct TeamMessageRichPayload
+{
+    TeamMessageRichPayloadKind kind = TeamMessageRichPayloadKind::None;
+
+    ui::FixedText<32> title;
+    ui::FixedText<96> summary;
+    ui::FixedText<32> badge;
+
+    TeamMessageLocationPayload location;
+    TeamMessageCommandPayload command;
+};
+
 struct MessageRow
 {
     MessageRef ref;
@@ -41,6 +91,9 @@ struct MessageRow
     ui::FixedText<160> text;
     ui::FixedText<24> time_label;
     ui::FixedText<32> sender_label;
+
+    bool has_team_rich_payload = false;
+    TeamMessageRichPayload team_rich_payload;
 };
 
 struct ChatWorkspaceSnapshot
@@ -93,6 +146,8 @@ inline void resetMessageRow(MessageRow& row)
     row.text.clear();
     row.time_label.clear();
     row.sender_label.clear();
+    row.has_team_rich_payload = false;
+    row.team_rich_payload = TeamMessageRichPayload{};
 }
 
 inline void resetChatWorkspaceSnapshot(ChatWorkspaceSnapshot& out)

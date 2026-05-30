@@ -21,11 +21,20 @@ has direct user-visible consequences and a bounded migration path.
 | Chat retry/cancel/clear failure actions | contained | 7.4 / 7.6 | owned by `ChatDeliveryActionRequest` / `ChatDeliveryActionService`; controller direct action ownership is forbidden |
 | Map tile/cache ownership | contained | 7.10 | tile path mapping and filesystem availability are owned by `MapTileResolver` / `LegacyFilesystemMapTileSource`; decoded image cache remains contained legacy |
 | Map tile render queue / decoded cache ownership | contained | 7.11 | visible tile plan is projected into `MapTileRenderQueue`; ESP decoded image cache is wrapped by `LvglDecodedTileCache`; LVGL widget records remain contained legacy |
-| Map overlay/route/tracker ownership | contained / explicitly deferred | 7.12 | current GPS and Team overlays project through `MapOverlaySnapshot` / `LegacyMapOverlaySource`; route/tracker overlay sources have exit conditions in final matrix |
+| Map overlay/route/tracker ownership | contained / explicitly deferred | 7.12 / Team burn-down | current GPS and Team overlays project through `MapOverlaySnapshot`; Team positions come through `TeamMapOverlaySource`; route/tracker overlay sources have exit conditions in final matrix |
 | GPS page timers/tasks | contained | 7.13 | refresh cadence is owned by `GpsPageRuntimePump`; LVGL timers are tick hooks only |
-| Team location/command action ownership | contained | 7.2 / 7.6 | owned by `TeamActionRequest` / `LegacyTeamActionBridge`; controller send payload encoding is forbidden |
-| Team rich payload display ownership | contained | 7.8 | owned by `TeamRichPayloadProjector` / `TeamChatPresentationSource`; controller display decode/format is forbidden |
+| Team location/command action ownership | contained | 7.2 / 7.6 / Team burn-down | owned by `ChatTeamWorkflow` / `TeamActionRequest` / `TeamActionRuntimeSink`; controller send payload encoding and action request construction are forbidden |
+| Team rich payload display ownership | burned-down | 7.8 / Team burn-down | owned by `TeamRichPayloadProjector` / `TeamChatPresentationSource`; `MessageRow` carries `TeamMessageRichPayload`; controller display decode/format is forbidden |
 | Team position picker widget lifecycle | burned-down UI surface | 7.9 | owned by `TeamPositionPickerRenderer`; controller only handles selected/cancel workflow |
+| Team Page create-team command orchestration | contained | Team burn-down | owned by `TeamPageCreateTeamAction`; page controller adapts state, failure notifications, save, and navigation only |
+| Team Page pairing command orchestration | contained | Team burn-down | owned by `TeamPagePairingCommandAction`; page controller adapts role input and failure messages only |
+| Team Page pairing/keydist/status event effects | contained | Team burn-down | owned by `TeamPageEventEffectSink`; reducers own state mutation and the sink owns runtime/key-log/deferred/notifier effects |
+| Team Page request-keys command | burned-down | Team burn-down | owned by `TeamPageRequestKeysAction` for outgoing `TeamKeyRequest` and `TeamPageKeyRequestAction` for leader-side KeyDist response |
+| Team Page navigation flow | contained | Team burn-down | owned by `TeamPageFlowController`; controller renders pages and applies transition side effects only |
+| Team Page LVGL rendering | contained | Team burn-down | owned by `TeamPageLvglRenderer`; renderer consumes read-model/page input and callback handlers only |
+| Team Page kick-confirm command orchestration | contained | Team burn-down | owned by `TeamPageKickConfirmAction`; page controller adapts state/runtime/random/deferred ports and translates failure effects only |
+| Team consumer snapshot/liveness projection | contained | Team burn-down | Hostlink/GPS/map/dashboard consume `ITeamUiSnapshotStore` and `ui::team_presence`; they must not own shadow Team state or infer liveness from roster membership |
+| Contacts Team snapshot projection | contained | Team burn-down | owned by `ContactsTeamSnapshotSource`; Contacts must consume canonical `ITeamUiSnapshotStore` and must not read or write Team Page `g_team_state` |
 | key verification workflow | contained | 7.5 / 7.6 | owned by `KeyVerificationModel` plus legacy source/sink adapters; modal rendering is helper-bounded |
 
 ## Phase 7.1 Decision
@@ -95,10 +104,11 @@ They are not owned by:
 
 Phase 7.2 introduces:
 
+- `ChatTeamWorkflow`
 - `TeamActionRequest`
 - `ITeamActionSink`
 - `ITeamLocationSource`
-- `LegacyTeamActionBridge`
+- `TeamActionRuntimeSink`
 - Chat UI submission of location marker intent through the Team action sink
 
 Team text remains on the existing `TeamChatActionSink` /
@@ -173,7 +183,7 @@ may move those surfaces from contained to burned-down:
 
 - `LegacyChatDeliveryEventBridge`
 - `LegacyChatDeliveryActionBridge`
-- `LegacyTeamActionBridge`
+- `TeamActionRuntimeSink`
 - `LegacyKeyVerificationSource`
 - `LegacyKeyVerificationActionSink`
 - controller-owned `ChatService::processIncoming` / `flushStore` was removed in Phase 7.7
@@ -224,6 +234,8 @@ Phase 7.8 introduces:
 - `TeamRichPayloadDisplay`
 - `TeamRichPayloadProjector`
 - `TeamChatPresentationSource` consumption of projected rich payload summaries
+- `TeamMessageRichPayload` fields on `MessageRow`
+- renderer consumption of `has_team_rich_payload` / `team_rich_payload`
 
 `ChatUiController` no longer:
 
@@ -232,8 +244,9 @@ Phase 7.8 introduces:
 - calls `decodeTeamChatCommand(...)`
 - constructs `TeamChatLocation` / `TeamChatCommand` for display formatting
 
-The current renderer still consumes summary text through `MessageRow`. Rich Team
-cards and additional Map overlay visuals are deferred with exit conditions.
+`MessageRow::text` remains a fallback summary, but Team location and command
+rows now also carry structured kind/title/badge/location/command fields. Full
+card styling is UX work; the ownership boundary is no longer blocked on summary-only rows.
 
 ## Phase 7.9 Decision
 
@@ -256,9 +269,8 @@ Phase 7.9 introduces:
 LVGL group, previous group, or icon event contexts. It no longer defines picker
 LVGL event callbacks or directly creates the picker widget tree.
 
-The controller keeps the selection workflow. `sendTeamLocationWithIcon(...)`
-remains only because it submits `TeamActionRequest` through `ITeamActionSink`;
-it must not encode Team payloads directly.
+The controller keeps only the picker open/close and selected/cancel callbacks.
+`ChatTeamWorkflow` owns Team action request construction and failure messages.
 
 ## Phase 7.12 Decision
 
@@ -278,9 +290,11 @@ Phase 7.12 introduces:
 - `IMapOverlayPresentationSource`
 - `MapOverlayProjector`
 - `LegacyMapOverlaySource`
+- `TeamMapOverlaySource`
 
 Current GPS and Team latest location overlays are projected through the overlay
-source boundary. Route/tracker and measurement overlays are explicitly deferred
+source boundary. Team consumers call `TeamMapOverlaySource` instead of reading
+Team posring directly. Route/tracker and measurement overlays are explicitly deferred
 with removal conditions in `PHASE7_FINAL_LEGACY_SURFACE_MATRIX.md`.
 
 ## Phase 7.13 Decision

@@ -10,9 +10,6 @@
 #include "sys/clock.h"
 #include "sys/event_bus.h"
 #include "team/protocol/team_mgmt.h"
-#include "team/protocol/team_position.h"
-#include "team/protocol/team_track.h"
-#include "team/protocol/team_waypoint.h"
 #include "team/usecase/team_controller.h"
 #include "team/usecase/team_pairing_service.h"
 #include "team/usecase/team_service.h"
@@ -20,20 +17,35 @@
 #include "ui/chat_ui_runtime.h"
 #include "ui/localization.h"
 #include "ui/page/page_profile.h"
-#include "ui/screens/gps/gps_state.h"
-#include "ui/screens/gps/gps_tracker_overlay.h"
+#include "ui/screens/team/team_page_activity_sink.h"
 #include "ui/screens/team/team_page_input.h"
+#include "ui/screens/team/team_page_command_reducer.h"
+#include "ui/screens/team/team_page_create_team_action.h"
+#include "ui/screens/team/team_page_deferred_dispatch.h"
+#include "ui/screens/team/team_page_event_effect_sink.h"
+#include "ui/screens/team/team_page_event_reducer.h"
+#include "ui/screens/team/team_page_flow_controller.h"
+#include "ui/screens/team/team_page_key_event_log.h"
+#include "ui/screens/team/team_page_key_request_action.h"
+#include "ui/screens/team/team_page_kick_confirm_action.h"
 #include "ui/screens/team/team_page_layout.h"
+#include "ui/screens/team/team_page_lvgl_renderer.h"
+#include "ui/screens/team/team_page_pairing_command_action.h"
+#include "ui/screens/team/team_page_read_model.h"
+#include "ui/screens/team/team_page_request_keys_action.h"
+#include "ui/screens/team/team_page_runtime_port.h"
+#include "ui/screens/team/team_page_state_store.h"
 #include "ui/screens/team/team_page_styles.h"
-#include "ui/screens/team/team_state.h"
+#include "ui/screens/team/team_page_transfer_leader_action.h"
 #include "ui/ui_common.h"
+#include "ui/widgets/top_bar.h"
 #include "ui/widgets/system_notification.h"
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace team
 {
@@ -41,41 +53,125 @@ namespace ui
 {
 namespace
 {
-constexpr int kActionBtnHeight = 28;
-constexpr int kActionBtnMinWidth = 56;
 constexpr int kActionBtnPadH = 10;
-constexpr int kListItemHeight = 28;
-constexpr uint8_t kKeyDistMaxRetries = 3;
-constexpr uint32_t kKeyDistRetryIntervalSec = 5;
 constexpr uint8_t kKeyRoleMember = 1;
-bool s_state_loaded = false;
-uint32_t s_rng_state = 0;
+
+struct TeamPageLvglContext
+{
+    lv_obj_t* root = nullptr;
+    lv_obj_t* page_obj = nullptr;
+    lv_obj_t* header = nullptr;
+    lv_obj_t* content = nullptr;
+    lv_obj_t* body = nullptr;
+    lv_obj_t* actions = nullptr;
+
+    lv_obj_t* action_btns[3] = {nullptr, nullptr, nullptr};
+    lv_obj_t* action_labels[3] = {nullptr, nullptr, nullptr};
+    lv_obj_t* detail_label = nullptr;
+
+    std::vector<lv_obj_t*> list_items;
+    std::vector<lv_obj_t*> focusables;
+    lv_obj_t* default_focus = nullptr;
+
+    ::ui::widgets::TopBar top_bar_widget;
+    lv_group_t* group = nullptr;
+    lv_group_t* modal_group = nullptr;
+    lv_group_t* prev_group = nullptr;
+    lv_obj_t* leave_confirm_modal = nullptr;
+};
+
+struct TeamPageState
+{
+    TeamPage page = TeamPage::StatusNotInTeam;
+    std::vector<TeamPage> nav_stack;
+    int selected_member_index = -1;
+
+    bool in_team = false;
+    bool pending_join = false;
+    bool kicked_out = false;
+    bool self_is_leader = false;
+    uint32_t last_event_seq = 0;
+    TeamPairingRole pairing_role = TeamPairingRole::None;
+    TeamPairingState pairing_state = TeamPairingState::Idle;
+    uint32_t pairing_peer_id = 0;
+    std::string pairing_team_name;
+
+    TeamId team_id{};
+    bool has_team_id = false;
+
+    std::string team_name;
+    uint32_t security_round = 0;
+    uint32_t last_update_s = 0;
+    std::array<uint8_t, team::proto::kTeamChannelPskSize> team_psk{};
+    bool has_team_psk = false;
+    bool waiting_new_keys = false;
+    uint32_t pending_join_started_s = 0;
+    uint32_t team_chat_unread = 0;
+
+    std::vector<TeamMemberUi> members;
+};
+
+struct TeamPageControllerContext
+{
+    TeamPageState state;
+    TeamPageLvglContext lvgl;
+    TeamPageStateStore state_store;
+    TeamPageDeferredDispatchQueue deferred_dispatch;
+    uint32_t rng_state = 0;
+};
+
+TeamPageControllerContext s_page_context;
+
+TeamPageControllerContext& team_page_context()
+{
+    return s_page_context;
+}
+
+TeamPageState& team_page_state()
+{
+    return team_page_context().state;
+}
+
+TeamPageLvglContext& team_page_lvgl_context()
+{
+    return team_page_context().lvgl;
+}
+
+void reset_team_page_state()
+{
+    team_page_context().state = TeamPageState{};
+}
+
+void reset_team_page_lvgl_context()
+{
+    team_page_context().lvgl = TeamPageLvglContext{};
+}
+
+TeamPageInputContext input_context_from_lvgl()
+{
+    TeamPageInputContext context;
+    context.root = team_page_lvgl_context().root;
+    context.top_bar = &team_page_lvgl_context().top_bar_widget;
+    context.focusables = &team_page_lvgl_context().focusables;
+    context.default_focus = &team_page_lvgl_context().default_focus;
+    return context;
+}
 
 uint8_t next_random_byte()
 {
-    if (s_rng_state == 0)
+    uint32_t& rng_state = team_page_context().rng_state;
+    if (rng_state == 0)
     {
-        s_rng_state = sys::millis_now() ^ 0xA5A55A5Au;
-        if (s_rng_state == 0)
+        rng_state = sys::millis_now() ^ 0xA5A55A5Au;
+        if (rng_state == 0)
         {
-            s_rng_state = 0x13579BDFu;
+            rng_state = 0x13579BDFu;
         }
     }
-    s_rng_state ^= (s_rng_state << 13);
-    s_rng_state ^= (s_rng_state >> 17);
-    s_rng_state ^= (s_rng_state << 5);
-    return static_cast<uint8_t>(s_rng_state & 0xFFu);
-}
-
-int action_button_height()
-{
-    const auto& profile = ::ui::page_profile::current();
-    return profile.large_touch_hitbox ? profile.list_item_height : kActionBtnHeight;
-}
-
-int list_item_height()
-{
-    return ::ui::page_profile::current().list_item_height;
+    rng_state ^= (rng_state << 13);
+    rng_state ^= (rng_state >> 17);
+    rng_state ^= (rng_state << 5);
+    return static_cast<uint8_t>(rng_state & 0xFFu);
 }
 
 uint32_t now_secs();
@@ -84,54 +180,71 @@ bool is_team_chat_visible();
 std::string resolve_node_name(uint32_t node_id);
 bool is_pairing_active();
 void sync_pairing_from_service();
-void update_team_name_from_id(const TeamId& id);
 void fill_status_members(team::proto::TeamStatus& status);
-void apply_member_list_from_status(const team::proto::TeamStatus& status);
+void add_keydist_pending(uint32_t node_id, uint32_t key_id);
+void mark_keydist_confirmed(uint32_t node_id, uint32_t key_id);
+void schedule_status_broadcast(uint8_t repeats, uint32_t delay_s);
 
-uint64_t team_id_to_u64(const TeamId& id)
+class TeamPageRuntimeKeyEventWriter final : public ITeamPageKeyEventWriter
 {
-    uint64_t value = 0;
-    for (size_t i = 0; i < id.size(); ++i)
+  public:
+    bool appendKeyEvent(const TeamId& team_id,
+                        TeamKeyEventType type,
+                        uint32_t event_seq,
+                        uint32_t timestamp_s,
+                        const uint8_t* payload,
+                        size_t payload_size) override
     {
-        value |= (static_cast<uint64_t>(id[i]) << (8 * i));
+        return team_ui_append_key_event(team_id,
+                                        type,
+                                        event_seq,
+                                        timestamp_s,
+                                        payload,
+                                        payload_size);
     }
-    return value;
+};
+
+TeamPageKeyEventState key_event_state_from_page()
+{
+    TeamPageKeyEventState state;
+    state.team_id = team_page_state().team_id;
+    state.has_team_id = team_page_state().has_team_id;
+    state.last_event_seq = team_page_state().last_event_seq;
+    state.security_round = team_page_state().security_round;
+    return state;
 }
 
-void write_u32_le(std::vector<uint8_t>& out, uint32_t v)
+void apply_key_event_state_to_page(const TeamPageKeyEventState& state)
 {
-    out.push_back(static_cast<uint8_t>(v & 0xFF));
-    out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
-    out.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
-    out.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+    team_page_state().last_event_seq = state.last_event_seq;
 }
 
-void write_u64_le(std::vector<uint8_t>& out, uint64_t v)
+TeamPageKeyEventLog current_key_event_log()
 {
-    for (int i = 0; i < 8; ++i)
-    {
-        out.push_back(static_cast<uint8_t>((v >> (8 * i)) & 0xFF));
-    }
+    static TeamPageRuntimeKeyEventWriter writer;
+    return TeamPageKeyEventLog(writer, now_secs());
 }
 
-bool append_key_event(TeamKeyEventType type, const std::vector<uint8_t>& payload)
+template <typename Append>
+bool append_key_event_to_page(Append append)
 {
-    if (!g_team_state.has_team_id)
-    {
-        return false;
-    }
-    uint32_t seq = g_team_state.last_event_seq + 1;
-    if (!team_ui_append_key_event(g_team_state.team_id,
-                                  type,
-                                  seq,
-                                  now_secs(),
-                                  payload.data(),
-                                  payload.size()))
-    {
-        return false;
-    }
-    g_team_state.last_event_seq = seq;
-    return true;
+    auto state = key_event_state_from_page();
+    const auto log = current_key_event_log();
+    const bool ok = append(log, state);
+    apply_key_event_state_to_page(state);
+    return ok;
+}
+
+TeamPageRuntimePort current_runtime_port()
+{
+    static TeamPageKeyStorePortAdapter key_store;
+    static TeamPageControllerPortAdapter controller(nullptr);
+    static TeamPagePairingPortAdapter pairing(nullptr);
+    controller =
+        TeamPageControllerPortAdapter(app::teamFacade().getTeamController());
+    pairing =
+        TeamPagePairingPortAdapter(app::teamFacade().getTeamPairing());
+    return TeamPageRuntimePort(&controller, &pairing, &key_store);
 }
 
 void notify_send_failed(const char* action, bool needs_keys)
@@ -174,165 +287,594 @@ void notify_send_failed_detail(const char* action, team::TeamService::SendError 
     ::ui::SystemNotification::show(notice.c_str(), 2000);
 }
 
-struct KeyDistPending
+const char* kick_confirm_failure_action_text(
+    TeamPageKickConfirmFailureAction action)
 {
-    uint32_t node_id = 0;
-    uint32_t key_id = 0;
-    uint8_t attempts = 0;
-    uint32_t next_retry_s = 0;
+    switch (action)
+    {
+    case TeamPageKickConfirmFailureAction::Kick:
+        return "Kick";
+    case TeamPageKickConfirmFailureAction::KeyDist:
+        return "KeyDist";
+    case TeamPageKickConfirmFailureAction::Keys:
+        return "Keys";
+    case TeamPageKickConfirmFailureAction::Status:
+        return "Status";
+    default:
+        return "Send";
+    }
+}
+
+void apply_kick_confirm_failures(
+    const TeamPageKickConfirmEffects& effects)
+{
+    for (const auto& failure : effects.failures)
+    {
+        const char* action =
+            kick_confirm_failure_action_text(failure.action);
+        if (failure.kind ==
+            TeamPageKickConfirmFailureKind::SendFailedDetail)
+        {
+            notify_send_failed_detail(action, failure.error);
+        }
+        else
+        {
+            notify_send_failed(action, failure.needs_keys);
+        }
+    }
+}
+
+void apply_transfer_leader_failures(
+    const TeamPageTransferLeaderEffects& effects)
+{
+    for (const auto& failure : effects.failures)
+    {
+        (void)failure;
+        notify_send_failed("Transfer", true);
+    }
+}
+
+void apply_create_team_failures(const TeamPageCreateTeamEffects& effects)
+{
+    for (const auto& failure : effects.failures)
+    {
+        if (failure.action == TeamPageCreateTeamFailureAction::Keys)
+        {
+            notify_send_failed("Keys", failure.needs_keys);
+            continue;
+        }
+        if (failure.kind == TeamPageCreateTeamFailureKind::PairingNotReady)
+        {
+            ::ui::SystemNotification::show("Pairing not ready", 2000);
+        }
+        else if (failure.kind ==
+                 TeamPageCreateTeamFailureKind::PairingInitFailed)
+        {
+            ::ui::SystemNotification::show("Pairing init failed", 2000);
+        }
+    }
+}
+
+void apply_pairing_command_failures(
+    const TeamPagePairingCommandEffects& effects)
+{
+    for (const auto& failure : effects.failures)
+    {
+        switch (failure.kind)
+        {
+        case TeamPagePairingCommandFailureKind::LeaderRequired:
+            ::ui::SystemNotification::show("Only leader can pair", 2000);
+            break;
+        case TeamPagePairingCommandFailureKind::PairingNotReady:
+            ::ui::SystemNotification::show("Pairing not ready", 2000);
+            break;
+        case TeamPagePairingCommandFailureKind::PairingNotAvailable:
+            ::ui::SystemNotification::show("Pairing not available", 2000);
+            break;
+        case TeamPagePairingCommandFailureKind::PairingInitFailed:
+        default:
+            ::ui::SystemNotification::show("Pairing init failed", 2000);
+            break;
+        }
+    }
+}
+
+class TeamPageMemberNameResolver final : public ITeamPageMemberNameResolver
+                                       , public ITeamPageLvglNameResolver
+{
+  public:
+    std::string resolveMemberName(uint32_t node_id) const override
+    {
+        return resolve_node_name(node_id);
+    }
+
+    std::string resolveNodeName(uint32_t node_id) const override
+    {
+        return resolve_node_name(node_id);
+    }
 };
 
-std::vector<KeyDistPending> s_keydist_pending;
-
-struct StatusBroadcastPending
+TeamPageEventState event_state_from_page()
 {
-    uint32_t next_send_s = 0;
-    uint8_t remaining = 0;
+    TeamPageEventState state;
+    state.in_team = team_page_state().in_team;
+    state.pending_join = team_page_state().pending_join;
+    state.pending_join_started_s = team_page_state().pending_join_started_s;
+    state.kicked_out = team_page_state().kicked_out;
+    state.self_is_leader = team_page_state().self_is_leader;
+    state.last_event_seq = team_page_state().last_event_seq;
+    state.pairing_role = team_page_state().pairing_role;
+    state.pairing_state = team_page_state().pairing_state;
+    state.pairing_peer_id = team_page_state().pairing_peer_id;
+    state.pairing_team_name = team_page_state().pairing_team_name;
+    state.team_id = team_page_state().team_id;
+    state.has_team_id = team_page_state().has_team_id;
+    state.team_name = team_page_state().team_name;
+    state.security_round = team_page_state().security_round;
+    state.last_update_s = team_page_state().last_update_s;
+    state.team_psk = team_page_state().team_psk;
+    state.has_team_psk = team_page_state().has_team_psk;
+    state.waiting_new_keys = team_page_state().waiting_new_keys;
+    state.members = team_page_state().members;
+    return state;
+}
+
+void apply_event_state_to_page(const TeamPageEventState& state)
+{
+    team_page_state().in_team = state.in_team;
+    team_page_state().pending_join = state.pending_join;
+    team_page_state().pending_join_started_s = state.pending_join_started_s;
+    team_page_state().kicked_out = state.kicked_out;
+    team_page_state().self_is_leader = state.self_is_leader;
+    team_page_state().last_event_seq = state.last_event_seq;
+    team_page_state().pairing_role = state.pairing_role;
+    team_page_state().pairing_state = state.pairing_state;
+    team_page_state().pairing_peer_id = state.pairing_peer_id;
+    team_page_state().pairing_team_name = state.pairing_team_name;
+    team_page_state().team_id = state.team_id;
+    team_page_state().has_team_id = state.has_team_id;
+    team_page_state().team_name = state.team_name;
+    team_page_state().security_round = state.security_round;
+    team_page_state().last_update_s = state.last_update_s;
+    team_page_state().team_psk = state.team_psk;
+    team_page_state().has_team_psk = state.has_team_psk;
+    team_page_state().waiting_new_keys = state.waiting_new_keys;
+    team_page_state().members = state.members;
+}
+
+TeamPageFlowState flow_state_from_page()
+{
+    TeamPageFlowState state;
+    state.page = team_page_state().page;
+    state.nav_stack = team_page_state().nav_stack;
+    state.in_team = team_page_state().in_team;
+    state.pending_join = team_page_state().pending_join;
+    state.kicked_out = team_page_state().kicked_out;
+    state.pending_join_started_s = team_page_state().pending_join_started_s;
+    state.pairing_state = team_page_state().pairing_state;
+    return state;
+}
+
+void apply_flow_state_to_page(const TeamPageFlowState& state)
+{
+    team_page_state().page = state.page;
+    team_page_state().nav_stack = state.nav_stack;
+    team_page_state().pending_join_started_s = state.pending_join_started_s;
+}
+
+TeamPageFlowController current_flow_controller()
+{
+    return TeamPageFlowController();
+}
+
+TeamPageEventReducer current_event_reducer()
+{
+    static TeamPageMemberNameResolver names;
+    TeamPageEventContext context;
+    context.now_s = now_secs();
+    context.self_node_id = app::messagingFacade().getSelfNodeId();
+    context.names = &names;
+    return TeamPageEventReducer(context);
+}
+
+template <typename Reduce>
+TeamPageEventEffects reduce_event_state(Reduce reduce)
+{
+    auto state = event_state_from_page();
+    auto reducer = current_event_reducer();
+    const auto effects = reduce(reducer, state);
+    apply_event_state_to_page(state);
+    return effects;
+}
+
+void apply_keydist_effect(const TeamPageEventEffects& effects)
+{
+    if (effects.keydist_confirmed)
+    {
+        mark_keydist_confirmed(effects.keydist_member_id,
+                               effects.keydist_key_id);
+    }
+}
+
+void apply_event_navigation_requests(
+    const TeamPageEventEffectResult& result)
+{
+    if (result.request_kicked_out_page)
+    {
+        team_page_state().page = TeamPage::KickedOut;
+    }
+    if (result.request_status_in_team_page)
+    {
+        team_page_state().page = TeamPage::StatusInTeam;
+    }
+    if (result.request_status_not_in_team_page)
+    {
+        team_page_state().page = TeamPage::StatusNotInTeam;
+    }
+    if (result.clear_nav_stack)
+    {
+        team_page_state().nav_stack.clear();
+    }
+}
+
+class TeamPageEventDeferredAdapter final : public ITeamPageEventDeferred
+{
+  public:
+    void confirmKeyDist(uint32_t node_id, uint32_t key_id) override
+    {
+        mark_keydist_confirmed(node_id, key_id);
+    }
+
+    void scheduleStatusBroadcast(uint8_t repeats,
+                                 uint32_t delay_s) override
+    {
+        schedule_status_broadcast(repeats, delay_s);
+    }
 };
 
-std::vector<StatusBroadcastPending> s_status_pending;
+class TeamPageEventNotifierAdapter final : public ITeamPageEventNotifier
+{
+  public:
+    void showMessage(const char* message) override
+    {
+        ::ui::SystemNotification::show(message, 2000);
+    }
+
+    void notifySendFailed(const char* action, bool needs_keys) override
+    {
+        notify_send_failed(action, needs_keys);
+    }
+};
+
+TeamPageEventEffectResult apply_event_effects(
+    const TeamPageEventEffects& effects)
+{
+    static TeamPageMemberNameResolver names;
+    static TeamPageEventDeferredAdapter deferred;
+    static TeamPageEventNotifierAdapter notifier;
+    auto key_state = key_event_state_from_page();
+    const auto result = TeamPageEventEffectSink().applyEffects(
+        event_state_from_page(),
+        key_state,
+        effects,
+        current_event_reducer(),
+        current_runtime_port(),
+        current_key_event_log(),
+        deferred,
+        notifier,
+        names);
+    apply_key_event_state_to_page(key_state);
+    apply_event_navigation_requests(result);
+    return result;
+}
+
+TeamPageActivityState activity_state_from_page()
+{
+    TeamPageActivityState state;
+    state.team_id = team_page_state().team_id;
+    state.has_team_id = team_page_state().has_team_id;
+    state.team_chat_unread = team_page_state().team_chat_unread;
+    return state;
+}
+
+void apply_activity_state_to_page(const TeamPageActivityState& state)
+{
+    team_page_state().team_chat_unread = state.team_chat_unread;
+}
+
+TeamPageActivitySink current_activity_sink()
+{
+    static TeamPageActivityStoreAdapter store;
+    static TeamPageGpsTrackLoaderAdapter gps_track_loader;
+    static TeamPageUnreadPublisherAdapter unread_publisher;
+    TeamPageActivityContext context;
+    context.now_s = now_secs();
+    context.self_node_id = app::messagingFacade().getSelfNodeId();
+    context.team_chat_visible = is_team_chat_visible();
+    return TeamPageActivitySink(store,
+                                store,
+                                gps_track_loader,
+                                unread_publisher,
+                                context);
+}
+
+template <typename Consume>
+void consume_activity(Consume consume)
+{
+    auto state = activity_state_from_page();
+    const auto sink = current_activity_sink();
+    consume(sink, state);
+    apply_activity_state_to_page(state);
+}
+
+void apply_event_cleanup_effects(const TeamPageEventEffects& effects)
+{
+    if (effects.clear_keydist_pending)
+    {
+        team_page_context().deferred_dispatch.clearKeyDist();
+    }
+    if (effects.clear_status_pending)
+    {
+        team_page_context().deferred_dispatch.clearStatusBroadcasts();
+    }
+}
+
+void apply_event_runtime_effects(const TeamPageEventEffects& effects)
+{
+    const auto runtime = current_runtime_port();
+    if (effects.clear_keys)
+    {
+        runtime.clearKeys();
+    }
+    if (effects.stop_pairing)
+    {
+        runtime.stopPairing();
+    }
+    apply_event_cleanup_effects(effects);
+}
+
+TeamPagePairingUpdate pairing_update_from_event(
+    const team::TeamPairingEvent& event)
+{
+    TeamPagePairingUpdate update;
+    update.role = event.role;
+    update.state = event.state;
+    update.team_id = event.team_id;
+    update.has_team_id = event.has_team_id;
+    update.key_id = event.key_id;
+    update.peer_id = event.peer_id;
+    update.has_team_name = event.has_team_name;
+    if (event.has_team_name)
+    {
+        update.team_name = event.team_name;
+    }
+    return update;
+}
+
+TeamPagePairingUpdate pairing_update_from_status(
+    const team::TeamPairingStatus& status)
+{
+    TeamPagePairingUpdate update;
+    update.role = status.role;
+    update.state = status.state;
+    update.team_id = status.team_id;
+    update.has_team_id = status.has_team_id;
+    update.key_id = status.key_id;
+    update.peer_id = status.peer_id;
+    update.has_team_name = status.has_team_name;
+    if (status.has_team_name)
+    {
+        update.team_name = status.team_name;
+    }
+    return update;
+}
+
+TeamPageCommandState command_state_from_page()
+{
+    TeamPageCommandState state;
+    state.in_team = team_page_state().in_team;
+    state.pending_join = team_page_state().pending_join;
+    state.pending_join_started_s = team_page_state().pending_join_started_s;
+    state.kicked_out = team_page_state().kicked_out;
+    state.self_is_leader = team_page_state().self_is_leader;
+    state.last_event_seq = team_page_state().last_event_seq;
+    state.pairing_role = team_page_state().pairing_role;
+    state.pairing_state = team_page_state().pairing_state;
+    state.pairing_peer_id = team_page_state().pairing_peer_id;
+    state.pairing_team_name = team_page_state().pairing_team_name;
+    state.team_id = team_page_state().team_id;
+    state.has_team_id = team_page_state().has_team_id;
+    state.team_name = team_page_state().team_name;
+    state.security_round = team_page_state().security_round;
+    state.last_update_s = team_page_state().last_update_s;
+    state.team_psk = team_page_state().team_psk;
+    state.has_team_psk = team_page_state().has_team_psk;
+    state.waiting_new_keys = team_page_state().waiting_new_keys;
+    state.selected_member_index = team_page_state().selected_member_index;
+    state.members = team_page_state().members;
+    return state;
+}
+
+void apply_command_state_to_page(const TeamPageCommandState& state)
+{
+    team_page_state().in_team = state.in_team;
+    team_page_state().pending_join = state.pending_join;
+    team_page_state().pending_join_started_s = state.pending_join_started_s;
+    team_page_state().kicked_out = state.kicked_out;
+    team_page_state().self_is_leader = state.self_is_leader;
+    team_page_state().last_event_seq = state.last_event_seq;
+    team_page_state().pairing_role = state.pairing_role;
+    team_page_state().pairing_state = state.pairing_state;
+    team_page_state().pairing_peer_id = state.pairing_peer_id;
+    team_page_state().pairing_team_name = state.pairing_team_name;
+    team_page_state().team_id = state.team_id;
+    team_page_state().has_team_id = state.has_team_id;
+    team_page_state().team_name = state.team_name;
+    team_page_state().security_round = state.security_round;
+    team_page_state().last_update_s = state.last_update_s;
+    team_page_state().team_psk = state.team_psk;
+    team_page_state().has_team_psk = state.has_team_psk;
+    team_page_state().waiting_new_keys = state.waiting_new_keys;
+    team_page_state().selected_member_index = state.selected_member_index;
+    team_page_state().members = state.members;
+}
+
+TeamPageCommandReducer current_command_reducer()
+{
+    TeamPageCommandContext context;
+    context.now_s = now_secs();
+    context.self_node_id = app::messagingFacade().getSelfNodeId();
+    return TeamPageCommandReducer(context);
+}
+
+template <typename Reduce>
+TeamPageCommandEffects reduce_command_state(Reduce reduce)
+{
+    auto state = command_state_from_page();
+    auto reducer = current_command_reducer();
+    const auto effects = reduce(reducer, state);
+    apply_command_state_to_page(state);
+    return effects;
+}
+
+void apply_command_cleanup_effects(const TeamPageCommandEffects& effects)
+{
+    if (effects.clear_keydist_pending)
+    {
+        team_page_context().deferred_dispatch.clearKeyDist();
+    }
+    if (effects.clear_status_pending)
+    {
+        team_page_context().deferred_dispatch.clearStatusBroadcasts();
+    }
+}
+
+void apply_command_runtime_effects(const TeamPageCommandEffects& effects)
+{
+    const auto runtime = current_runtime_port();
+    if (effects.clear_keys)
+    {
+        runtime.clearKeys();
+    }
+    if (effects.reset_controller_ui)
+    {
+        runtime.resetControllerUi();
+    }
+
+    if (effects.stop_pairing)
+    {
+        runtime.stopPairing();
+    }
+
+    apply_command_cleanup_effects(effects);
+}
+
+class TeamPageRandomByteAdapter final
+    : public ITeamPageKickConfirmRandom
+    , public ITeamPageCreateTeamRandom
+{
+  public:
+    uint8_t nextByte() override
+    {
+        return next_random_byte();
+    }
+};
+
+class TeamPageKickConfirmDeferredAdapter final
+    : public ITeamPageKickConfirmDeferred
+{
+  public:
+    void enqueueKeyDist(uint32_t node_id, uint32_t key_id) override
+    {
+        add_keydist_pending(node_id, key_id);
+    }
+};
+
+TeamPageDeferredDispatchState deferred_dispatch_state_from_page()
+{
+    TeamPageDeferredDispatchState state;
+    state.in_team = team_page_state().in_team;
+    state.has_team_id = team_page_state().has_team_id;
+    state.self_is_leader = team_page_state().self_is_leader;
+    state.team_id = team_page_state().team_id;
+    state.security_round = team_page_state().security_round;
+    state.team_psk = team_page_state().team_psk;
+    state.has_team_psk = team_page_state().has_team_psk;
+    return state;
+}
+
+void apply_deferred_dispatch_failures(
+    const TeamPageDeferredDispatchEffects& effects)
+{
+    for (const auto& failure : effects.failures)
+    {
+        const char* action =
+            failure.action == TeamPageDeferredDispatchAction::KeyDist
+                ? "KeyDist"
+                : "Status";
+        if (failure.kind ==
+            TeamPageDeferredDispatchFailureKind::SendFailedDetail)
+        {
+            notify_send_failed_detail(action, failure.error);
+        }
+        else
+        {
+            notify_send_failed(action, failure.needs_keys);
+        }
+    }
+}
 
 void add_keydist_pending(uint32_t node_id, uint32_t key_id)
 {
-    for (auto& item : s_keydist_pending)
-    {
-        if (item.node_id == node_id && item.key_id == key_id)
-        {
-            return;
-        }
-    }
-    KeyDistPending item;
-    item.node_id = node_id;
-    item.key_id = key_id;
-    item.attempts = 0;
-    item.next_retry_s = now_secs() + kKeyDistRetryIntervalSec;
-    s_keydist_pending.push_back(item);
+    team_page_context().deferred_dispatch.enqueueKeyDist(
+        node_id,
+        key_id,
+        now_secs());
 }
 
 void mark_keydist_confirmed(uint32_t node_id, uint32_t key_id)
 {
-    s_keydist_pending.erase(
-        std::remove_if(s_keydist_pending.begin(), s_keydist_pending.end(),
-                       [&](const KeyDistPending& item)
-                       {
-                           return item.node_id == node_id && item.key_id == key_id;
-                       }),
-        s_keydist_pending.end());
+    team_page_context().deferred_dispatch.confirmKeyDist(node_id, key_id);
 }
 
 void schedule_status_broadcast(uint8_t repeats, uint32_t delay_s)
 {
-    if (repeats == 0)
-    {
-        return;
-    }
-    StatusBroadcastPending item;
-    item.next_send_s = now_secs() + delay_s;
-    item.remaining = repeats;
-    s_status_pending.push_back(item);
+    team_page_context().deferred_dispatch.scheduleStatusBroadcast(
+        repeats,
+        now_secs(),
+        delay_s);
 }
 
 void process_keydist_retries()
 {
-    if (s_keydist_pending.empty())
-    {
-        return;
-    }
-    if (!g_team_state.has_team_psk || !g_team_state.has_team_id)
-    {
-        return;
-    }
-    team::TeamController* controller = app::teamFacade().getTeamController();
-    uint32_t now = now_secs();
-    if (!controller)
-    {
-        return;
-    }
-
-    for (auto it = s_keydist_pending.begin(); it != s_keydist_pending.end();)
-    {
-        if (now < it->next_retry_s)
-        {
-            ++it;
-            continue;
-        }
-        if (it->attempts >= kKeyDistMaxRetries)
-        {
-            notify_send_failed("KeyDist", false);
-            it = s_keydist_pending.erase(it);
-            continue;
-        }
-
-        team::proto::TeamKeyDist kd{};
-        kd.team_id = g_team_state.team_id;
-        kd.key_id = it->key_id;
-        kd.channel_psk_len = static_cast<uint8_t>(g_team_state.team_psk.size());
-        kd.channel_psk = g_team_state.team_psk;
-
-        bool ok = controller->onKeyDistPlain(kd, chat::ChannelId::PRIMARY, it->node_id);
-        if (!ok)
-        {
-            notify_send_failed_detail("KeyDist", controller->getLastSendError());
-        }
-        it->attempts += 1;
-        it->next_retry_s = now + kKeyDistRetryIntervalSec;
-        ++it;
-    }
+    const auto runtime = current_runtime_port();
+    TeamPageDeferredDispatchRuntimeAdapter dispatch_port(runtime);
+    const auto effects = team_page_context().deferred_dispatch.processKeyDistRetries(
+        deferred_dispatch_state_from_page(),
+        dispatch_port,
+        now_secs());
+    apply_deferred_dispatch_failures(effects);
 }
 
 void process_status_broadcasts()
 {
-    if (s_status_pending.empty())
+    const auto runtime = current_runtime_port();
+    TeamPageDeferredDispatchRuntimeAdapter dispatch_port(runtime);
+    team::proto::TeamStatus status{};
+    status.key_id = team_page_state().security_round;
+    fill_status_members(status);
+    const auto effects = team_page_context().deferred_dispatch.processStatusBroadcasts(
+        deferred_dispatch_state_from_page(),
+        status,
+        dispatch_port,
+        now_secs());
+    if (effects.sent_status)
     {
-        return;
-    }
-    if (!g_team_state.in_team || !g_team_state.has_team_id || !g_team_state.self_is_leader)
-    {
-        s_status_pending.clear();
-        return;
-    }
-    team::TeamController* controller = app::teamFacade().getTeamController();
-    if (!controller)
-    {
-        return;
-    }
-    uint32_t now = now_secs();
-    for (auto it = s_status_pending.begin(); it != s_status_pending.end();)
-    {
-        if (now < it->next_send_s)
-        {
-            ++it;
-            continue;
-        }
-        team::proto::TeamStatus status{};
-        status.key_id = g_team_state.security_round;
-        fill_status_members(status);
         std::printf("[Team] status rebroadcast members=%u leader=%08lX\n",
                     static_cast<unsigned>(status.members.size()),
                     static_cast<unsigned long>(status.leader_id));
-        if (!controller->onStatus(status, chat::ChannelId::PRIMARY, 0))
-        {
-            notify_send_failed("Status", true);
-        }
-        if (!controller->onStatusPlain(status, chat::ChannelId::PRIMARY, 0))
-        {
-            notify_send_failed("Status", false);
-        }
-
-        if (it->remaining > 0)
-        {
-            it->remaining -= 1;
-        }
-        if (it->remaining == 0)
-        {
-            it = s_status_pending.erase(it);
-        }
-        else
-        {
-            it->next_send_s = now + 2;
-            ++it;
-        }
     }
+    apply_deferred_dispatch_failures(effects);
 }
 
 void update_top_bar_title(const char* title)
@@ -341,113 +883,49 @@ void update_top_bar_title(const char* title)
     {
         return;
     }
-    ::ui::widgets::top_bar_set_title(g_team_state.top_bar_widget, title);
+    ::ui::widgets::top_bar_set_title(team_page_lvgl_context().top_bar_widget, title);
 }
 
 void reset_team_ui_state()
 {
-    team::TeamController* controller = app::teamFacade().getTeamController();
-    if (controller)
-    {
-        controller->resetUiState();
-    }
+    current_runtime_port().resetControllerUi();
 }
 
 void enter_kicked_out_state()
 {
-    team::TeamController* controller = app::teamFacade().getTeamController();
-    if (controller)
-    {
-        controller->clearKeys();
-    }
-    team::TeamPairingService* pairing = app::teamFacade().getTeamPairing();
-    if (pairing)
-    {
-        pairing->stop();
-    }
-    g_team_state.in_team = false;
-    g_team_state.pending_join = false;
-    g_team_state.pending_join_started_s = 0;
-    g_team_state.kicked_out = true;
-    g_team_state.self_is_leader = false;
-    g_team_state.last_event_seq = 0;
-    g_team_state.members.clear();
-    g_team_state.has_team_id = false;
-    g_team_state.team_name.clear();
-    g_team_state.security_round = 0;
-    g_team_state.has_team_psk = false;
-    g_team_state.waiting_new_keys = false;
-    s_keydist_pending.clear();
-    s_status_pending.clear();
-    g_team_state.page = TeamPage::KickedOut;
-    g_team_state.nav_stack.clear();
-}
-
-void clear_focusables()
-{
-    g_team_state.focusables.clear();
-    g_team_state.default_focus = nullptr;
-}
-
-void register_focus(lv_obj_t* obj, bool is_default = false)
-{
-    if (!obj)
-    {
-        return;
-    }
-    g_team_state.focusables.push_back(obj);
-    if (is_default || !g_team_state.default_focus)
-    {
-        g_team_state.default_focus = obj;
-    }
-}
-
-void clear_content()
-{
-    if (g_team_state.body)
-    {
-        lv_obj_clean(g_team_state.body);
-    }
-    if (g_team_state.actions)
-    {
-        lv_obj_clean(g_team_state.actions);
-    }
-    g_team_state.list_items.clear();
-    for (auto& btn : g_team_state.action_btns)
-    {
-        btn = nullptr;
-    }
-    for (auto& label : g_team_state.action_labels)
-    {
-        label = nullptr;
-    }
-    g_team_state.detail_label = nullptr;
-    clear_focusables();
+    const auto effects = reduce_command_state(
+        [](TeamPageCommandReducer& reducer, TeamPageCommandState& state)
+        {
+            return reducer.reduceKickedOut(state);
+        });
+    apply_command_runtime_effects(effects);
+    team_page_state().page = TeamPage::KickedOut;
+    team_page_state().nav_stack.clear();
 }
 
 void modal_prepare_group()
 {
-    if (!g_team_state.modal_group)
+    if (!team_page_lvgl_context().modal_group)
     {
-        g_team_state.modal_group = lv_group_create();
+        team_page_lvgl_context().modal_group = lv_group_create();
     }
-    lv_group_remove_all_objs(g_team_state.modal_group);
-    g_team_state.prev_group = lv_group_get_default();
-    set_default_group(g_team_state.modal_group);
+    lv_group_remove_all_objs(team_page_lvgl_context().modal_group);
+    team_page_lvgl_context().prev_group = lv_group_get_default();
+    set_default_group(team_page_lvgl_context().modal_group);
 }
 
 void modal_restore_group()
 {
-    lv_group_t* restore = g_team_state.prev_group;
+    lv_group_t* restore = team_page_lvgl_context().prev_group;
     if (!restore)
     {
-        restore = g_team_state.group;
+        restore = team_page_lvgl_context().group;
     }
     if (restore)
     {
         set_default_group(restore);
     }
-    g_team_state.prev_group = nullptr;
+    team_page_lvgl_context().prev_group = nullptr;
 }
 
 lv_obj_t* create_modal_root(int width, int height)
@@ -483,10 +961,10 @@ lv_obj_t* create_modal_root(int width, int height)
 
 void close_leave_confirm_modal()
 {
-    if (g_team_state.leave_confirm_modal)
+    if (team_page_lvgl_context().leave_confirm_modal)
     {
-        lv_obj_del(g_team_state.leave_confirm_modal);
-        g_team_state.leave_confirm_modal = nullptr;
+        lv_obj_del(team_page_lvgl_context().leave_confirm_modal);
+        team_page_lvgl_context().leave_confirm_modal = nullptr;
     }
     modal_restore_group();
 }
@@ -496,49 +974,10 @@ uint32_t now_secs()
     return sys::millis_now() / 1000U;
 }
 
-int online_count()
-{
-    int count = 0;
-    uint32_t now = now_secs();
-    for (auto& m : g_team_state.members)
-    {
-        if (m.last_seen_s > 0 && (now - m.last_seen_s) <= 120)
-        {
-            m.online = true;
-        }
-        else
-        {
-            m.online = false;
-        }
-        if (m.online)
-        {
-            ++count;
-        }
-    }
-    return count;
-}
-
-lv_obj_t* add_label(lv_obj_t* parent, const char* text, bool section = false, bool meta = false)
-{
-    lv_obj_t* label = lv_label_create(parent);
-    ::ui::i18n::set_label_text_raw(label, text);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(label, LV_PCT(100));
-    if (section)
-    {
-        style::apply_section_label(label);
-    }
-    else if (meta)
-    {
-        style::apply_meta_label(label);
-    }
-    return label;
-}
-
-lv_obj_t* create_fitted_button(lv_obj_t* parent, const char* text, lv_event_cb_t cb)
+lv_obj_t* create_modal_button(lv_obj_t* parent, const char* text, lv_event_cb_t cb)
 {
     lv_obj_t* btn = lv_btn_create(parent);
-    lv_obj_set_height(btn, action_button_height());
+    lv_obj_set_height(btn, ::ui::page_profile::current().list_item_height);
     style::apply_button_secondary(btn);
     lv_obj_set_style_pad_hor(btn, kActionBtnPadH, LV_PART_MAIN);
     lv_obj_t* label = lv_label_create(btn);
@@ -558,102 +997,31 @@ lv_obj_t* create_fitted_button(lv_obj_t* parent, const char* text, lv_event_cb_t
     return btn;
 }
 
-lv_obj_t* create_action_button(const char* text, lv_event_cb_t cb)
+TeamPageReadModelInput current_read_model_input()
 {
-    lv_obj_t* btn = create_fitted_button(g_team_state.actions, text, cb);
-    return btn;
+    TeamPageReadModelInput input;
+    input.in_team = team_page_state().in_team;
+    input.pending_join = team_page_state().pending_join;
+    input.kicked_out = team_page_state().kicked_out;
+    input.self_is_leader = team_page_state().self_is_leader;
+    input.waiting_new_keys = team_page_state().waiting_new_keys;
+    input.team_id = team_page_state().team_id;
+    input.has_team_id = team_page_state().has_team_id;
+    input.team_name = team_page_state().team_name;
+    input.security_round = team_page_state().security_round;
+    input.last_update_s = team_page_state().last_update_s;
+    input.has_team_psk = team_page_state().has_team_psk;
+    input.pairing_role = team_page_state().pairing_role;
+    input.pairing_state = team_page_state().pairing_state;
+    input.pairing_team_name = team_page_state().pairing_team_name;
+    input.members = team_page_state().members;
+    input.selected_member_index = team_page_state().selected_member_index;
+    return input;
 }
 
-lv_obj_t* create_list_item(const char* left, const char* right)
+TeamPageReadModel current_read_model()
 {
-    lv_obj_t* btn = lv_btn_create(g_team_state.body);
-    lv_obj_set_size(btn, LV_PCT(100), list_item_height());
-    lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_SPACE_BETWEEN,
-                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    style::apply_list_item(btn);
-
-    lv_obj_t* left_label = lv_label_create(btn);
-    ::ui::i18n::set_content_label_text_raw(left_label, left);
-    lv_obj_set_width(left_label, LV_PCT(70));
-    lv_label_set_long_mode(left_label, LV_LABEL_LONG_CLIP);
-
-    lv_obj_t* right_label = lv_label_create(btn);
-    ::ui::i18n::set_label_text(right_label, right);
-    lv_obj_set_width(right_label, LV_PCT(30));
-    lv_label_set_long_mode(right_label, LV_LABEL_LONG_CLIP);
-    lv_obj_set_style_text_align(right_label, LV_TEXT_ALIGN_RIGHT, 0);
-
-    g_team_state.list_items.push_back(btn);
-    return btn;
-}
-
-std::string format_last_seen(uint32_t last_seen_s)
-{
-    if (last_seen_s == 0)
-    {
-        return ::ui::i18n::tr("Last seen --");
-    }
-    uint32_t now = now_secs();
-    if (now <= last_seen_s)
-    {
-        return ::ui::i18n::tr("Online");
-    }
-    uint32_t age = now - last_seen_s;
-    if (age <= 120)
-    {
-        return ::ui::i18n::tr("Online");
-    }
-    if (age < 3600)
-    {
-        return ::ui::i18n::format("Last seen %um ago", static_cast<unsigned>(age / 60));
-    }
-    return ::ui::i18n::format("Last seen %uh ago", static_cast<unsigned>(age / 3600));
-}
-
-std::string format_last_update(uint32_t last_update_s)
-{
-    if (last_update_s == 0)
-    {
-        return ::ui::i18n::tr("Last update --");
-    }
-    uint32_t now = now_secs();
-    if (now <= last_update_s)
-    {
-        return ::ui::i18n::tr("Last update 0s ago");
-    }
-    uint32_t age = now - last_update_s;
-    return ::ui::i18n::format("Last update %us ago", static_cast<unsigned>(age));
-}
-
-std::string format_team_name_from_id(const TeamId& id)
-{
-    char buf[16];
-    snprintf(buf, sizeof(buf), "TEAM-%02X%02X", id[0], id[1]);
-    return std::string(buf);
-}
-
-std::string current_team_name()
-{
-    if (!g_team_state.team_name.empty())
-    {
-        return g_team_state.team_name;
-    }
-    if (g_team_state.has_team_id)
-    {
-        return format_team_name_from_id(g_team_state.team_id);
-    }
-    return "Unknown";
-}
-
-TeamId generate_team_id()
-{
-    TeamId id{};
-    for (size_t i = 0; i < id.size(); ++i)
-    {
-        id[i] = next_random_byte();
-    }
-    return id;
+    return TeamPageReadModel(now_secs());
 }
 
 std::string resolve_node_name(uint32_t node_id)
@@ -668,102 +1036,54 @@ std::string resolve_node_name(uint32_t node_id)
     return std::string(fallback);
 }
 
-int find_member_index(uint32_t node_id)
+TeamPageColorContext current_color_context()
 {
-    for (size_t i = 0; i < g_team_state.members.size(); ++i)
-    {
-        if (g_team_state.members[i].node_id == node_id)
-        {
-            return static_cast<int>(i);
-        }
-    }
-    return -1;
+    return TeamPageColorContext(app::messagingFacade().getSelfNodeId());
 }
 
-void assign_member_color(TeamMemberUi& member)
+TeamPagePersistentState persistent_state_from_page()
 {
-    uint32_t node_id = member.node_id;
-    if (node_id == 0)
-    {
-        node_id = app::messagingFacade().getSelfNodeId();
-    }
-    member.color_index = team_color_index_from_node_id(node_id);
+    TeamPagePersistentState state;
+    state.in_team = team_page_state().in_team;
+    state.pending_join = team_page_state().pending_join;
+    state.pending_join_started_s = team_page_state().pending_join_started_s;
+    state.kicked_out = team_page_state().kicked_out;
+    state.self_is_leader = team_page_state().self_is_leader;
+    state.last_event_seq = team_page_state().last_event_seq;
+    state.team_chat_unread = team_page_state().team_chat_unread;
+    state.team_id = team_page_state().team_id;
+    state.has_team_id = team_page_state().has_team_id;
+    state.team_name = team_page_state().team_name;
+    state.security_round = team_page_state().security_round;
+    state.last_update_s = team_page_state().last_update_s;
+    state.team_psk = team_page_state().team_psk;
+    state.has_team_psk = team_page_state().has_team_psk;
+    state.members = team_page_state().members;
+    return state;
 }
 
-void ensure_member_colors()
+void apply_persistent_state_to_page(const TeamPagePersistentState& state)
 {
-    for (auto& m : g_team_state.members)
-    {
-        uint32_t node_id = m.node_id;
-        if (node_id == 0)
-        {
-            node_id = app::messagingFacade().getSelfNodeId();
-        }
-        m.color_index = team_color_index_from_node_id(node_id);
-    }
-}
-
-void touch_member(uint32_t node_id, uint32_t last_seen_s)
-{
-    int idx = find_member_index(node_id);
-    if (idx < 0)
-    {
-        TeamMemberUi info;
-        info.node_id = node_id;
-        info.name = resolve_node_name(node_id);
-        info.last_seen_s = last_seen_s;
-        assign_member_color(info);
-        g_team_state.members.push_back(info);
-        return;
-    }
-    g_team_state.members[idx].last_seen_s = last_seen_s;
-    g_team_state.members[idx].name = resolve_node_name(node_id);
-}
-
-TeamUiSnapshot snapshot_from_state()
-{
-    TeamUiSnapshot snap;
-    snap.in_team = g_team_state.in_team;
-    snap.pending_join = g_team_state.pending_join;
-    snap.pending_join_started_s = g_team_state.pending_join_started_s;
-    snap.kicked_out = g_team_state.kicked_out;
-    snap.self_is_leader = g_team_state.self_is_leader;
-    snap.last_event_seq = g_team_state.last_event_seq;
-    snap.team_chat_unread = g_team_state.team_chat_unread;
-    snap.team_id = g_team_state.team_id;
-    snap.has_team_id = g_team_state.has_team_id;
-    snap.team_name = g_team_state.team_name;
-    snap.security_round = g_team_state.security_round;
-    snap.last_update_s = g_team_state.last_update_s;
-    snap.team_psk = g_team_state.team_psk;
-    snap.has_team_psk = g_team_state.has_team_psk;
-    snap.members = g_team_state.members;
-    return snap;
-}
-
-void apply_snapshot(const TeamUiSnapshot& snap)
-{
-    g_team_state.in_team = snap.in_team;
-    g_team_state.pending_join = snap.pending_join;
-    g_team_state.pending_join_started_s = snap.pending_join_started_s;
-    g_team_state.kicked_out = snap.kicked_out;
-    g_team_state.self_is_leader = snap.self_is_leader;
-    g_team_state.last_event_seq = snap.last_event_seq;
-    g_team_state.team_chat_unread = snap.team_chat_unread;
-    g_team_state.team_id = snap.team_id;
-    g_team_state.has_team_id = snap.has_team_id;
-    g_team_state.team_name = snap.team_name;
-    g_team_state.security_round = snap.security_round;
-    g_team_state.last_update_s = snap.last_update_s;
-    g_team_state.team_psk = snap.team_psk;
-    g_team_state.has_team_psk = snap.has_team_psk;
-    g_team_state.members = snap.members;
-    ensure_member_colors();
+    team_page_state().in_team = state.in_team;
+    team_page_state().pending_join = state.pending_join;
+    team_page_state().pending_join_started_s = state.pending_join_started_s;
+    team_page_state().kicked_out = state.kicked_out;
+    team_page_state().self_is_leader = state.self_is_leader;
+    team_page_state().last_event_seq = state.last_event_seq;
+    team_page_state().team_chat_unread = state.team_chat_unread;
+    team_page_state().team_id = state.team_id;
+    team_page_state().has_team_id = state.has_team_id;
+    team_page_state().team_name = state.team_name;
+    team_page_state().security_round = state.security_round;
+    team_page_state().last_update_s = state.last_update_s;
+    team_page_state().team_psk = state.team_psk;
+    team_page_state().has_team_psk = state.has_team_psk;
+    team_page_state().members = state.members;
 }
 
 bool is_team_ui_active()
 {
-    return g_team_state.root && lv_obj_is_valid(g_team_state.root);
+    return team_page_lvgl_context().root && lv_obj_is_valid(team_page_lvgl_context().root);
 }
 
 bool is_team_chat_visible()
@@ -784,571 +1104,258 @@ bool is_team_chat_visible()
 
 bool is_pairing_active()
 {
-    return g_team_state.pairing_state != TeamPairingState::Idle &&
-           g_team_state.pairing_state != TeamPairingState::Completed &&
-           g_team_state.pairing_state != TeamPairingState::Failed;
+    return TeamPageFlowController::isPairingActive(
+        team_page_state().pairing_state);
 }
 
 void sync_pairing_from_service()
 {
-    team::TeamPairingService* pairing = app::teamFacade().getTeamPairing();
-    if (!pairing)
+    const auto runtime = current_runtime_port();
+    if (!runtime.hasPairing())
     {
         return;
     }
-    TeamPairingStatus status = pairing->getStatus();
-    g_team_state.pairing_role = status.role;
-    g_team_state.pairing_state = status.state;
-    g_team_state.pairing_team_name.clear();
-    if (status.has_team_name)
-    {
-        g_team_state.pairing_team_name = status.team_name;
-    }
-    if (status.has_team_id)
-    {
-        g_team_state.team_id = status.team_id;
-        g_team_state.has_team_id = true;
-        update_team_name_from_id(status.team_id);
-    }
-    if (is_pairing_active())
-    {
-        g_team_state.pending_join = true;
-        if (g_team_state.pending_join_started_s == 0)
+    const auto update = pairing_update_from_status(runtime.pairingStatus());
+    reduce_event_state(
+        [&](TeamPageEventReducer& reducer, TeamPageEventState& state)
         {
-            g_team_state.pending_join_started_s = now_secs();
-        }
-    }
-    else
-    {
-        g_team_state.pending_join = false;
-        g_team_state.pending_join_started_s = 0;
-    }
+            return reducer.reducePairingStatus(state, update);
+        });
 }
 
 void load_state_from_store()
 {
-    if (s_state_loaded)
+    auto state = persistent_state_from_page();
+    if (team_page_context().state_store.loadOnce(team_ui_snapshot_store(),
+                                                 state,
+                                                 current_color_context()))
     {
-        return;
+        apply_persistent_state_to_page(state);
     }
-    TeamUiSnapshot snap;
-    if (team_ui_get_store().load(snap))
-    {
-        apply_snapshot(snap);
-    }
-    s_state_loaded = true;
 }
 
 void refresh_state_from_store()
 {
-    TeamUiSnapshot snap;
-    if (team_ui_get_store().load(snap))
+    auto state = persistent_state_from_page();
+    if (team_page_context().state_store.refresh(team_ui_snapshot_store(),
+                                                state,
+                                                current_color_context()))
     {
-        apply_snapshot(snap);
+        apply_persistent_state_to_page(state);
     }
 }
 
 void save_state_to_store()
 {
-    TeamUiSnapshot snap = snapshot_from_state();
-    team_ui_get_store().save(snap);
-}
-
-void update_team_name_from_id(const TeamId& id)
-{
-    g_team_state.team_name = format_team_name_from_id(id);
+    team_page_context().state_store.save(team_ui_snapshot_store(),
+                                         persistent_state_from_page());
 }
 
 void fill_status_members(team::proto::TeamStatus& status)
 {
-    uint32_t self_id = app::messagingFacade().getSelfNodeId();
-    status.members.clear();
-    status.leader_id = 0;
-    for (const auto& m : g_team_state.members)
-    {
-        uint32_t id = (m.node_id == 0) ? self_id : m.node_id;
-        if (id == 0)
-        {
-            continue;
-        }
-        if (std::find(status.members.begin(), status.members.end(), id) == status.members.end())
-        {
-            status.members.push_back(id);
-        }
-        if (m.leader)
-        {
-            status.leader_id = id;
-        }
-    }
-    if (status.leader_id == 0 && g_team_state.self_is_leader && self_id != 0)
-    {
-        status.leader_id = self_id;
-    }
-    status.has_members = !status.members.empty();
-}
-
-void apply_member_list_from_status(const team::proto::TeamStatus& status)
-{
-    if (!status.has_members)
-    {
-        return;
-    }
-    uint32_t self_id = app::messagingFacade().getSelfNodeId();
-
-    auto find_existing = [&](uint32_t node_id) -> const TeamMemberUi*
-    {
-        for (const auto& m : g_team_state.members)
-        {
-            if (m.node_id == node_id)
-            {
-                return &m;
-            }
-        }
-        return nullptr;
-    };
-
-    std::vector<TeamMemberUi> updated;
-    updated.reserve(status.members.size() + 1);
-    for (uint32_t id : status.members)
-    {
-        if (id == 0)
-        {
-            continue;
-        }
-        uint32_t node_id = (id == self_id) ? 0 : id;
-        TeamMemberUi entry;
-        if (const TeamMemberUi* existing = find_existing(node_id))
-        {
-            entry = *existing;
-        }
-        entry.node_id = node_id;
-        entry.leader = (id == status.leader_id);
-        if (entry.name.empty())
-        {
-            entry.name = (node_id == 0) ? "You" : resolve_node_name(id);
-        }
-        if (entry.last_seen_s == 0)
-        {
-            entry.last_seen_s = now_secs();
-        }
-        assign_member_color(entry);
-        updated.push_back(entry);
-    }
-
-    bool has_self = std::any_of(updated.begin(), updated.end(),
-                                [](const TeamMemberUi& m)
-                                {
-                                    return m.node_id == 0;
-                                });
-    if (!has_self && self_id != 0)
-    {
-        TeamMemberUi self;
-        self.node_id = 0;
-        self.name = "You";
-        self.leader = (status.leader_id == self_id);
-        self.last_seen_s = now_secs();
-        assign_member_color(self);
-        updated.push_back(self);
-    }
-
-    g_team_state.members = std::move(updated);
-    g_team_state.self_is_leader = (status.leader_id != 0 && status.leader_id == self_id);
+    current_event_reducer().fillStatusMembers(event_state_from_page(), status);
 }
 
 void handle_team_error(const team::TeamErrorEvent& ev)
 {
-    if (!g_team_state.in_team || g_team_state.self_is_leader)
-    {
-        return;
-    }
-    if (g_team_state.has_team_id && ev.ctx.team_id != g_team_state.team_id)
-    {
-        return;
-    }
-    if (ev.error == team::TeamProtocolError::DecryptFail ||
-        ev.error == team::TeamProtocolError::KeyMismatch)
-    {
-        if (!g_team_state.waiting_new_keys)
+    const auto effects = reduce_event_state(
+        [&](TeamPageEventReducer& reducer, TeamPageEventState& state)
         {
-            ::ui::SystemNotification::show("Team keys mismatch", 2000);
-        }
-        g_team_state.waiting_new_keys = true;
+            return reducer.reduceError(state, ev);
+        });
+    if (effects.show_key_mismatch)
+    {
+        ::ui::SystemNotification::show("Team keys mismatch", 2000);
     }
 }
 
 void handle_team_status(const team::TeamStatusEvent& ev)
 {
-    if (g_team_state.has_team_id && ev.ctx.team_id != g_team_state.team_id)
+    const auto effects = reduce_event_state(
+        [&](TeamPageEventReducer& reducer, TeamPageEventState& state)
+        {
+            return reducer.reduceStatus(state, ev);
+        });
+    if (!effects.accepted)
     {
         return;
     }
-    uint32_t prev_round = g_team_state.security_round;
-    if (!g_team_state.has_team_id)
-    {
-        g_team_state.team_id = ev.ctx.team_id;
-        g_team_state.has_team_id = true;
-        update_team_name_from_id(ev.ctx.team_id);
-    }
-    if (ev.ctx.key_id != 0)
-    {
-        g_team_state.security_round = ev.ctx.key_id;
-    }
-    apply_member_list_from_status(ev.msg);
-    if (ev.msg.key_id != 0)
-    {
-        if (ev.msg.key_id > g_team_state.security_round)
-        {
-            g_team_state.waiting_new_keys = true;
-        }
-        else if (ev.msg.key_id == g_team_state.security_round)
-        {
-            g_team_state.waiting_new_keys = false;
-        }
-        if (ev.ctx.from != 0)
-        {
-            mark_keydist_confirmed(ev.ctx.from, ev.msg.key_id);
-        }
-    }
-    if (ev.msg.key_id != 0 && ev.msg.key_id > prev_round)
-    {
-        std::vector<uint8_t> payload;
-        write_u32_le(payload, ev.msg.key_id);
-        append_key_event(TeamKeyEventType::EpochRotated, payload);
-    }
-    g_team_state.last_update_s = ev.ctx.timestamp;
+    apply_event_effects(effects);
 }
 
 void handle_team_position(const team::TeamPositionEvent& ev)
 {
-    if (g_team_state.has_team_id && ev.ctx.team_id != g_team_state.team_id)
+    const auto effects = reduce_event_state(
+        [&](TeamPageEventReducer& reducer, TeamPageEventState& state)
+        {
+            return reducer.reduceActivity(state, ev.ctx, ev.ctx.from);
+        });
+    if (!effects.accepted)
     {
         return;
     }
-    if (!g_team_state.has_team_id)
-    {
-        g_team_state.team_id = ev.ctx.team_id;
-        g_team_state.has_team_id = true;
-        update_team_name_from_id(ev.ctx.team_id);
-    }
-    touch_member(ev.ctx.from, ev.ctx.timestamp);
-    if (ev.ctx.key_id != 0 && ev.ctx.from != 0)
-    {
-        mark_keydist_confirmed(ev.ctx.from, ev.ctx.key_id);
-    }
-    if (!ev.payload.empty())
-    {
-        team::proto::TeamPositionMessage pos{};
-        if (team::proto::decodeTeamPositionMessage(ev.payload.data(), ev.payload.size(), &pos))
+    apply_keydist_effect(effects);
+    consume_activity(
+        [&](const TeamPageActivitySink& sink,
+            TeamPageActivityState& state)
         {
-            const int16_t alt_m = team::proto::teamPositionHasAltitude(pos) ? pos.alt_m : 0;
-            const uint16_t speed_dmps = team::proto::teamPositionHasSpeed(pos) ? pos.speed_dmps : 0;
-            uint32_t ts = pos.ts != 0 ? pos.ts : ev.ctx.timestamp;
-            if (ts == 0)
-            {
-                ts = now_secs();
-            }
-            team_ui_posring_append(g_team_state.team_id,
-                                   ev.ctx.from,
-                                   pos.lat_e7,
-                                   pos.lon_e7,
-                                   alt_m,
-                                   speed_dmps,
-                                   ts);
-        }
-    }
-    g_team_state.last_update_s = ev.ctx.timestamp;
+            sink.consumePosition(state, ev);
+        });
 }
 
 void handle_team_waypoint(const team::TeamWaypointEvent& ev)
 {
-    if (g_team_state.has_team_id && ev.ctx.team_id != g_team_state.team_id)
+    const auto effects = reduce_event_state(
+        [&](TeamPageEventReducer& reducer, TeamPageEventState& state)
+        {
+            return reducer.reduceActivity(state, ev.ctx, ev.ctx.from);
+        });
+    if (!effects.accepted)
     {
         return;
     }
-    if (!g_team_state.has_team_id)
-    {
-        g_team_state.team_id = ev.ctx.team_id;
-        g_team_state.has_team_id = true;
-        update_team_name_from_id(ev.ctx.team_id);
-    }
-    touch_member(ev.ctx.from, ev.ctx.timestamp);
-    if (ev.ctx.key_id != 0 && ev.ctx.from != 0)
-    {
-        mark_keydist_confirmed(ev.ctx.from, ev.ctx.key_id);
-    }
-    if (team::proto::teamWaypointHasLocation(ev.msg))
-    {
-        uint32_t ts = ev.ctx.timestamp;
-        if (ts == 0)
+    apply_keydist_effect(effects);
+    consume_activity(
+        [&](const TeamPageActivitySink& sink,
+            TeamPageActivityState& state)
         {
-            ts = now_secs();
-        }
-        team_ui_posring_append(g_team_state.team_id,
-                               ev.ctx.from,
-                               ev.msg.lat_e7,
-                               ev.msg.lon_e7,
-                               0,
-                               0,
-                               ts);
-    }
-    g_team_state.last_update_s = ev.ctx.timestamp;
+            sink.consumeWaypoint(state, ev);
+        });
 }
 
 void handle_team_track(const team::TeamTrackEvent& ev)
 {
-    if (g_team_state.has_team_id && ev.ctx.team_id != g_team_state.team_id)
+    const auto effects = reduce_event_state(
+        [&](TeamPageEventReducer& reducer, TeamPageEventState& state)
+        {
+            return reducer.reduceActivity(state, ev.ctx, ev.ctx.from);
+        });
+    if (!effects.accepted)
     {
         return;
     }
-    if (!g_team_state.has_team_id)
-    {
-        g_team_state.team_id = ev.ctx.team_id;
-        g_team_state.has_team_id = true;
-        update_team_name_from_id(ev.ctx.team_id);
-    }
-    touch_member(ev.ctx.from, ev.ctx.timestamp);
-    if (ev.ctx.key_id != 0 && ev.ctx.from != 0)
-    {
-        mark_keydist_confirmed(ev.ctx.from, ev.ctx.key_id);
-    }
-    if (!ev.payload.empty())
-    {
-        team::proto::TeamTrackMessage track{};
-        if (team::proto::decodeTeamTrackMessage(ev.payload.data(), ev.payload.size(), &track))
+    apply_keydist_effect(effects);
+    consume_activity(
+        [&](const TeamPageActivitySink& sink,
+            TeamPageActivityState& state)
         {
-            if (track.version == team::proto::kTeamTrackVersion)
-            {
-                uint32_t base_ts = track.start_ts != 0 ? track.start_ts : ev.ctx.timestamp;
-                if (base_ts == 0)
-                {
-                    base_ts = now_secs();
-                }
-                for (size_t i = 0; i < track.points.size(); ++i)
-                {
-                    if ((track.valid_mask & (1u << static_cast<uint32_t>(i))) == 0)
-                    {
-                        continue;
-                    }
-                    const auto& pt = track.points[i];
-                    uint32_t ts = base_ts + static_cast<uint32_t>(track.interval_s) * static_cast<uint32_t>(i);
-                    team_ui_posring_append(g_team_state.team_id,
-                                           ev.ctx.from,
-                                           pt.lat_e7,
-                                           pt.lon_e7,
-                                           0,
-                                           0,
-                                           ts);
-                }
-                team_ui_append_member_track(g_team_state.team_id, ev.ctx.from, track);
-                if (g_gps_state.selected_member_id == ev.ctx.from)
-                {
-                    std::string track_path;
-                    if (team_ui_get_member_track_path(g_team_state.team_id, ev.ctx.from, track_path))
-                    {
-                        gps_tracker_load_file(track_path.c_str(), false);
-                    }
-                }
-            }
-        }
-    }
-    g_team_state.last_update_s = ev.ctx.timestamp;
+            sink.consumeTrack(state, ev);
+        });
 }
 
 void handle_team_chat(const team::TeamChatEvent& ev)
 {
-    if (g_team_state.has_team_id && ev.ctx.team_id != g_team_state.team_id)
+    uint32_t from_id = ev.msg.header.from != 0 ? ev.msg.header.from : ev.ctx.from;
+    const auto effects = reduce_event_state(
+        [&](TeamPageEventReducer& reducer, TeamPageEventState& state)
+        {
+            return reducer.reduceActivity(state, ev.ctx, from_id);
+        });
+    if (!effects.accepted)
     {
         return;
     }
-    if (!g_team_state.has_team_id)
-    {
-        g_team_state.team_id = ev.ctx.team_id;
-        g_team_state.has_team_id = true;
-        update_team_name_from_id(ev.ctx.team_id);
-    }
-    uint32_t from_id = ev.msg.header.from != 0 ? ev.msg.header.from : ev.ctx.from;
-    touch_member(from_id, ev.ctx.timestamp);
-    if (ev.ctx.key_id != 0 && from_id != 0)
-    {
-        mark_keydist_confirmed(from_id, ev.ctx.key_id);
-    }
-    uint32_t ts = ev.msg.header.ts != 0 ? ev.msg.header.ts : ev.ctx.timestamp;
-    if (ts == 0)
-    {
-        ts = now_secs();
-    }
-    team_ui_chatlog_append_structured(g_team_state.team_id,
-                                      from_id,
-                                      true,
-                                      ts,
-                                      ev.msg.header.type,
-                                      ev.msg.payload);
-    uint32_t prev_unread = g_team_state.team_chat_unread;
-    bool incoming = (from_id != 0 && from_id != app::messagingFacade().getSelfNodeId());
-    if (incoming && !is_team_chat_visible())
-    {
-        if (g_team_state.team_chat_unread < UINT32_MAX)
+    apply_keydist_effect(effects);
+    consume_activity(
+        [&](const TeamPageActivitySink& sink,
+            TeamPageActivityState& state)
         {
-            g_team_state.team_chat_unread += 1;
-        }
-    }
-    else if (is_team_chat_visible())
-    {
-        g_team_state.team_chat_unread = 0;
-    }
-    if (g_team_state.team_chat_unread != prev_unread)
-    {
-        sys::EventBus::publish(new sys::ChatUnreadChangedEvent(2,
-                                                               static_cast<int>(g_team_state.team_chat_unread)),
-                               0);
-    }
-    if (ev.msg.header.type == team::proto::TeamChatType::Location)
-    {
-        team::proto::TeamChatLocation loc;
-        if (team::proto::decodeTeamChatLocation(ev.msg.payload.data(),
-                                                ev.msg.payload.size(),
-                                                &loc))
-        {
-            uint32_t pos_ts = loc.ts != 0 ? loc.ts : ts;
-            team_ui_posring_append(g_team_state.team_id,
-                                   from_id,
-                                   loc.lat_e7,
-                                   loc.lon_e7,
-                                   loc.alt_m,
-                                   0,
-                                   pos_ts);
-        }
-    }
-    g_team_state.last_update_s = ev.ctx.timestamp;
+            sink.consumeChat(state, ev);
+        });
 }
 
 void handle_team_kick(const team::TeamKickEvent& ev)
 {
-    uint32_t target = ev.msg.target;
-    int idx = find_member_index(target);
-    if (idx >= 0)
+    const auto effects = reduce_event_state(
+        [&](TeamPageEventReducer& reducer, TeamPageEventState& state)
+        {
+            return reducer.reduceKick(state, ev);
+        });
+    if (!effects.accepted)
     {
-        g_team_state.members.erase(g_team_state.members.begin() + idx);
+        return;
     }
+    if (effects.member_kicked_key_event)
     {
-        std::vector<uint8_t> payload;
-        write_u32_le(payload, target);
-        append_key_event(TeamKeyEventType::MemberKicked, payload);
+        append_key_event_to_page(
+            [&](const TeamPageKeyEventLog& log,
+                TeamPageKeyEventState& state)
+            {
+                return log.appendMemberKicked(state,
+                                             effects.member_kicked_id);
+            });
     }
-    g_team_state.security_round += 1;
-    if (g_team_state.security_round != 0)
+    if (effects.epoch_rotated)
     {
-        std::vector<uint8_t> payload;
-        write_u32_le(payload, g_team_state.security_round);
-        append_key_event(TeamKeyEventType::EpochRotated, payload);
+        append_key_event_to_page(
+            [&](const TeamPageKeyEventLog& log,
+                TeamPageKeyEventState& state)
+            {
+                return log.appendEpochRotated(state, effects.epoch_key_id);
+            });
     }
-
-    if (target == 0)
+    apply_event_runtime_effects(effects);
+    if (effects.request_kicked_out_page)
     {
-        enter_kicked_out_state();
+        team_page_state().page = TeamPage::KickedOut;
+    }
+    if (effects.clear_nav_stack)
+    {
+        team_page_state().nav_stack.clear();
     }
 }
 
 void handle_team_transfer_leader(const team::TeamTransferLeaderEvent& ev)
 {
     uint32_t target = ev.msg.target;
-    {
-        std::vector<uint8_t> payload;
-        write_u32_le(payload, target);
-        append_key_event(TeamKeyEventType::LeaderTransferred, payload);
-    }
-    for (auto& m : g_team_state.members)
-    {
-        m.leader = false;
-    }
-    int idx = find_member_index(target);
-    if (idx < 0)
-    {
-        TeamMemberUi info;
-        info.node_id = target;
-        info.name = resolve_node_name(target);
-        info.leader = true;
-        info.last_seen_s = now_secs();
-        g_team_state.members.push_back(info);
-    }
-    else
-    {
-        g_team_state.members[idx].leader = true;
-    }
-    g_team_state.self_is_leader = (target == 0);
+    append_key_event_to_page(
+        [&](const TeamPageKeyEventLog& log,
+            TeamPageKeyEventState& state)
+        {
+            return log.appendLeaderTransferred(state, target);
+        });
+    reduce_event_state(
+        [&](TeamPageEventReducer& reducer, TeamPageEventState& state)
+        {
+            return reducer.reduceTransferLeader(state, ev);
+        });
 }
 
 void handle_team_key_dist(const team::TeamKeyDistEvent& ev)
 {
-    g_team_state.team_id = ev.msg.team_id;
-    g_team_state.has_team_id = true;
-    update_team_name_from_id(ev.msg.team_id);
-    if (ev.msg.key_id != 0)
+    const auto effects = reduce_event_state(
+        [&](TeamPageEventReducer& reducer, TeamPageEventState& state)
+        {
+            return reducer.reduceKeyDist(state, ev);
+        });
+    if (!effects.accepted)
     {
-        g_team_state.security_round = ev.msg.key_id;
+        return;
     }
-    if (ev.msg.channel_psk_len > 0)
+    apply_event_effects(effects);
+}
+
+void handle_team_key_request(const team::TeamKeyRequestEvent& ev)
+{
+    const auto effects = TeamPageKeyRequestAction().handleRequest(
+        command_state_from_page(),
+        ev,
+        current_runtime_port());
+    if (effects.sent_keydist)
     {
-        g_team_state.team_psk = ev.msg.channel_psk;
-        g_team_state.has_team_psk = true;
-        team_ui_save_keys_now(g_team_state.team_id,
-                              g_team_state.security_round,
-                              g_team_state.team_psk);
-    }
-    g_team_state.waiting_new_keys = false;
-    g_team_state.last_update_s = ev.ctx.timestamp;
-    team::TeamController* controller = app::teamFacade().getTeamController();
-    if (controller && g_team_state.has_team_psk && g_team_state.has_team_id)
-    {
-        controller->setKeysFromPsk(g_team_state.team_id,
-                                   g_team_state.security_round,
-                                   g_team_state.team_psk.data(),
-                                   g_team_state.team_psk.size());
+        add_keydist_pending(ev.msg.requester_id != 0 ? ev.msg.requester_id
+                                                     : ev.ctx.from,
+                            team_page_state().security_round);
+        ::ui::SystemNotification::show("Sent team keys", 2000);
+        return;
     }
 
-    bool was_pairing = g_team_state.pending_join || is_pairing_active() ||
-                       g_team_state.pairing_role == TeamPairingRole::Member;
-    if (!g_team_state.in_team || was_pairing)
+    for (const auto& failure : effects.failures)
     {
-        g_team_state.in_team = true;
-        g_team_state.kicked_out = false;
-        g_team_state.pending_join = false;
-        g_team_state.pending_join_started_s = 0;
-        if (g_team_state.pairing_role == TeamPairingRole::Member)
+        if (failure.kind ==
+            TeamPageKeyRequestFailureKind::SendFailedDetail)
         {
-            g_team_state.self_is_leader = false;
-        }
-        if (g_team_state.members.empty())
-        {
-            TeamMemberUi self;
-            self.node_id = 0;
-            self.name = "You";
-            self.leader = g_team_state.self_is_leader;
-            self.last_seen_s = now_secs();
-            assign_member_color(self);
-            g_team_state.members.push_back(self);
-        }
-        g_team_state.page = TeamPage::StatusInTeam;
-        g_team_state.nav_stack.clear();
-    }
-
-    if (!g_team_state.self_is_leader && ev.ctx.from != 0)
-    {
-        uint32_t leader_id = ev.ctx.from;
-        int idx = find_member_index(leader_id);
-        if (idx < 0)
-        {
-            TeamMemberUi leader;
-            leader.node_id = leader_id;
-            leader.name = resolve_node_name(leader_id);
-            leader.leader = true;
-            leader.last_seen_s = now_secs();
-            assign_member_color(leader);
-            g_team_state.members.push_back(leader);
-        }
-        else
-        {
-            g_team_state.members[idx].leader = true;
+            notify_send_failed_detail("KeyDist", failure.error);
         }
     }
 }
@@ -1359,136 +1366,26 @@ void handle_team_pairing(const team::TeamPairingEvent& ev)
                 static_cast<unsigned>(ev.role),
                 static_cast<unsigned>(ev.state),
                 static_cast<unsigned long>(ev.peer_id),
-                g_team_state.in_team ? 1 : 0,
-                g_team_state.self_is_leader ? 1 : 0,
-                static_cast<unsigned>(g_team_state.members.size()));
-    g_team_state.pairing_role = ev.role;
-    g_team_state.pairing_state = ev.state;
-    g_team_state.pairing_peer_id = ev.peer_id;
-    g_team_state.pairing_team_name.clear();
-    if (ev.has_team_name)
+                team_page_state().in_team ? 1 : 0,
+                team_page_state().self_is_leader ? 1 : 0,
+                static_cast<unsigned>(team_page_state().members.size()));
+    const auto update = pairing_update_from_event(ev);
+    const auto effects = reduce_event_state(
+        [&](TeamPageEventReducer& reducer, TeamPageEventState& state)
+        {
+            return reducer.reducePairing(state, update);
+        });
+    if (!effects.accepted)
     {
-        g_team_state.pairing_team_name = ev.team_name;
-    }
-    if (ev.has_team_id)
-    {
-        g_team_state.team_id = ev.team_id;
-        g_team_state.has_team_id = true;
-        update_team_name_from_id(ev.team_id);
+        return;
     }
 
-    if (ev.role == TeamPairingRole::Leader)
+    const auto result = apply_event_effects(effects);
+    if (result.appended_member_accepted)
     {
-        g_team_state.in_team = true;
-        g_team_state.kicked_out = false;
-        g_team_state.self_is_leader = true;
-        int self_idx = find_member_index(0);
-        if (self_idx < 0)
-        {
-            TeamMemberUi self;
-            self.node_id = 0;
-            self.name = "You";
-            self.leader = true;
-            self.last_seen_s = now_secs();
-            assign_member_color(self);
-            g_team_state.members.push_back(self);
-        }
-        else
-        {
-            g_team_state.members[self_idx].leader = true;
-        }
-    }
-
-    if (ev.role == TeamPairingRole::Leader && ev.peer_id != 0 &&
-        ev.state == TeamPairingState::LeaderBeacon)
-    {
-        bool is_new_member = (find_member_index(ev.peer_id) < 0);
-        touch_member(ev.peer_id, now_secs());
-        g_team_state.last_update_s = now_secs();
-        std::vector<uint8_t> payload;
-        write_u32_le(payload, ev.peer_id);
-        payload.push_back(kKeyRoleMember);
-        append_key_event(TeamKeyEventType::MemberAccepted, payload);
         std::printf("[TeamUI] leader accept member=%08lX members=%u\n",
-                    static_cast<unsigned long>(ev.peer_id),
-                    static_cast<unsigned>(g_team_state.members.size()));
-        if (is_new_member)
-        {
-            team::TeamController* controller = app::teamFacade().getTeamController();
-            if (controller && g_team_state.has_team_id)
-            {
-                team::proto::TeamStatus status{};
-                status.key_id = g_team_state.security_round;
-                fill_status_members(status);
-                if (!controller->onStatus(status, chat::ChannelId::PRIMARY, 0))
-                {
-                    notify_send_failed("Status", true);
-                }
-                if (!controller->onStatusPlain(status, chat::ChannelId::PRIMARY, 0))
-                {
-                    notify_send_failed("Status", false);
-                }
-                schedule_status_broadcast(1, 2);
-            }
-        }
-        std::string name = resolve_node_name(ev.peer_id);
-        std::string msg = "Paired: " + name;
-        ::ui::SystemNotification::show(msg.c_str(), 2000);
-    }
-
-    if (ev.state == TeamPairingState::Completed)
-    {
-        g_team_state.pending_join = false;
-        g_team_state.pending_join_started_s = 0;
-        if (!g_team_state.in_team)
-        {
-            g_team_state.in_team = true;
-            g_team_state.kicked_out = false;
-            g_team_state.self_is_leader = (ev.role == TeamPairingRole::Leader);
-            if (g_team_state.members.empty())
-            {
-                TeamMemberUi self;
-                self.node_id = 0;
-                self.name = "You";
-                self.leader = g_team_state.self_is_leader;
-                self.last_seen_s = now_secs();
-                assign_member_color(self);
-                g_team_state.members.push_back(self);
-            }
-        }
-        g_team_state.page = TeamPage::StatusInTeam;
-        g_team_state.nav_stack.clear();
-        ::ui::SystemNotification::show("Paired successfully", 2000);
-        return;
-    }
-    if (ev.state == TeamPairingState::Failed)
-    {
-        g_team_state.pending_join = false;
-        g_team_state.pending_join_started_s = 0;
-        if (!g_team_state.in_team)
-        {
-            g_team_state.page = TeamPage::StatusNotInTeam;
-        }
-        else
-        {
-            g_team_state.page = TeamPage::StatusInTeam;
-        }
-        g_team_state.nav_stack.clear();
-        ::ui::SystemNotification::show("Pairing failed", 2000);
-        return;
-    }
-    if (is_pairing_active())
-    {
-        g_team_state.pending_join = true;
-        if (g_team_state.pending_join_started_s == 0)
-        {
-            g_team_state.pending_join_started_s = now_secs();
-        }
-    }
-    else
-    {
-        g_team_state.pending_join = false;
-        g_team_state.pending_join_started_s = 0;
+                    static_cast<unsigned long>(effects.member_accepted_id),
+                    static_cast<unsigned>(team_page_state().members.size()));
     }
 }
 
@@ -1505,43 +1402,33 @@ void top_bar_back(void*)
 
 void nav_to(TeamPage page, bool push)
 {
-    if (push && g_team_state.page != page)
-    {
-        g_team_state.nav_stack.push_back(g_team_state.page);
-    }
-    handle_page_transition(page);
-    g_team_state.page = page;
+    auto state = flow_state_from_page();
+    current_flow_controller().navigateTo(state, page, push);
+    apply_flow_state_to_page(state);
+    handle_page_transition(team_page_state().page);
     render_page();
 }
 
 void nav_back()
 {
-    if (g_team_state.page == TeamPage::JoinPending && g_team_state.in_team)
+    auto state = flow_state_from_page();
+    const auto result = current_flow_controller().navigateBack(state);
+    if (result.request_exit)
     {
-        nav_reset(TeamPage::StatusInTeam);
+        ui_request_exit_to_menu();
         return;
     }
-    if (!g_team_state.nav_stack.empty())
-    {
-        TeamPage next_page = g_team_state.nav_stack.back();
-        g_team_state.nav_stack.pop_back();
-        if (next_page == TeamPage::StatusNotInTeam && g_team_state.in_team)
-        {
-            next_page = TeamPage::StatusInTeam;
-        }
-        handle_page_transition(next_page);
-        g_team_state.page = next_page;
-        render_page();
-        return;
-    }
-    ui_request_exit_to_menu();
+    apply_flow_state_to_page(state);
+    handle_page_transition(team_page_state().page);
+    render_page();
 }
 
 void nav_reset(TeamPage page)
 {
-    g_team_state.nav_stack.clear();
-    handle_page_transition(page);
-    g_team_state.page = page;
+    auto state = flow_state_from_page();
+    current_flow_controller().resetTo(state, page);
+    apply_flow_state_to_page(state);
+    handle_page_transition(team_page_state().page);
     render_page();
 }
 
@@ -1550,118 +1437,47 @@ void handle_page_transition(TeamPage next_page)
     (void)next_page;
 }
 
-bool start_pairing_leader()
+bool start_pairing_command(TeamPagePairingCommandRole role)
 {
-    team::TeamPairingService* pairing = app::teamFacade().getTeamPairing();
-    if (!pairing || !g_team_state.has_team_id || !g_team_state.has_team_psk)
-    {
-        ::ui::SystemNotification::show("Pairing not ready", 2000);
-        return false;
-    }
-    std::string team_name = current_team_name();
-    bool ok = pairing->startLeader(g_team_state.team_id,
-                                   g_team_state.security_round,
-                                   g_team_state.team_psk.data(),
-                                   g_team_state.team_psk.size(),
-                                   app::messagingFacade().getSelfNodeId(),
-                                   team_name.c_str());
-    if (!ok)
-    {
-        ::ui::SystemNotification::show("Pairing init failed", 2000);
-        return false;
-    }
-    g_team_state.pending_join = true;
-    g_team_state.pending_join_started_s = now_secs();
-    g_team_state.pairing_role = TeamPairingRole::Leader;
-    g_team_state.pairing_state = TeamPairingState::LeaderBeacon;
+    auto state = command_state_from_page();
+    const auto effects = TeamPagePairingCommandAction().startPairing(
+        state,
+        current_command_reducer(),
+        current_runtime_port(),
+        role,
+        app::messagingFacade().getSelfNodeId());
+    apply_command_state_to_page(state);
+    apply_pairing_command_failures(effects);
     save_state_to_store();
-    nav_to(TeamPage::JoinPending);
-    return true;
-}
-
-bool start_pairing_member()
-{
-    team::TeamPairingService* pairing = app::teamFacade().getTeamPairing();
-    if (!pairing)
+    if (effects.started_pairing)
     {
-        ::ui::SystemNotification::show("Pairing not available", 2000);
-        return false;
+        nav_to(TeamPage::JoinPending);
     }
-    bool ok = pairing->startMember(app::messagingFacade().getSelfNodeId());
-    if (!ok)
-    {
-        ::ui::SystemNotification::show("Pairing init failed", 2000);
-        return false;
-    }
-    g_team_state.pending_join = true;
-    g_team_state.pending_join_started_s = now_secs();
-    g_team_state.pairing_role = TeamPairingRole::Member;
-    g_team_state.pairing_state = TeamPairingState::MemberScanning;
-    save_state_to_store();
-    nav_to(TeamPage::JoinPending);
-    return true;
+    return effects.started_pairing;
 }
 
 void handle_create(lv_event_t*)
 {
-    team::TeamController* controller = app::teamFacade().getTeamController();
-
-    g_team_state.in_team = true;
-    g_team_state.pending_join = false;
-    g_team_state.pending_join_started_s = 0;
-    g_team_state.kicked_out = false;
-    g_team_state.self_is_leader = true;
-    g_team_state.members.clear();
-    if (!g_team_state.has_team_id)
-    {
-        g_team_state.team_id = generate_team_id();
-        g_team_state.has_team_id = true;
-        update_team_name_from_id(g_team_state.team_id);
-    }
-    if (g_team_state.security_round == 0)
-    {
-        g_team_state.security_round = 1;
-    }
-    if (!g_team_state.has_team_psk)
-    {
-        for (size_t i = 0; i < g_team_state.team_psk.size(); ++i)
-        {
-            g_team_state.team_psk[i] = next_random_byte();
-        }
-        g_team_state.has_team_psk = true;
-    }
-
-    if (g_team_state.has_team_id)
-    {
-        std::vector<uint8_t> payload;
-        write_u64_le(payload, team_id_to_u64(g_team_state.team_id));
-        write_u32_le(payload, 0);
-        write_u32_le(payload, g_team_state.security_round);
-        append_key_event(TeamKeyEventType::TeamCreated, payload);
-    }
-    if (controller)
-    {
-        if (!controller->setKeysFromPsk(g_team_state.team_id,
-                                        g_team_state.security_round,
-                                        g_team_state.team_psk.data(),
-                                        g_team_state.team_psk.size()))
-        {
-            notify_send_failed("Keys", true);
-        }
-    }
-    team_ui_save_keys_now(g_team_state.team_id,
-                          g_team_state.security_round,
-                          g_team_state.team_psk);
-    TeamMemberUi self;
-    self.node_id = 0;
-    self.name = "You";
-    self.leader = true;
-    self.last_seen_s = now_secs();
-    assign_member_color(self);
-    g_team_state.members.push_back(self);
-    g_team_state.last_update_s = now_secs();
+    auto command_state = command_state_from_page();
+    auto key_state = key_event_state_from_page();
+    TeamPageRandomByteAdapter random;
+    const auto effects = TeamPageCreateTeamAction().createTeam(
+        command_state,
+        key_state,
+        current_command_reducer(),
+        current_runtime_port(),
+        current_key_event_log(),
+        random,
+        app::messagingFacade().getSelfNodeId());
+    apply_command_state_to_page(command_state);
+    apply_key_event_state_to_page(key_state);
+    apply_create_team_failures(effects);
     save_state_to_store();
-    if (!start_pairing_leader())
+    if (effects.started_pairing)
+    {
+        nav_to(TeamPage::JoinPending);
+    }
+    else
     {
         nav_reset(TeamPage::StatusInTeam);
     }
@@ -1669,7 +1485,7 @@ void handle_create(lv_event_t*)
 
 void handle_join(lv_event_t*)
 {
-    start_pairing_member();
+    start_pairing_command(TeamPagePairingCommandRole::Member);
 }
 
 void handle_view_team(lv_event_t*)
@@ -1679,53 +1495,30 @@ void handle_view_team(lv_event_t*)
 
 void handle_invite(lv_event_t*)
 {
-    if (!g_team_state.self_is_leader)
-    {
-        ::ui::SystemNotification::show("Only leader can pair", 2000);
-        return;
-    }
-    start_pairing_leader();
+    start_pairing_command(TeamPagePairingCommandRole::Leader);
 }
 
 void perform_leave()
 {
-    team::TeamController* controller = app::teamFacade().getTeamController();
-    if (controller)
-    {
-        controller->clearKeys();
-    }
-    team::TeamPairingService* pairing = app::teamFacade().getTeamPairing();
-    if (pairing)
-    {
-        pairing->stop();
-    }
-    g_team_state.in_team = false;
-    g_team_state.pending_join = false;
-    g_team_state.pending_join_started_s = 0;
-    g_team_state.kicked_out = false;
-    g_team_state.self_is_leader = false;
-    g_team_state.last_event_seq = 0;
-    g_team_state.members.clear();
-    g_team_state.has_team_id = false;
-    g_team_state.team_name.clear();
-    g_team_state.security_round = 0;
-    g_team_state.has_team_psk = false;
-    g_team_state.waiting_new_keys = false;
-    s_keydist_pending.clear();
-    s_status_pending.clear();
+    const auto effects = reduce_command_state(
+        [](TeamPageCommandReducer& reducer, TeamPageCommandState& state)
+        {
+            return reducer.reduceLeave(state);
+        });
+    apply_command_runtime_effects(effects);
     save_state_to_store();
     nav_reset(TeamPage::StatusNotInTeam);
 }
 
 void handle_leave(lv_event_t*)
 {
-    if (g_team_state.leave_confirm_modal)
+    if (team_page_lvgl_context().leave_confirm_modal)
     {
         return;
     }
     modal_prepare_group();
-    g_team_state.leave_confirm_modal = create_modal_root(260, 140);
-    lv_obj_t* win = lv_obj_get_child(g_team_state.leave_confirm_modal, 0);
+    team_page_lvgl_context().leave_confirm_modal = create_modal_root(260, 140);
+    lv_obj_t* win = lv_obj_get_child(team_page_lvgl_context().leave_confirm_modal, 0);
 
     lv_obj_t* title_label = lv_label_create(win);
     ::ui::i18n::set_label_text(title_label, "Leave team?");
@@ -1746,13 +1539,13 @@ void handle_leave(lv_event_t*)
     lv_obj_set_style_border_width(btn_row, 0, LV_PART_MAIN);
     lv_obj_clear_flag(btn_row, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t* cancel_btn = create_fitted_button(btn_row, "Cancel", nullptr);
+    lv_obj_t* cancel_btn = create_modal_button(btn_row, "Cancel", nullptr);
     lv_obj_add_event_cb(
         cancel_btn, [](lv_event_t*)
         { close_leave_confirm_modal(); },
         LV_EVENT_CLICKED, nullptr);
 
-    lv_obj_t* leave_btn = create_fitted_button(btn_row, "Leave", nullptr);
+    lv_obj_t* leave_btn = create_modal_button(btn_row, "Leave", nullptr);
     lv_obj_add_event_cb(
         leave_btn, [](lv_event_t*)
         {
@@ -1760,14 +1553,14 @@ void handle_leave(lv_event_t*)
         perform_leave(); },
         LV_EVENT_CLICKED, nullptr);
 
-    lv_group_add_obj(g_team_state.modal_group, cancel_btn);
-    lv_group_add_obj(g_team_state.modal_group, leave_btn);
+    lv_group_add_obj(team_page_lvgl_context().modal_group, cancel_btn);
+    lv_group_add_obj(team_page_lvgl_context().modal_group, leave_btn);
     lv_group_focus_obj(cancel_btn);
 }
 
 void handle_manage(lv_event_t*)
 {
-    if (!g_team_state.self_is_leader)
+    if (!team_page_state().self_is_leader)
     {
         ::ui::SystemNotification::show("Only leader can manage", 2000);
         return;
@@ -1779,7 +1572,7 @@ void handle_member_clicked(lv_event_t* e)
 {
     lv_obj_t* item = (lv_obj_t*)lv_event_get_target(e);
     int index = (int)(intptr_t)lv_obj_get_user_data(item);
-    g_team_state.selected_member_index = index;
+    team_page_state().selected_member_index = index;
     nav_to(TeamPage::MemberDetail);
 }
 
@@ -1790,82 +1583,20 @@ void handle_kick(lv_event_t*)
 
 void handle_kick_confirm(lv_event_t*)
 {
-    int idx = g_team_state.selected_member_index;
-    if (idx >= 0 && idx < (int)g_team_state.members.size())
-    {
-        team::TeamController* controller = app::teamFacade().getTeamController();
-        uint32_t kick_target = g_team_state.members[idx].node_id;
-        if (controller)
-        {
-            team::proto::TeamKick kick{};
-            kick.target = kick_target;
-            if (!controller->onKick(kick, chat::ChannelId::PRIMARY, 0))
-            {
-                notify_send_failed("Kick", true);
-            }
-            uint32_t old_key_id = g_team_state.security_round;
-            if (old_key_id == 0)
-            {
-                old_key_id = 1;
-            }
-            uint32_t new_key_id = old_key_id + 1;
-
-            std::array<uint8_t, team::proto::kTeamChannelPskSize> new_psk{};
-            for (size_t i = 0; i < new_psk.size(); ++i)
-            {
-                new_psk[i] = next_random_byte();
-            }
-
-            team::proto::TeamKeyDist kd{};
-            kd.team_id = g_team_state.team_id;
-            kd.key_id = new_key_id;
-            kd.channel_psk_len = static_cast<uint8_t>(new_psk.size());
-            kd.channel_psk = new_psk;
-
-            for (const auto& m : g_team_state.members)
-            {
-                if (m.node_id == 0 || m.node_id == kick_target)
-                {
-                    continue;
-                }
-                if (!controller->onKeyDist(kd, chat::ChannelId::PRIMARY, m.node_id))
-                {
-                    notify_send_failed_detail("KeyDist", controller->getLastSendError());
-                }
-                add_keydist_pending(m.node_id, new_key_id);
-            }
-
-            g_team_state.security_round = new_key_id;
-            g_team_state.team_psk = new_psk;
-            g_team_state.has_team_psk = true;
-            g_team_state.waiting_new_keys = false;
-            if (!controller->setKeysFromPsk(g_team_state.team_id,
-                                            g_team_state.security_round,
-                                            g_team_state.team_psk.data(),
-                                            g_team_state.team_psk.size()))
-            {
-                notify_send_failed("Keys", true);
-            }
-        }
-
-        g_team_state.members.erase(g_team_state.members.begin() + idx);
-        g_team_state.selected_member_index = -1;
-
-        if (controller)
-        {
-            team::proto::TeamStatus status{};
-            status.key_id = g_team_state.security_round;
-            fill_status_members(status);
-            if (!controller->onStatus(status, chat::ChannelId::PRIMARY, 0))
-            {
-                notify_send_failed("Status", true);
-            }
-            if (!controller->onStatusPlain(status, chat::ChannelId::PRIMARY, 0))
-            {
-                notify_send_failed("Status", false);
-            }
-        }
-    }
+    auto state = command_state_from_page();
+    auto reducer = current_command_reducer();
+    const auto runtime = current_runtime_port();
+    TeamPageRandomByteAdapter random;
+    TeamPageKickConfirmDeferredAdapter deferred;
+    const auto effects = TeamPageKickConfirmAction().confirmKick(
+        state,
+        reducer,
+        runtime,
+        random,
+        deferred,
+        app::messagingFacade().getSelfNodeId());
+    apply_command_state_to_page(state);
+    apply_kick_confirm_failures(effects);
     save_state_to_store();
     nav_reset(TeamPage::StatusInTeam);
 }
@@ -1877,62 +1608,48 @@ void handle_kick_cancel(lv_event_t*)
 
 void handle_transfer_leader(lv_event_t*)
 {
-    int idx = g_team_state.selected_member_index;
-    if (idx >= 0 && idx < (int)g_team_state.members.size())
-    {
-        team::TeamController* controller = app::teamFacade().getTeamController();
-        if (controller)
-        {
-            team::proto::TeamTransferLeader transfer{};
-            transfer.target = g_team_state.members[idx].node_id;
-            if (!controller->onTransferLeader(transfer, chat::ChannelId::PRIMARY, 0))
-            {
-                notify_send_failed("Transfer", true);
-            }
-        }
-        for (auto& m : g_team_state.members)
-        {
-            m.leader = false;
-        }
-        g_team_state.members[idx].leader = true;
-        g_team_state.self_is_leader = false;
-        {
-            std::vector<uint8_t> payload;
-            write_u32_le(payload, g_team_state.members[idx].node_id);
-            append_key_event(TeamKeyEventType::LeaderTransferred, payload);
-        }
-    }
+    auto command_state = command_state_from_page();
+    auto key_state = key_event_state_from_page();
+    const auto effects = TeamPageTransferLeaderAction().transferLeader(
+        command_state,
+        key_state,
+        current_command_reducer(),
+        current_runtime_port(),
+        current_key_event_log());
+    apply_command_state_to_page(command_state);
+    apply_key_event_state_to_page(key_state);
+    apply_transfer_leader_failures(effects);
     save_state_to_store();
     nav_reset(TeamPage::TeamHome);
 }
 
 void handle_request_keydist(lv_event_t*)
 {
-    if (!g_team_state.in_team || g_team_state.self_is_leader || !g_team_state.has_team_id)
+    const auto effects =
+        TeamPageRequestKeysAction().requestKeys(
+            command_state_from_page(),
+            current_runtime_port(),
+            app::messagingFacade().getSelfNodeId());
+    if (effects.sent_request)
     {
-        return;
+        ::ui::SystemNotification::show("Requested team keys", 2000);
     }
-    ::ui::SystemNotification::show("Key refresh not implemented", 2000);
+    else if (effects.send_failed)
+    {
+        notify_send_failed_detail("Request Keys", effects.error);
+    }
 }
 
 void handle_join_cancel(lv_event_t*)
 {
-    g_team_state.pending_join = false;
-    g_team_state.pending_join_started_s = 0;
-    {
-        team::TeamController* controller = app::teamFacade().getTeamController();
-        if (controller)
+    const auto effects = reduce_command_state(
+        [](TeamPageCommandReducer& reducer, TeamPageCommandState& state)
         {
-            controller->resetUiState();
-        }
-        team::TeamPairingService* pairing = app::teamFacade().getTeamPairing();
-        if (pairing)
-        {
-            pairing->stop();
-        }
-    }
+            return reducer.reduceJoinCanceled(state);
+        });
+    apply_command_runtime_effects(effects);
     save_state_to_store();
-    if (g_team_state.in_team)
+    if (team_page_state().in_team)
     {
         nav_reset(TeamPage::StatusInTeam);
     }
@@ -1944,535 +1661,137 @@ void handle_join_cancel(lv_event_t*)
 
 void handle_join_retry(lv_event_t*)
 {
-    if (g_team_state.self_is_leader)
+    if (team_page_state().self_is_leader)
     {
-        start_pairing_leader();
+        start_pairing_command(TeamPagePairingCommandRole::Leader);
     }
     else
     {
-        start_pairing_member();
+        start_pairing_command(TeamPagePairingCommandRole::Member);
     }
 }
 
 void handle_kicked_join(lv_event_t*)
 {
-    g_team_state.kicked_out = false;
+    reduce_command_state(
+        [](TeamPageCommandReducer& reducer, TeamPageCommandState& state)
+        {
+            return reducer.reduceClearKickedOut(state);
+        });
     save_state_to_store();
     nav_reset(TeamPage::StatusNotInTeam);
 }
 
 void handle_kicked_ok(lv_event_t*)
 {
-    g_team_state.kicked_out = false;
+    reduce_command_state(
+        [](TeamPageCommandReducer& reducer, TeamPageCommandState& state)
+        {
+            return reducer.reduceClearKickedOut(state);
+        });
     save_state_to_store();
     nav_reset(TeamPage::StatusNotInTeam);
 }
 
-void render_status_not_in_team()
+void render_page()
 {
-    update_top_bar_title(::ui::i18n::tr("Team"));
-
-    add_label(g_team_state.body, ::ui::i18n::tr("You are not in a team"), true, false);
-    add_label(g_team_state.body, ::ui::i18n::tr("- No shared map\n- No team awareness"), false, true);
-    add_label(g_team_state.body, ::ui::i18n::tr("Keep devices within 5m"), false, false);
-
-    g_team_state.action_btns[0] = create_action_button("Create Team", handle_create);
-    g_team_state.action_btns[1] = create_action_button("Join Team", handle_join);
-    register_focus(g_team_state.action_btns[0], true);
-    register_focus(g_team_state.action_btns[1]);
-}
-
-void render_status_in_team()
-{
-    update_top_bar_title(::ui::i18n::tr("Team Status"));
-
-    std::string team_name = current_team_name();
-    add_label(g_team_state.body, ::ui::i18n::format("Team: %s", team_name.c_str()).c_str(), true, false);
-    add_label(g_team_state.body,
-              ::ui::i18n::format("Role: %s",
-                                 ::ui::i18n::tr(g_team_state.self_is_leader ? "Leader" : "Member"))
-                  .c_str(),
-              false,
-              true);
-    add_label(g_team_state.body,
-              ::ui::i18n::format("Members: %u", static_cast<unsigned>(g_team_state.members.size())).c_str(),
-              false,
-              true);
-    add_label(g_team_state.body,
-              ::ui::i18n::format("Online: %u", static_cast<unsigned>(online_count())).c_str(),
-              false,
-              true);
-    if (g_team_state.security_round == 0)
-    {
-        add_label(g_team_state.body, ::ui::i18n::tr("KeyId: --"), false, true);
-    }
-    else
-    {
-        add_label(g_team_state.body,
-                  ::ui::i18n::format("KeyId: %u", static_cast<unsigned>(g_team_state.security_round)).c_str(),
-                  false,
-                  true);
-    }
-    if (g_team_state.security_round == 0)
-    {
-        add_label(g_team_state.body, ::ui::i18n::tr("Security: OK (Round --)"), false, true);
-    }
-    else
-    {
-        add_label(
-            g_team_state.body,
-            ::ui::i18n::format("Security: OK (Round %u)", static_cast<unsigned>(g_team_state.security_round)).c_str(),
-            false,
-            true);
-    }
-    if (g_team_state.waiting_new_keys)
-    {
-        add_label(g_team_state.body, ::ui::i18n::tr("Waiting for new keys..."), false, true);
-    }
-
-    add_label(g_team_state.body, ::ui::i18n::tr("Team Health"), true, false);
-    std::string last_update = format_last_update(g_team_state.last_update_s);
-    const std::string leader_health = std::string("- ") + ::ui::i18n::tr("Leader online") +
-                                      "\n- " + last_update +
-                                      "\n- " + ::ui::i18n::tr("1 member stale");
-#if 0
-    std::string health = std::string("鈼?Leader online\n") +
-                         "鈼?" + last_update + "\n" +
-                         "鈼?1 member stale";
-#endif
-    add_label(g_team_state.body, leader_health.c_str(), false, true);
-
-    g_team_state.action_btns[0] = create_action_button("View Team", handle_view_team);
-    if (g_team_state.self_is_leader)
-    {
-        g_team_state.action_btns[1] = create_action_button("Pair Member", handle_invite);
-    }
-    else
-    {
-        g_team_state.action_btns[1] = create_action_button("Request Keys", handle_request_keydist);
-    }
-    g_team_state.action_btns[2] = create_action_button("Leave", handle_leave);
-    register_focus(g_team_state.action_btns[0], true);
-    register_focus(g_team_state.action_btns[1]);
-    register_focus(g_team_state.action_btns[2]);
-}
-
-void render_team_home()
-{
-    // Replaced immediately below with a localized title, but keep this call out of the active path.
-
-    const std::string title = ::ui::i18n::format(
-        "Team / %s",
-        ::ui::i18n::tr(g_team_state.self_is_leader ? "Leader" : "Member"));
-    update_top_bar_title(title.c_str());
-
-    std::string team_name = current_team_name();
-    add_label(g_team_state.body, ::ui::i18n::format("Team: %s", team_name.c_str()).c_str(), true, false);
-    add_label(g_team_state.body,
-              ::ui::i18n::format("Members: %u  Online: %u",
-                                 static_cast<unsigned>(g_team_state.members.size()),
-                                 static_cast<unsigned>(online_count()))
-                  .c_str(),
-              false,
-              true);
-    if (g_team_state.security_round == 0)
-    {
-        add_label(g_team_state.body, ::ui::i18n::tr("Security Round: --"), false, true);
-    }
-    else
-    {
-        add_label(g_team_state.body,
-                  ::ui::i18n::format("Security Round: %u",
-                                     static_cast<unsigned>(g_team_state.security_round))
-                      .c_str(),
-                  false,
-                  true);
-    }
-
-    add_label(g_team_state.body, ::ui::i18n::tr("Members"), true, false);
-    if (g_team_state.members.empty())
-    {
-        add_label(g_team_state.body, ::ui::i18n::tr("No members yet"), false, true);
-    }
-    else
-    {
-        lv_obj_t* row = lv_obj_create(g_team_state.body);
-        lv_obj_set_width(row, LV_PCT(100));
-        lv_obj_set_height(row, LV_SIZE_CONTENT);
-        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START,
-                              LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(row, 0, 0);
-        lv_obj_set_style_pad_all(row, 0, 0);
-        lv_obj_set_style_pad_column(row, 4, 0);
-        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-
-        for (const auto& m : g_team_state.members)
-        {
-            lv_obj_t* label = lv_label_create(row);
-            ::ui::i18n::set_content_label_text_raw(label, m.name.c_str());
-            lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
-            lv_obj_set_width(label, LV_PCT(24));
-            lv_obj_set_style_bg_opa(label, LV_OPA_COVER, 0);
-            lv_obj_set_style_bg_color(label, lv_color_hex(team_color_from_index(m.color_index)), 0);
-            lv_obj_set_style_pad_hor(label, 4, 0);
-            lv_obj_set_style_pad_ver(label, 3, 0);
-            lv_obj_set_style_radius(label, 6, 0);
-            lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-            if (m.color_index == 3)
-            {
-                lv_obj_set_style_text_color(label, lv_color_black(), 0);
-            }
-            else
-            {
-                lv_obj_set_style_text_color(label, lv_color_white(), 0);
-            }
-        }
-    }
-
-    g_team_state.action_btns[0] = create_action_button("Pair Member", handle_invite);
-    g_team_state.action_btns[1] = create_action_button("Manage", handle_manage);
-    g_team_state.action_btns[2] = create_action_button("Leave", handle_leave);
-    register_focus(g_team_state.action_btns[0], g_team_state.default_focus == nullptr);
-    register_focus(g_team_state.action_btns[1]);
-    register_focus(g_team_state.action_btns[2]);
-}
-
-void render_join_pending()
-{
-    lv_obj_set_style_translate_y(g_team_state.body, -5, 0);
-    lv_obj_set_style_pad_top(g_team_state.body, 2, 0);
-    lv_obj_set_style_pad_bottom(g_team_state.body, 2, 0);
-    lv_obj_set_style_pad_row(g_team_state.body, 2, 0);
-
-    const char* title = "Pairing";
-    if (g_team_state.pairing_role == TeamPairingRole::Leader)
-    {
-        title = "Pairing (Leader)";
-    }
-    else if (g_team_state.pairing_role == TeamPairingRole::Member)
-    {
-        title = "Pairing (Member)";
-    }
-    update_top_bar_title(::ui::i18n::tr(title));
-
-    add_label(g_team_state.body, ::ui::i18n::tr("Pairing in progress"), true, false);
-    add_label(g_team_state.body, ::ui::i18n::tr("Keep devices within 5m"), false, true);
-    if (g_team_state.pairing_role == TeamPairingRole::Leader)
-    {
-        add_label(g_team_state.body, ::ui::i18n::tr("Members"), true, false);
-        if (g_team_state.members.empty())
-        {
-            add_label(g_team_state.body, ::ui::i18n::tr("No members yet"), false, true);
-        }
-        else
-        {
-            lv_obj_t* row = lv_obj_create(g_team_state.body);
-            lv_obj_set_width(row, LV_PCT(100));
-            lv_obj_set_height(row, LV_SIZE_CONTENT);
-            lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-            lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START,
-                                  LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-            lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
-            lv_obj_set_style_border_width(row, 0, 0);
-            lv_obj_set_style_pad_all(row, 0, 0);
-            lv_obj_set_style_pad_column(row, 4, 0);
-            lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-
-            for (const auto& m : g_team_state.members)
-            {
-                lv_obj_t* label = lv_label_create(row);
-                ::ui::i18n::set_content_label_text_raw(label, m.name.c_str());
-                lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
-                lv_obj_set_width(label, LV_PCT(24));
-                lv_obj_set_style_bg_opa(label, LV_OPA_COVER, 0);
-                lv_obj_set_style_bg_color(label, lv_color_hex(team_color_from_index(m.color_index)), 0);
-                lv_obj_set_style_pad_hor(label, 4, 0);
-                lv_obj_set_style_pad_ver(label, 3, 0);
-                lv_obj_set_style_radius(label, 6, 0);
-                lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-                if (m.color_index == 3)
-                {
-                    lv_obj_set_style_text_color(label, lv_color_black(), 0);
-                }
-                else
-                {
-                    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-                }
-            }
-        }
-        if (g_team_state.pairing_peer_id != 0)
-        {
-            std::string name = resolve_node_name(g_team_state.pairing_peer_id);
-            std::string paired = ::ui::i18n::format("Last paired: %s", name.c_str());
-            add_label(g_team_state.body, paired.c_str(), false, true);
-        }
-    }
-    if (!g_team_state.pairing_team_name.empty())
-    {
-        std::string line = ::ui::i18n::format("Target: %s", g_team_state.pairing_team_name.c_str());
-        add_label(g_team_state.body, line.c_str(), false, true);
-    }
-
-    const char* state_line = "Waiting for handshake...";
-    switch (g_team_state.pairing_state)
-    {
-    case TeamPairingState::LeaderBeacon:
-        state_line = "Waiting for member...";
-        break;
-    case TeamPairingState::MemberScanning:
-        state_line = "Scanning for team...";
-        break;
-    case TeamPairingState::JoinSent:
-        state_line = "Join request sent...";
-        break;
-    case TeamPairingState::WaitingKey:
-        state_line = "Waiting for keys...";
-        break;
-    case TeamPairingState::Completed:
-        state_line = "Paired successfully";
-        break;
-    case TeamPairingState::Failed:
-        state_line = "Pairing failed";
-        break;
-    default:
-        break;
-    }
-    add_label(g_team_state.body, ::ui::i18n::tr(state_line), false, true);
-
-    g_team_state.action_btns[0] = create_action_button("Cancel", handle_join_cancel);
-    g_team_state.action_btns[1] = create_action_button("Retry", handle_join_retry);
-    register_focus(g_team_state.action_btns[0], true);
-    register_focus(g_team_state.action_btns[1]);
-}
-
-void render_members()
-{
-    update_top_bar_title(::ui::i18n::tr("Members"));
-
-    if (g_team_state.members.empty())
-    {
-        add_label(g_team_state.body, ::ui::i18n::tr("No members yet"), false, true);
-    }
-    for (size_t i = 0; i < g_team_state.members.size(); ++i)
-    {
-        const auto& m = g_team_state.members[i];
-        const char* dot = m.online ? "● " : "○ ";
-        std::string left = std::string(dot) + m.name;
-        if (m.leader)
-        {
-            left += " (" + std::string(::ui::i18n::tr("Leader")) + ")";
-        }
-        lv_obj_t* item = create_list_item(left.c_str(), "Select");
-        lv_obj_set_user_data(item, (void*)(intptr_t)i);
-        lv_obj_add_event_cb(item, handle_member_clicked, LV_EVENT_CLICKED, nullptr);
-        register_focus(item, g_team_state.default_focus == nullptr);
-    }
-}
-
-void render_member_detail()
-{
-    if (g_team_state.selected_member_index < 0 ||
-        g_team_state.selected_member_index >= (int)g_team_state.members.size())
+    const auto read_model_input = current_read_model_input();
+    if (team_page_state().page == TeamPage::MemberDetail &&
+        !current_read_model().buildSelectedMember(read_model_input).valid)
     {
         nav_to(TeamPage::Members, false);
         return;
     }
 
-    const auto& member = g_team_state.members[g_team_state.selected_member_index];
-    std::string title = ::ui::i18n::format("Member: %s", member.name.c_str());
-    update_top_bar_title(title.c_str());
+    TeamPageLvglRendererContext context;
+    context.body = team_page_lvgl_context().body;
+    context.actions = team_page_lvgl_context().actions;
+    context.top_bar = &team_page_lvgl_context().top_bar_widget;
+    context.action_btns = team_page_lvgl_context().action_btns;
+    context.action_btn_count = 3;
+    context.action_labels = team_page_lvgl_context().action_labels;
+    context.action_label_count = 3;
+    context.detail_label = &team_page_lvgl_context().detail_label;
+    context.list_items = &team_page_lvgl_context().list_items;
+    context.focusables = &team_page_lvgl_context().focusables;
+    context.default_focus = &team_page_lvgl_context().default_focus;
 
-    std::string status = member.online ? "Online" : format_last_seen(member.last_seen_s);
-    char line[64];
-    snprintf(line, sizeof(line), "%s", ::ui::i18n::format("Status: %s", ::ui::i18n::tr(status.c_str())).c_str());
-    add_label(g_team_state.body, line, true, false);
-    snprintf(line,
-             sizeof(line),
-             "%s",
-             ::ui::i18n::format("Role: %s", ::ui::i18n::tr(member.leader ? "Leader" : "Member")).c_str());
-    add_label(g_team_state.body, line, false, true);
-    add_label(g_team_state.body, ::ui::i18n::format("Device: %s", "Pager").c_str(), false, true);
-    add_label(g_team_state.body, ::ui::i18n::tr("Capability:"), true, false);
-    const std::string capabilities = std::string("- ") + ::ui::i18n::tr("Position") +
-                                     "\n- " + ::ui::i18n::tr("Waypoint");
-    add_label(g_team_state.body, capabilities.c_str(), false, true);
+    TeamPageLvglRendererHandlers handlers;
+    handlers.create_team = handle_create;
+    handlers.join_team = handle_join;
+    handlers.view_team = handle_view_team;
+    handlers.invite = handle_invite;
+    handlers.request_keys = handle_request_keydist;
+    handlers.leave = handle_leave;
+    handlers.manage = handle_manage;
+    handlers.member_clicked = handle_member_clicked;
+    handlers.kick = handle_kick;
+    handlers.transfer_leader = handle_transfer_leader;
+    handlers.kick_cancel = handle_kick_cancel;
+    handlers.kick_confirm = handle_kick_confirm;
+    handlers.join_cancel = handle_join_cancel;
+    handlers.join_retry = handle_join_retry;
+    handlers.kicked_join = handle_kicked_join;
+    handlers.kicked_ok = handle_kicked_ok;
 
-    g_team_state.action_btns[0] = create_action_button("Kick", handle_kick);
-    g_team_state.action_btns[1] = create_action_button("Transfer Leader", handle_transfer_leader);
-    bool keys_ready = g_team_state.has_team_psk && g_team_state.has_team_id && g_team_state.security_round > 0;
-    if (!keys_ready || g_team_state.waiting_new_keys)
-    {
-        lv_obj_add_state(g_team_state.action_btns[0], LV_STATE_DISABLED);
-        lv_obj_add_state(g_team_state.action_btns[1], LV_STATE_DISABLED);
-    }
-    register_focus(g_team_state.action_btns[0], true);
-    register_focus(g_team_state.action_btns[1]);
-}
+    TeamPageLvglRendererInput input;
+    input.page = team_page_state().page;
+    input.read_model = read_model_input;
+    input.pairing_peer_id = team_page_state().pairing_peer_id;
 
-void render_kick_confirm()
-{
-    update_top_bar_title(::ui::i18n::tr("Kick Member"));
+    static TeamPageMemberNameResolver names;
+    TeamPageLvglRenderer(now_secs()).render(context, input, handlers, names);
 
-    std::string name = ::ui::i18n::tr("member");
-    if (g_team_state.selected_member_index >= 0 &&
-        g_team_state.selected_member_index < (int)g_team_state.members.size())
-    {
-        name = g_team_state.members[g_team_state.selected_member_index].name;
-    }
-
-    std::string line = ::ui::i18n::format("Remove %s from team?", name.c_str());
-    add_label(g_team_state.body, line.c_str(), true, false);
-    add_label(g_team_state.body,
-              ::ui::i18n::tr("This will update the security round.\nThe member will no longer receive\nteam messages or waypoints."),
-              false, true);
-
-    g_team_state.action_btns[0] = create_action_button("Cancel", handle_kick_cancel);
-    g_team_state.action_btns[1] = create_action_button("Confirm Kick", handle_kick_confirm);
-    register_focus(g_team_state.action_btns[0], true);
-    register_focus(g_team_state.action_btns[1]);
-}
-
-void render_kicked_out()
-{
-    update_top_bar_title(::ui::i18n::tr("Team"));
-
-    add_label(g_team_state.body, ::ui::i18n::tr("You are no longer in this team"), true, false);
-    add_label(g_team_state.body, ::ui::i18n::tr("Access to team data revoked"), false, true);
-
-    g_team_state.action_btns[0] = create_action_button("Pair Again", handle_kicked_join);
-    g_team_state.action_btns[1] = create_action_button("OK", handle_kicked_ok);
-    register_focus(g_team_state.action_btns[0], true);
-    register_focus(g_team_state.action_btns[1]);
-}
-
-void render_page()
-{
-    clear_content();
-    if (g_team_state.body)
-    {
-        lv_obj_set_style_translate_y(g_team_state.body, 0, 0);
-        lv_obj_set_style_pad_top(g_team_state.body, 6, 0);
-        lv_obj_set_style_pad_bottom(g_team_state.body, 6, 0);
-        lv_obj_set_style_pad_left(g_team_state.body, 6, 0);
-        lv_obj_set_style_pad_right(g_team_state.body, 6, 0);
-        lv_obj_set_style_pad_row(g_team_state.body, 6, 0);
-    }
-
-    switch (g_team_state.page)
-    {
-    case TeamPage::StatusNotInTeam:
-        render_status_not_in_team();
-        break;
-    case TeamPage::StatusInTeam:
-        render_status_in_team();
-        break;
-    case TeamPage::TeamHome:
-        render_team_home();
-        break;
-    case TeamPage::JoinPending:
-        render_join_pending();
-        break;
-    case TeamPage::Members:
-        render_members();
-        break;
-    case TeamPage::MemberDetail:
-        render_member_detail();
-        break;
-    case TeamPage::KickConfirm:
-        render_kick_confirm();
-        break;
-    case TeamPage::KickedOut:
-        render_kicked_out();
-        break;
-    default:
-        render_status_not_in_team();
-        break;
-    }
-
-    ui_update_top_bar_battery(g_team_state.top_bar_widget);
-    refresh_team_input();
+    ui_update_top_bar_battery(team_page_lvgl_context().top_bar_widget);
+    refresh_team_input(input_context_from_lvgl());
 }
 
 void sync_from_controller()
 {
     refresh_state_from_store();
     sync_pairing_from_service();
-    bool pairing_active = is_pairing_active();
-    if (pairing_active && g_team_state.pending_join_started_s == 0)
-    {
-        g_team_state.pending_join_started_s = now_secs();
-    }
-    if (pairing_active && !g_team_state.in_team && g_team_state.page != TeamPage::JoinPending)
-    {
-        g_team_state.page = TeamPage::JoinPending;
-        g_team_state.nav_stack.clear();
-    }
-    if (!pairing_active && g_team_state.in_team &&
-        (g_team_state.page == TeamPage::StatusNotInTeam ||
-         g_team_state.page == TeamPage::JoinPending))
-    {
-        g_team_state.page = TeamPage::StatusInTeam;
-        g_team_state.nav_stack.clear();
-    }
-    if (!pairing_active && !g_team_state.in_team && g_team_state.page == TeamPage::JoinPending)
-    {
-        g_team_state.page = TeamPage::StatusNotInTeam;
-        g_team_state.nav_stack.clear();
-    }
+    auto state = flow_state_from_page();
+    current_flow_controller().syncRuntime(state, now_secs());
+    apply_flow_state_to_page(state);
 }
 } // namespace
 
 void team_page_create(lv_obj_t* parent)
 {
-    if (g_team_state.root)
+    if (team_page_lvgl_context().root)
     {
-        lv_obj_del(g_team_state.root);
-        g_team_state.root = nullptr;
+        lv_obj_del(team_page_lvgl_context().root);
+        team_page_lvgl_context().root = nullptr;
     }
 
     style::init_once();
     load_state_from_store();
     sync_pairing_from_service();
 
-    if (g_team_state.kicked_out)
-    {
-        g_team_state.page = TeamPage::KickedOut;
-    }
-    else if (is_pairing_active() || g_team_state.pending_join)
-    {
-        g_team_state.page = TeamPage::JoinPending;
-    }
-    else if (g_team_state.in_team)
-    {
-        g_team_state.page = TeamPage::StatusInTeam;
-    }
-    else
-    {
-        g_team_state.page = TeamPage::StatusNotInTeam;
-    }
+    auto flow_state = flow_state_from_page();
+    current_flow_controller().selectInitialPage(flow_state);
+    apply_flow_state_to_page(flow_state);
 
-    g_team_state.root = layout::create_root(parent);
-    g_team_state.header = layout::create_header(g_team_state.root);
-    g_team_state.content = layout::create_content(g_team_state.root);
-    g_team_state.body = layout::create_body(g_team_state.content);
-    g_team_state.actions = layout::create_actions(g_team_state.content);
+    team_page_lvgl_context().root = layout::create_root(parent);
+    team_page_lvgl_context().header = layout::create_header(team_page_lvgl_context().root);
+    team_page_lvgl_context().content = layout::create_content(team_page_lvgl_context().root);
+    team_page_lvgl_context().body = layout::create_body(team_page_lvgl_context().content);
+    team_page_lvgl_context().actions = layout::create_actions(team_page_lvgl_context().content);
 
-    style::apply_root(g_team_state.root);
-    style::apply_header(g_team_state.header);
-    style::apply_content(g_team_state.content);
-    style::apply_body(g_team_state.body);
-    style::apply_actions(g_team_state.actions);
+    style::apply_root(team_page_lvgl_context().root);
+    style::apply_header(team_page_lvgl_context().header);
+    style::apply_content(team_page_lvgl_context().content);
+    style::apply_body(team_page_lvgl_context().body);
+    style::apply_actions(team_page_lvgl_context().actions);
 
     ::ui::widgets::TopBarConfig cfg;
     cfg.height = ::ui::page_profile::current().top_bar_height;
-    ::ui::widgets::top_bar_init(g_team_state.top_bar_widget, g_team_state.header, cfg);
+    ::ui::widgets::top_bar_init(team_page_lvgl_context().top_bar_widget, team_page_lvgl_context().header, cfg);
     update_top_bar_title(::ui::i18n::tr("Team"));
-    ::ui::widgets::top_bar_set_back_callback(g_team_state.top_bar_widget, top_bar_back, nullptr);
-    ui_update_top_bar_battery(g_team_state.top_bar_widget);
+    ::ui::widgets::top_bar_set_back_callback(team_page_lvgl_context().top_bar_widget, top_bar_back, nullptr);
+    ui_update_top_bar_battery(team_page_lvgl_context().top_bar_widget);
 
-    init_team_input();
+    init_team_input(input_context_from_lvgl());
     team_page_refresh();
 }
 
@@ -2481,20 +1800,21 @@ void team_page_destroy()
     cleanup_team_input();
 
     close_leave_confirm_modal();
-    if (g_team_state.modal_group)
+    if (team_page_lvgl_context().modal_group)
     {
-        lv_group_del(g_team_state.modal_group);
-        g_team_state.modal_group = nullptr;
+        lv_group_del(team_page_lvgl_context().modal_group);
+        team_page_lvgl_context().modal_group = nullptr;
     }
-    s_keydist_pending.clear();
+    team_page_context().deferred_dispatch.clearAll();
 
-    if (g_team_state.root)
+    if (team_page_lvgl_context().root)
     {
-        lv_obj_del(g_team_state.root);
-        g_team_state.root = nullptr;
+        lv_obj_del(team_page_lvgl_context().root);
+        team_page_lvgl_context().root = nullptr;
     }
-    g_team_state = TeamPageState{};
-    s_state_loaded = false;
+    reset_team_page_state();
+    reset_team_page_lvgl_context();
+    team_page_context().state_store.resetLoaded();
 }
 
 void team_page_refresh()
@@ -2525,6 +1845,10 @@ bool team_page_handle_event(sys::Event* event)
         break;
     case sys::EventType::TeamKeyDist:
         handle_team_key_dist(static_cast<sys::TeamKeyDistEvent*>(event)->data);
+        changed = true;
+        break;
+    case sys::EventType::TeamKeyRequest:
+        handle_team_key_request(static_cast<sys::TeamKeyRequestEvent*>(event)->data);
         changed = true;
         break;
     case sys::EventType::TeamPairing:

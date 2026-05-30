@@ -15,10 +15,10 @@ TeamChatLogEntry / Team payload -> UI-ready Team display row
 | Question | Answer | Problem |
 | --- | --- | --- |
 | Current `format_team_chat_entry(...)` location | Removed from `ChatUiController`; previous duplicate legacy formatter decoded Team log entries in the controller | Controller formatting mixed UI coordination with Team payload decoding |
-| Current Team chat presentation formatter | `TeamChatPresentationSource` builds `MessageRow` summaries | Correct owner boundary, but decode/format needed a named projector |
+| Current Team chat presentation formatter | `TeamChatPresentationSource` builds `MessageRow` structured rich payload fields plus fallback summaries | Correct owner boundary; decode/format is owned by a named projector |
 | Current location decode | `TeamRichPayloadProjector` calls `decodeTeamChatLocation(...)` | Decode is now contained in a presentation projector, not the controller |
 | Current command decode | `TeamRichPayloadProjector` calls `decodeTeamChatCommand(...)` | Decode is now contained in a presentation projector, not the controller |
-| Current display text construction | `TeamRichPayloadProjector` fills `TeamRichPayloadDisplay::summary` | UI consumes formatted projection instead of raw payload |
+| Current display projection | `TeamRichPayloadProjector` fills `TeamRichPayloadDisplay`; `TeamChatPresentationSource` maps it to `MessageRow::team_rich_payload` | UI consumes formatted projection instead of raw payload |
 | Current controller behavior | `ChatUiController` consumes `team_chat_model_.snapshot()` rows | Controller does not decode Team location/command display payloads |
 | Current projector allocation policy | Fixed buffers, bounded copies, and `std::snprintf` | Avoids projector-local `std::string` / `std::vector` heap churn in shared embedded UI code |
 
@@ -54,16 +54,19 @@ Phase 7.8 introduces structured display fields without requiring a rich card UI:
 | --- | --- | --- |
 | `kind` | active | identifies text, location, command, or unsupported payload |
 | `title` | active | short label for future richer rows |
-| `summary` | active | first-phase text shown in `MessageRow::text` |
+| `summary` | active | fallback text and compact detail |
 | `badge` | active | lightweight display label |
 | `location` | active | parsed lat/lon/altitude/icon details |
 | `command` | active | parsed command kind, coordinate, radius, and priority |
 
-## Temporary Text Projection
+## MessageRow Projection
 
-Phase 7.8 still renders Team location and command payloads as summary text inside existing `MessageRow` rows.
+Team location and command payloads now carry structured row fields in
+`MessageRow::team_rich_payload`.
 
-That is a compatibility projection, not a new Team domain model.
+`MessageRow::text` remains populated as fallback text for legacy or compact
+renderers. That fallback is a presentation compatibility detail, not a new Team
+domain model and not the only render contract.
 
 ## Embedded Hardening
 
@@ -82,7 +85,7 @@ Target-local code may use a higher standard when its toolchain and binary budget
 
 | Surface | Reason | Exit condition |
 | --- | --- | --- |
-| Rich Team cards | Existing `MessageRow` does not carry a dedicated rich Team card payload | A future Team row/view model exposes rich card fields directly |
+| Rich Team card styling | Structured fields exist, but richer visual cards can still be improved | UX pack renders Team rich rows with richer card styling |
 | Team position picker renderer | Send-side picker widget is unrelated to display projection | Picker rendering is extracted from `ChatUiController` |
 | Other legacy Team decode surfaces | Contacts/GPS/team-page code still has separate legacy display paths | Later phases migrate those screens to shared Team presentation projection |
 | `TeamChatPresentationSource` recent log allocation | Legacy `TeamUiStore` returns `std::vector<TeamChatLogEntry>` | `TeamUiStore` exposes a fixed-capacity recent-log visitor / bounded iterator |
@@ -94,5 +97,5 @@ Phase 7.8 burns down Team rich payload display decoding from `ChatUiController`.
 It does not claim every Team payload decode in the repository has been removed. The narrowed guarantee is:
 
 ```text
-The chat controller no longer formats or decodes Team location/command display payloads.
+The chat controller no longer formats or decodes Team location/command display payloads, and Team chat rows no longer rely on summary-only `MessageRow` data.
 ```

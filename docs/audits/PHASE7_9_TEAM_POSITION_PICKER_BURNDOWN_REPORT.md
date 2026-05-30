@@ -25,8 +25,8 @@ This was a renderer / widget lifecycle burn-down. It did not change Team action 
 
 | Surface | Reason | Exit condition |
 | --- | --- | --- |
-| `sendTeamLocationWithIcon(...)` | Controller still coordinates selected marker workflow | Future Team workflow coordinator or UX pack-specific flow submits `TeamActionRequest` directly |
-| `LegacyTeamActionBridge` | Team action send runtime adapter is still legacy | Replace or rename as a stable Team action service/adapter |
+| `sendTeamLocationWithIcon(...)` | Closed by later `ChatTeamWorkflow` / Team action sink split | Controller delegates Team action construction and send ownership |
+| `LegacyTeamActionBridge` | Closed by later Team burn-down; active bridge file/class/test removed | See `LEGACY_BURNDOWN_REGISTER.md` for current owner |
 | `TeamPositionPickerRenderer` LVGL specificity | Shared chat UI still uses LVGL widgets | Future UX pack-specific picker replaces the shared LVGL renderer |
 
 ## Checker Changes
@@ -42,6 +42,13 @@ This was a renderer / widget lifecycle burn-down. It did not change Team action 
 
 | Work | Direction |
 | --- | --- |
-| Team workflow coordination | Move selection workflow out of `ChatUiController` only if a broader workflow coordinator becomes worthwhile |
-| Team action bridge burn-down | Replace or rename `LegacyTeamActionBridge` after Team runtime action service boundary is stable |
+| Team workflow coordination | Closed for Team send ownership by `ChatTeamWorkflow` / `TeamActionRuntimeSink` |
+| Team action bridge burn-down | Closed by `TeamActionRuntimeSink` / `TeamActionRequest` |
 | UX Pack picker variant | Allow a target-specific picker renderer to replace the shared LVGL renderer |
+
+## Later Team Closeout
+
+Subsequent Team burn-down passes removed the active `LegacyTeamActionBridge` and
+moved Chat Team send workflow ownership out of `ChatUiController`. This report
+keeps the Phase 7.9 renderer history, but the current Team action status is
+tracked in `LEGACY_BURNDOWN_REGISTER.md`.

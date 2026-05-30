@@ -23,6 +23,8 @@
 #include "platform/ui/team_ui_store_runtime.h"
 #include "sys/clock.h"
 #include "team/protocol/team_chat.h"
+#include "ui/presentation_sources/team_map_overlay_source.h"
+#include "ui/team_presence/team_presence_model.h"
 #include "uconsole/uconsole_hardware_probe.h"
 
 namespace trailmate::uconsole
@@ -555,7 +557,7 @@ void appendNodeTimeline(std::vector<OverviewTimelineItem>& out,
 void buildTeamOverview(UConsoleDashboardSnapshot& out)
 {
     ::team::ui::TeamUiSnapshot team_snapshot{};
-    if (!::team::ui::team_ui_get_store().load(team_snapshot))
+    if (!::team::ui::team_ui_snapshot_store().load(team_snapshot))
     {
         out.team_summary = "No team state stored locally.";
         return;
@@ -622,7 +624,11 @@ void buildTeamOverview(UConsoleDashboardSnapshot& out)
             continue;
         }
         std::string detail = formatLastSeen(member.last_seen_s);
-        detail += member.online ? " / online" : " / offline";
+        detail += ::ui::team_presence::isTeamMemberOnline(
+                      sys::epoch_seconds_now(),
+                      member.last_seen_s)
+                      ? " / online"
+                      : " / offline";
         if (member.leader)
         {
             detail += " / leader";
@@ -663,19 +669,20 @@ void buildTeamOverview(UConsoleDashboardSnapshot& out)
             }
         }
 
-        std::vector<::team::ui::TeamPosSample> positions{};
-        if (::team::ui::team_ui_posring_load_latest(team_snapshot.team_id,
-                                                    positions))
+        ::ui::presentation_sources::TeamMapOverlaySource team_locations(
+            ::team::ui::team_ui_snapshot_store());
+        ::ui::presentation_sources::TeamMapLocation positions[4]{};
+        const std::size_t position_count =
+            team_locations.latestTeamLocations(positions, 4U);
+        if (position_count > 0)
         {
-            std::sort(positions.begin(),
-                      positions.end(),
+            std::sort(positions,
+                      positions + position_count,
                       [](const auto& left, const auto& right)
                       {
                           return left.ts > right.ts;
                       });
-            const std::size_t count =
-                std::min<std::size_t>(positions.size(), 4U);
-            for (std::size_t index = 0; index < count; ++index)
+            for (std::size_t index = 0; index < position_count; ++index)
             {
                 const auto& position = positions[index];
                 const double lat =

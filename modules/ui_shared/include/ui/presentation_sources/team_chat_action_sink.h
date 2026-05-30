@@ -11,7 +11,8 @@ namespace team
 {
 namespace ui
 {
-class ITeamUiStore;
+class ITeamUiChatLogStore;
+class ITeamUiSnapshotStore;
 }
 } // namespace team
 
@@ -41,7 +42,8 @@ class ITeamChatCommandPort
 class TeamChatActionSink final : public ui::chat::IChatActionSink
 {
   public:
-    TeamChatActionSink(::team::ui::ITeamUiStore& team_store,
+    TeamChatActionSink(::team::ui::ITeamUiSnapshotStore& snapshot_store,
+                       ::team::ui::ITeamUiChatLogStore& chat_log_store,
                        ITeamChatCommandPort* command_port,
                        uint8_t team_channel_raw = 2);
 
@@ -50,7 +52,8 @@ class TeamChatActionSink final : public ui::chat::IChatActionSink
     ui::UiActionResult markRead(ui::chat::ConversationId id) override;
 
   private:
-    ::team::ui::ITeamUiStore& team_store_;
+    ::team::ui::ITeamUiSnapshotStore& snapshot_store_;
+    ::team::ui::ITeamUiChatLogStore& chat_log_store_;
     ITeamChatCommandPort* command_port_ = nullptr;
     uint8_t team_channel_raw_ = 2;
     uint32_t next_message_id_ = 1;

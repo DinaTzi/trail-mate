@@ -17,7 +17,7 @@ tile source, or filesystem state directly.
 | Question | Current owner before 7.12 | 7.12 owner |
 | --- | --- | --- |
 | Current GPS marker facts | ESP GPS page/map runtime reads `platform::ui::gps::get_data()`; Linux map workspace reads `LegacyGpsStatusSource` | `LegacyMapOverlaySource` via `IMapOverlayGpsSource` |
-| Team member marker facts | ESP GPS page/map runtime reads Team posring/chatlog directly; Linux map workspace had only summary counts | `LegacyMapOverlaySource` via `IMapOverlayTeamSource` |
+| Team member marker facts | Team posring reads are contained in `TeamMapOverlaySource`; ESP GPS, Linux GPS, and uConsole dashboard consume that source | `TeamMapOverlaySource` via `IMapOverlayTeamSource` |
 | Route / tracker / breadcrumb facts | ESP route/tracker overlay code still owns platform-specific drawing state | Explicitly deferred with exit condition |
 | Measurement state | `LegacyMapPresentationState` / `MapWorkspaceSnapshot::measurement` | Deferred overlay projection until measurement tool runtime is split |
 | Renderer access to GPS/team | `map_viewport` does not read GPS/team; ESP GPS map page still has contained legacy marker paths | Shared map renderer remains forbidden from reading GPS/team; ESP marker legacy remains contained |
@@ -45,9 +45,10 @@ Team member overlay is now expressible as `MapOverlayKind::TeamMember`.
 - lat/lon
 - validity
 
-The Linux GPS page runtime wires a legacy team source that reads latest posring
-samples at the composition/runtime boundary, then projects them through
-`LegacyMapOverlaySource`.
+`TeamMapOverlaySource` reads canonical Team snapshot and latest posring samples
+at the Team presentation-source seam. Linux GPS runtime wires it into
+`MapOverlaySnapshotSource`; ESP GPS and uConsole dashboard consume its fixed
+capacity location projection instead of calling posring directly.
 
 ## Route / Tracker / Breadcrumb
 
@@ -75,5 +76,6 @@ the compatibility read DTO for active tool and measurement summary.
 ## Still Contained
 
 - ESP route/tracker draw callbacks remain platform-specific contained legacy.
-- ESP GPS page marker widgets still draw existing marker objects.
+- ESP GPS page marker widgets still draw existing marker objects, but their
+  selected-member position facts now come from `TeamMapOverlaySource`.
 - Measurement overlay projection is deferred with an explicit exit condition.

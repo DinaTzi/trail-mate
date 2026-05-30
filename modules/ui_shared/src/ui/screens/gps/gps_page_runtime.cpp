@@ -271,7 +271,7 @@ class EspGpsRuntimeRefreshModel final : public ::ui::screens::gps::IGpsStatusRef
         }
 
         refresh_member_panel(false);
-        refresh_team_markers_from_posring();
+        refresh_team_markers_from_team_source();
         refresh_team_signal_markers_from_chatlog();
 
         if (g_gps_state.zoom_modal.is_open())
@@ -652,13 +652,13 @@ using Host = gps::ui::shell::Host;
 #include "app/app_config.h"
 #include "app/app_facade_access.h"
 #include "platform/ui/device_runtime.h"
-#include "platform/ui/team_ui_store_runtime.h"
 #include "sys/clock.h"
 #include "ui/app_runtime.h"
 #include "ui/localization.h"
 #include "ui/presentation_sources/legacy_gps_status_source.h"
 #include "ui/presentation_sources/legacy_map_action_sink.h"
 #include "ui/presentation_sources/legacy_map_presentation_source.h"
+#include "ui/presentation_sources/team_map_overlay_source.h"
 #include "ui/screens/gps/gps_constants.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/map/map_viewport.h"
@@ -670,7 +670,6 @@ using Host = gps::ui::shell::Host;
 
 #include <algorithm>
 #include <cstdio>
-#include <vector>
 
 #if !defined(LV_FONT_MONTSERRAT_12) || !LV_FONT_MONTSERRAT_12
 #define lv_font_montserrat_12 lv_font_montserrat_14
@@ -710,7 +709,7 @@ void request_exit()
     static ::ui::presentation_sources::LegacyMapPresentationSource source(
         ::ui::presentation_sources::legacy_gps_status_source(),
         ::ui::presentation_sources::legacy_map_presentation_state(),
-        &::team::ui::team_ui_get_store());
+        &::team::ui::team_ui_snapshot_store());
     static ::ui::presentation_sources::LegacyMapActionSink sink(
         ::ui::presentation_sources::legacy_gps_status_source(),
         ::ui::presentation_sources::legacy_map_presentation_state());
@@ -736,75 +735,11 @@ class LinuxMapOverlayGpsSource final : public ::ui::map_overlay::IMapOverlayGpsS
     }
 };
 
-class LinuxMapOverlayTeamSource final : public ::ui::map_overlay::IMapOverlayTeamSource
-{
-  public:
-    std::size_t latestTeamPoints(TeamPoint* out, std::size_t capacity) const override
-    {
-        if (out == nullptr || capacity == 0)
-        {
-            return 0;
-        }
-
-        ::team::ui::TeamUiSnapshot team_snapshot;
-        if (!::team::ui::team_ui_get_store().load(team_snapshot) ||
-            !team_snapshot.in_team ||
-            !team_snapshot.has_team_id)
-        {
-            return 0;
-        }
-
-        std::vector<::team::ui::TeamPosSample> samples;
-        if (!::team::ui::team_ui_posring_load_latest(team_snapshot.team_id, samples))
-        {
-            return 0;
-        }
-
-        std::size_t count = 0;
-        for (const auto& sample : samples)
-        {
-            if (count >= capacity)
-            {
-                break;
-            }
-
-            out[count].node_id = sample.member_id;
-            out[count].label = labelForMember(team_snapshot, sample.member_id, count);
-            out[count].lat = static_cast<double>(sample.lat_e7) / 10000000.0;
-            out[count].lon = static_cast<double>(sample.lon_e7) / 10000000.0;
-            out[count].valid = sample.lat_e7 != 0 || sample.lon_e7 != 0;
-            ++count;
-        }
-        return count;
-    }
-
-  private:
-    static const char* labelForMember(const ::team::ui::TeamUiSnapshot& snapshot,
-                                      uint32_t node_id,
-                                      std::size_t index)
-    {
-        static char labels[::ui::map::MapOverlaySnapshot::kMaxItems][32]{};
-        if (index >= ::ui::map::MapOverlaySnapshot::kMaxItems)
-        {
-            return nullptr;
-        }
-
-        for (const auto& member : snapshot.members)
-        {
-            if (member.node_id == node_id && !member.name.empty())
-            {
-                std::snprintf(labels[index], sizeof(labels[index]), "%s", member.name.c_str());
-                return labels[index];
-            }
-        }
-        return nullptr;
-    }
-};
-
 ::ui::map::IMapOverlayPresentationSource& map_overlay_source()
 {
     static LinuxMapOverlayGpsSource gps;
-    static LinuxMapOverlayTeamSource team;
+    static ::ui::presentation_sources::TeamMapOverlaySource team(
+        ::team::ui::team_ui_snapshot_store());
     static ::ui::map_overlay::MapOverlaySnapshotSource source(&gps, &team);
     return source;
 }

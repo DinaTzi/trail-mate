@@ -10,13 +10,13 @@
 #include "sys/clock.h"
 #include "team/protocol/team_location_marker.h"
 #include "ui/localization.h"
+#include "ui/presentation_sources/team_map_overlay_source.h"
 #include "ui/screens/gps/gps_constants.h"
 #include "ui/screens/gps/gps_page_components.h"
 #include "ui/screens/gps/gps_page_lifetime.h"
 #include "ui/screens/gps/gps_page_styles.h"
 #include "ui/screens/gps/gps_state.h"
 #include "ui/screens/gps/gps_tracker_overlay.h"
-#include "ui/screens/team/team_state.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/map/map_tiles.h"
 #include "ui/widgets/map/map_viewport.h"
@@ -170,16 +170,8 @@ void ensure_member_colors(std::vector<team::ui::TeamMemberUi>& members)
 
 bool load_team_data(team::TeamId& out_id, std::vector<team::ui::TeamMemberUi>& out_members)
 {
-    if (team::ui::g_team_state.in_team && team::ui::g_team_state.has_team_id)
-    {
-        out_id = team::ui::g_team_state.team_id;
-        out_members = team::ui::g_team_state.members;
-        ensure_member_colors(out_members);
-        return true;
-    }
-
     team::ui::TeamUiSnapshot snap;
-    if (team::ui::team_ui_get_store().load(snap) && snap.in_team && snap.has_team_id)
+    if (team::ui::team_ui_snapshot_store().load(snap) && snap.in_team && snap.has_team_id)
     {
         out_id = snap.team_id;
         out_members = snap.members;
@@ -187,6 +179,13 @@ bool load_team_data(team::TeamId& out_id, std::vector<team::ui::TeamMemberUi>& o
         return true;
     }
     return false;
+}
+
+ui::presentation_sources::TeamMapOverlaySource& team_map_overlay_source()
+{
+    static ui::presentation_sources::TeamMapOverlaySource source(
+        team::ui::team_ui_snapshot_store());
+    return source;
 }
 
 bool member_exists(const std::vector<team::ui::TeamMemberUi>& members, uint32_t member_id)
@@ -913,7 +912,7 @@ static void member_btn_event_cb(lv_event_t* e)
         return;
     }
     select_member(member_id);
-    refresh_team_markers_from_posring();
+    refresh_team_markers_from_team_source();
 
     team::TeamId team_id{};
     std::vector<team::ui::TeamMemberUi> members;
@@ -1343,7 +1342,7 @@ void refresh_team_signal_markers_from_chatlog()
     update_team_signal_marker_positions();
 }
 
-void refresh_team_markers_from_posring()
+void refresh_team_markers_from_team_source()
 {
     if (!is_alive() || g_gps_state.map == NULL)
     {
@@ -1375,18 +1374,10 @@ void refresh_team_markers_from_posring()
     }
     std::string label_text = resolve_member_label(members, g_gps_state.selected_member_id);
 
-    std::vector<team::ui::TeamPosSample> samples;
-    if (!team::ui::team_ui_posring_load_latest(team_id, samples))
-    {
-        clear_team_markers();
-        return;
-    }
-    auto sample_it = std::find_if(samples.begin(), samples.end(),
-                                  [&](const team::ui::TeamPosSample& s)
-                                  {
-                                      return s.member_id == g_gps_state.selected_member_id;
-                                  });
-    if (sample_it == samples.end())
+    ui::presentation_sources::TeamMapLocation location;
+    if (!team_map_overlay_source().loadMemberLocation(
+            g_gps_state.selected_member_id,
+            location))
     {
         clear_team_markers();
         return;
@@ -1410,15 +1401,17 @@ void refresh_team_markers_from_posring()
         ++it;
     }
 
-    uint32_t color = resolve_member_color(members, g_gps_state.selected_member_id);
+    uint32_t color = location.color != 0
+                         ? location.color
+                         : resolve_member_color(members, g_gps_state.selected_member_id);
     int idx = find_team_marker_index(g_gps_state.selected_member_id);
     if (idx < 0)
     {
         GPSPageState::TeamMarker marker;
-        marker.member_id = sample_it->member_id;
-        marker.lat_e7 = sample_it->lat_e7;
-        marker.lon_e7 = sample_it->lon_e7;
-        marker.ts = sample_it->ts;
+        marker.member_id = location.member_id;
+        marker.lat_e7 = location.lat_e7;
+        marker.lon_e7 = location.lon_e7;
+        marker.ts = location.ts;
         marker.color = color;
         marker.obj = create_team_marker_obj(color);
         marker.label = create_team_marker_label(label_text, color);
@@ -1427,9 +1420,9 @@ void refresh_team_markers_from_posring()
     else
     {
         auto& marker = g_gps_state.team_markers[idx];
-        marker.lat_e7 = sample_it->lat_e7;
-        marker.lon_e7 = sample_it->lon_e7;
-        marker.ts = sample_it->ts;
+        marker.lat_e7 = location.lat_e7;
+        marker.lon_e7 = location.lon_e7;
+        marker.ts = location.ts;
         if (!marker.obj)
         {
             marker.obj = create_team_marker_obj(color);

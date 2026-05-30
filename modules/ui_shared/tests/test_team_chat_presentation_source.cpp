@@ -1,4 +1,5 @@
-#include "platform/ui/team_ui_store_runtime.h"
+#include "platform/ui/team_ui_chat_log_store.h"
+#include "platform/ui/team_ui_snapshot_store.h"
 #include "team/protocol/team_chat.h"
 #include "team/protocol/team_location_marker.h"
 #include "ui/presentation_sources/team_chat_presentation_source.h"
@@ -58,13 +59,13 @@ bool contains(const ui::FixedText<160>& text, const char* needle)
 
 int main()
 {
-    team::ui::ITeamUiStore& store = team::ui::team_ui_get_store();
+    team::ui::ITeamUiSnapshotStore& store = team::ui::team_ui_snapshot_store();
     store.clear();
 
     const team::ui::TeamUiSnapshot snap = makeSnapshot();
     store.save(snap);
 
-    assert(team::ui::team_ui_chatlog_append(
+    assert(team::ui::team_ui_chat_log_store().appendText(
         snap.team_id, 0x12345678, true, 100, "hello team"));
 
     team::proto::TeamChatLocation loc;
@@ -73,7 +74,7 @@ int main()
     loc.source = static_cast<uint8_t>(team::proto::TeamLocationMarkerIcon::Rally);
     std::vector<uint8_t> location_payload;
     assert(team::proto::encodeTeamChatLocation(loc, location_payload));
-    assert(team::ui::team_ui_chatlog_append_structured(
+    assert(team::ui::team_ui_chat_log_store().appendStructured(
         snap.team_id,
         0,
         false,
@@ -86,7 +87,7 @@ int main()
     command.note = "wait";
     std::vector<uint8_t> command_payload;
     assert(team::proto::encodeTeamChatCommand(command, command_payload));
-    assert(team::ui::team_ui_chatlog_append_structured(
+    assert(team::ui::team_ui_chat_log_store().appendStructured(
         snap.team_id,
         0x12345678,
         true,
@@ -94,7 +95,9 @@ int main()
         team::proto::TeamChatType::Command,
         command_payload));
 
-    ui::presentation_sources::TeamChatPresentationSource source(store);
+    ui::presentation_sources::TeamChatPresentationSource source(
+        store,
+        team::ui::team_ui_chat_log_store());
 
     ui::chat::ChatWorkspaceSnapshot overview = buildSnapshot(source);
     assert(overview.conversation_count == 1);
@@ -123,6 +126,11 @@ int main()
     assert(selected.messages[0].sender_node_id == 0x12345678);
     assert(std::strcmp(selected.messages[0].sender_label.c_str(), "Ada") == 0);
     assert(std::strcmp(selected.messages[0].text.c_str(), "hello team") == 0);
+    assert(selected.messages[0].has_team_rich_payload);
+    assert(selected.messages[0].team_rich_payload.kind ==
+           ui::chat::TeamMessageRichPayloadKind::Text);
+    assert(std::strcmp(selected.messages[0].team_rich_payload.summary.c_str(),
+                       "hello team") == 0);
 
     assert(selected.messages[1].outgoing);
     assert(selected.messages[1].sender_node_id == 0);
@@ -132,10 +140,22 @@ int main()
            ui::chat::MessageOrigin::LocalStored);
     assert(contains(selected.messages[1].text, "Rally"));
     assert(contains(selected.messages[1].text, "31.23457"));
+    assert(selected.messages[1].has_team_rich_payload);
+    assert(selected.messages[1].team_rich_payload.kind ==
+           ui::chat::TeamMessageRichPayloadKind::Location);
+    assert(std::strcmp(selected.messages[1].team_rich_payload.badge.c_str(),
+                       "Marker") == 0);
+    assert(selected.messages[1].team_rich_payload.location.marker_icon ==
+           static_cast<uint8_t>(team::proto::TeamLocationMarkerIcon::Rally));
 
     assert(!selected.messages[2].outgoing);
     assert(contains(selected.messages[2].text, "Command: Hold"));
     assert(contains(selected.messages[2].text, "wait"));
+    assert(selected.messages[2].has_team_rich_payload);
+    assert(selected.messages[2].team_rich_payload.kind ==
+           ui::chat::TeamMessageRichPayloadKind::Command);
+    assert(selected.messages[2].team_rich_payload.command.kind ==
+           ui::chat::TeamMessageCommandKind::Hold);
 
     store.clear();
     return 0;

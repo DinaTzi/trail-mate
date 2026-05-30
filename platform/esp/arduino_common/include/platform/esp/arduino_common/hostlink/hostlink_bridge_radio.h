@@ -14,6 +14,7 @@ struct AppRxStats
 };
 
 void on_event(const sys::Event& event);
+void on_team_state_changed();
 void on_link_ready();
 AppRxStats get_app_rx_stats();
 

@@ -275,7 +275,7 @@ void finalize_startup(app::IAppFacade& app_facade)
     if (team_controller)
     {
         team::ui::TeamUiSnapshot snap;
-        if (team::ui::team_ui_get_store().load(snap) &&
+        if (team::ui::team_ui_snapshot_store().load(snap) &&
             snap.has_team_id && snap.has_team_psk && snap.security_round > 0)
         {
             if (team_controller->setKeysFromPsk(snap.team_id,

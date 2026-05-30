@@ -5,7 +5,6 @@
 
 #include "ui/screens/team/team_page_input.h"
 #include "ui/app_runtime.h"
-#include "ui/screens/team/team_state.h"
 #include "ui/ui_common.h"
 
 namespace team
@@ -15,6 +14,12 @@ namespace ui
 namespace
 {
 lv_group_t* s_group = nullptr;
+TeamPageInputContext s_context{};
+
+lv_obj_t* back_button()
+{
+    return s_context.top_bar ? s_context.top_bar->back_btn : nullptr;
+}
 
 void root_key_event_cb(lv_event_t* e)
 {
@@ -23,9 +28,9 @@ void root_key_event_cb(lv_event_t* e)
     {
         return;
     }
-    if (g_team_state.top_bar_widget.back_btn)
+    if (back_button())
     {
-        lv_obj_send_event(g_team_state.top_bar_widget.back_btn, LV_EVENT_CLICKED, nullptr);
+        lv_obj_send_event(back_button(), LV_EVENT_CLICKED, nullptr);
     }
 }
 
@@ -49,8 +54,9 @@ void add_if(lv_obj_t* obj)
 }
 } // namespace
 
-void init_team_input()
+void init_team_input(const TeamPageInputContext& context)
 {
+    s_context = context;
     if (!::app_g)
     {
         return;
@@ -58,35 +64,39 @@ void init_team_input()
 
     s_group = ::app_g;
     set_default_group(s_group);
-    refresh_team_input();
+    refresh_team_input(s_context);
 
-    if (g_team_state.root)
+    if (s_context.root)
     {
-        lv_obj_add_event_cb(g_team_state.root, root_key_event_cb, LV_EVENT_KEY, nullptr);
+        lv_obj_add_event_cb(s_context.root, root_key_event_cb, LV_EVENT_KEY, nullptr);
     }
 }
 
-void refresh_team_input()
+void refresh_team_input(const TeamPageInputContext& context)
 {
+    s_context = context;
     if (!s_group)
     {
         return;
     }
     group_clear_all(s_group);
 
-    if (g_team_state.top_bar_widget.back_btn)
+    if (back_button())
     {
-        lv_group_add_obj(s_group, g_team_state.top_bar_widget.back_btn);
+        lv_group_add_obj(s_group, back_button());
     }
 
-    for (lv_obj_t* obj : g_team_state.focusables)
+    if (s_context.focusables)
     {
-        add_if(obj);
+        for (lv_obj_t* obj : *s_context.focusables)
+        {
+            add_if(obj);
+        }
     }
 
-    if (g_team_state.default_focus)
+    if (s_context.default_focus && *s_context.default_focus)
     {
-        lv_group_focus_obj(g_team_state.default_focus);
+        lv_group_focus_obj(*s_context.default_focus);
     }
 }
 
@@ -98,22 +108,8 @@ void cleanup_team_input()
     }
     group_clear_all(s_group);
     s_group = nullptr;
+    s_context = TeamPageInputContext{};
 }
 
 } // namespace ui
 } // namespace team
-
-void init_team_input()
-{
-    team::ui::init_team_input();
-}
-
-void refresh_team_input()
-{
-    team::ui::refresh_team_input();
-}
-
-void cleanup_team_input()
-{
-    team::ui::cleanup_team_input();
-}

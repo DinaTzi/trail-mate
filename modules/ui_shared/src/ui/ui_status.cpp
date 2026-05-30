@@ -13,7 +13,7 @@
 #include "platform/ui/wifi_runtime.h"
 #include "sys/clock.h"
 #if !defined(GAT562_NO_TEAM) || !GAT562_NO_TEAM
-#include "platform/ui/team_ui_store_runtime.h"
+#include "platform/ui/team_ui_snapshot_store.h"
 #endif
 #include "ui/presentation_sources/legacy_gps_status_source.h"
 #include "ui_presentation/gps/gps_status_model.h"
@@ -103,7 +103,7 @@ void refresh_team_cache(bool force = false)
     }
 
     team::ui::TeamUiSnapshot snap;
-    if (team::ui::team_ui_get_store().load(snap))
+    if (team::ui::team_ui_snapshot_store().load(snap))
     {
         s_team_cache.team_active = snap.in_team;
         s_team_cache.team_unread = static_cast<int>(snap.team_chat_unread);

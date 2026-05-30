@@ -4,6 +4,7 @@
  */
 
 #include "platform/ui/team_ui_store_runtime.h"
+#include "ui/team_persistence/team_ui_snapshot_codec.h"
 
 #include "sys/clock.h"
 #include <SD.h>
@@ -20,8 +21,8 @@ namespace team
 namespace ui
 {
 
-bool TeamUiMemoryStore::has_snapshot_ = false;
-TeamUiSnapshot TeamUiMemoryStore::snapshot_{};
+bool TeamUiSnapshotMemoryStore::has_snapshot_ = false;
+TeamUiSnapshot TeamUiSnapshotMemoryStore::snapshot_{};
 
 namespace
 {
@@ -43,7 +44,6 @@ constexpr const char* kGpxHeader =
     "<trk>\n"
     "<trkseg>\n";
 
-constexpr uint16_t kSnapshotVersion = 1;
 constexpr uint16_t kEventVersion = 1;
 constexpr uint8_t kKeysVersion = 1;
 constexpr uint8_t kPosringVersion = 1;
@@ -67,6 +67,24 @@ constexpr uint32_t kMinValidEpoch = 1577836800U; // 2020-01-01
 uint32_t now_secs()
 {
     return sys::uptime_seconds_now();
+}
+
+uint32_t member_presence_fingerprint(const TeamUiSnapshot& in)
+{
+    uint32_t h = 2166136261u;
+    auto mix = [&](uint32_t value)
+    {
+        h ^= value;
+        h *= 16777619u;
+    };
+    mix(static_cast<uint32_t>(in.members.size()));
+    for (const auto& member : in.members)
+    {
+        mix(member.node_id);
+        mix(member.leader ? 1U : 0U);
+        mix(member.last_seen_s);
+    }
+    return h;
 }
 
 uint64_t team_id_to_u64(const TeamId& id)
@@ -508,111 +526,9 @@ bool load_snapshot_from_path(const std::string& snapshot_path, TeamUiSnapshot& o
         return false;
     }
 
-    size_t off = 0;
-    if (off + 4 > buf.size())
-    {
-        return false;
-    }
-    if (std::memcmp(buf.data(), "TMS1", 4) != 0)
-    {
-        return false;
-    }
-    off += 4;
-
-    uint8_t version = 0;
-    uint8_t flags = 0;
-    uint16_t reserved = 0;
-    uint32_t updated_ts = 0;
-    uint64_t team_id = 0;
-    uint32_t epoch = 0;
-    uint32_t last_event_seq = 0;
-    uint32_t self_node_id = 0;
-    uint32_t leader_node_id = 0;
-    uint8_t self_role = 0;
-    uint16_t member_count = 0;
-    uint16_t reserved3 = 0;
-
-    if (!read_u8(buf, off, version) ||
-        !read_u8(buf, off, flags) ||
-        !read_u16(buf, off, reserved) ||
-        !read_u32(buf, off, updated_ts) ||
-        !read_u64(buf, off, team_id) ||
-        !read_u32(buf, off, epoch) ||
-        !read_u32(buf, off, last_event_seq) ||
-        !read_u32(buf, off, self_node_id) ||
-        !read_u32(buf, off, leader_node_id) ||
-        !read_u8(buf, off, self_role))
-    {
-        return false;
-    }
-    if (off + 3 > buf.size())
-    {
-        return false;
-    }
-    off += 3;
-    if (!read_u16(buf, off, member_count) ||
-        !read_u16(buf, off, reserved3))
-    {
-        return false;
-    }
-
-    if (version != kSnapshotVersion)
-    {
-        return false;
-    }
-
-    out.in_team = (flags & 0x01) != 0;
-    out.has_team_id = (team_id != 0);
-    out.team_id = team_id_from_u64(team_id);
-    out.security_round = epoch;
-    out.last_event_seq = last_event_seq;
-    out.self_is_leader = (self_role == kRoleLeader);
-    out.members.clear();
-
-    for (uint16_t i = 0; i < member_count; ++i)
-    {
-        uint32_t node_id = 0;
-        uint8_t role = 0;
-        uint8_t mflags = 0;
-        uint16_t name_len = 0;
-        if (!read_u32(buf, off, node_id) ||
-            !read_u8(buf, off, role) ||
-            !read_u8(buf, off, mflags) ||
-            !read_u16(buf, off, name_len))
-        {
-            return false;
-        }
-        if (off + name_len > buf.size())
-        {
-            return false;
-        }
-        std::string name;
-        if (name_len > 0)
-        {
-            name.assign(reinterpret_cast<const char*>(buf.data() + off), name_len);
-        }
-        off += name_len;
-
-        TeamMemberUi m;
-        m.node_id = node_id;
-        m.name = name;
-        m.leader = (role == kRoleLeader);
-        out.members.push_back(m);
-    }
-
-    uint32_t chat_unread = 0;
-    if (off + sizeof(chat_unread) <= buf.size())
-    {
-        if (read_u32(buf, off, chat_unread))
-        {
-            out.team_chat_unread = chat_unread;
-        }
-    }
-
-    (void)updated_ts;
-    (void)self_node_id;
-    (void)leader_node_id;
-    return true;
+    return ::ui::team_persistence::decodeTeamUiSnapshot(buf.data(),
+                                                        buf.size(),
+                                                        out);
 }
 
 bool save_snapshot_to_path(const std::string& dir_path, const TeamUiSnapshot& in)
@@ -633,65 +549,19 @@ bool save_snapshot_to_path(const std::string& dir_path, const TeamUiSnapshot& in
     std::string tmp_path = dir_path + "/" + kSnapshotTmpName;
     std::string out_path = dir_path + "/" + kSnapshotName;
 
+    std::vector<uint8_t> encoded;
+    if (!::ui::team_persistence::encodeTeamUiSnapshot(in, now_secs(), encoded))
+    {
+        return false;
+    }
+
     File f = SD.open(tmp_path.c_str(), FILE_WRITE);
     if (!f)
     {
         return false;
     }
 
-    f.write(reinterpret_cast<const uint8_t*>("TMS1"), 4);
-    write_u8(f, kSnapshotVersion);
-    uint8_t flags = in.in_team ? 0x01 : 0x00;
-    write_u8(f, flags);
-    write_u16(f, 0);
-    write_u32(f, now_secs());
-    write_u64(f, in.has_team_id ? team_id_to_u64(in.team_id) : 0);
-    write_u32(f, in.security_round);
-    write_u32(f, in.last_event_seq);
-    write_u32(f, 0);
-    uint32_t leader_node_id = 0;
-    for (const auto& m : in.members)
-    {
-        if (m.leader)
-        {
-            leader_node_id = m.node_id;
-            break;
-        }
-    }
-    write_u32(f, leader_node_id);
-    write_u8(f, in.self_is_leader ? kRoleLeader : (in.in_team ? kRoleMember : kRoleNone));
-    write_u8(f, 0);
-    write_u8(f, 0);
-    write_u8(f, 0);
-    uint16_t member_count = static_cast<uint16_t>(in.members.size());
-    write_u16(f, member_count);
-    write_u16(f, 0);
-
-    for (const auto& m : in.members)
-    {
-        write_u32(f, m.node_id);
-        write_u8(f, m.leader ? kRoleLeader : kRoleMember);
-        uint16_t name_len = 0;
-        uint8_t name_flag = 0;
-        std::string name = m.name;
-        if (!name.empty())
-        {
-            if (name.size() > 24)
-            {
-                name.resize(24);
-            }
-            name_len = static_cast<uint16_t>(name.size());
-            name_flag = 0x01;
-        }
-        write_u8(f, name_flag);
-        write_u16(f, name_len);
-        if (name_len > 0)
-        {
-            f.write(reinterpret_cast<const uint8_t*>(name.data()), name_len);
-        }
-    }
-
-    write_u32(f, in.team_chat_unread);
+    f.write(encoded.data(), encoded.size());
 
     f.flush();
     f.close();
@@ -1015,7 +885,7 @@ bool write_posring_header(File& f, uint32_t write_offset)
     return true;
 }
 
-class TeamUiStorePersisted : public ITeamUiStore
+class TeamUiSnapshotStorePersisted : public ITeamUiSnapshotStore
 {
   public:
     bool load(TeamUiSnapshot& out) override
@@ -1083,7 +953,8 @@ class TeamUiStorePersisted : public ITeamUiStore
                            (in.self_is_leader != last_snapshot_self_is_leader_) ||
                            (in.security_round != last_snapshot_epoch_) ||
                            (in.has_team_psk != last_snapshot_has_psk_) ||
-                           (in.team_chat_unread != last_snapshot_unread_);
+                           (in.team_chat_unread != last_snapshot_unread_) ||
+                           (member_presence_fingerprint(in) != last_member_presence_fingerprint_);
         bool seq_trigger = (in.last_event_seq >= last_snapshot_seq_ + 10);
         bool time_trigger = (now - last_snapshot_ts_ >= 60);
 
@@ -1108,6 +979,7 @@ class TeamUiStorePersisted : public ITeamUiStore
             last_snapshot_epoch_ = in.security_round;
             last_snapshot_has_psk_ = in.has_team_psk;
             last_snapshot_unread_ = in.team_chat_unread;
+            last_member_presence_fingerprint_ = member_presence_fingerprint(in);
         }
     }
 
@@ -1124,12 +996,13 @@ class TeamUiStorePersisted : public ITeamUiStore
     uint32_t last_snapshot_epoch_ = 0;
     bool last_snapshot_has_psk_ = false;
     uint32_t last_snapshot_unread_ = 0;
+    uint32_t last_member_presence_fingerprint_ = 0;
 };
 
-TeamUiStorePersisted s_persisted_store;
+TeamUiSnapshotStorePersisted s_persisted_snapshot_store;
 } // namespace
 
-bool TeamUiMemoryStore::load(TeamUiSnapshot& out)
+bool TeamUiSnapshotMemoryStore::load(TeamUiSnapshot& out)
 {
     if (!has_snapshot_)
     {
@@ -1139,38 +1012,86 @@ bool TeamUiMemoryStore::load(TeamUiSnapshot& out)
     return true;
 }
 
-void TeamUiMemoryStore::save(const TeamUiSnapshot& in)
+void TeamUiSnapshotMemoryStore::save(const TeamUiSnapshot& in)
 {
     snapshot_ = in;
     has_snapshot_ = true;
 }
 
-void TeamUiMemoryStore::clear()
+void TeamUiSnapshotMemoryStore::clear()
 {
     has_snapshot_ = false;
 }
 
 namespace
 {
-TeamUiMemoryStore s_memory_store;
-ITeamUiStore* s_store = &s_persisted_store;
+TeamUiSnapshotMemoryStore s_snapshot_memory_store;
+ITeamUiSnapshotStore* s_snapshot_store = &s_persisted_snapshot_store;
+
+class TeamUiSdChatLogStore final : public ITeamUiChatLogStore
+{
+  public:
+    bool appendText(const TeamId& team_id,
+                    uint32_t peer_id,
+                    bool incoming,
+                    uint32_t ts,
+                    const std::string& text) override
+    {
+        std::vector<uint8_t> payload;
+        payload.assign(text.begin(), text.end());
+        return appendStructured(team_id,
+                                peer_id,
+                                incoming,
+                                ts,
+                                team::proto::TeamChatType::Text,
+                                payload);
+    }
+
+    bool appendStructured(const TeamId& team_id,
+                          uint32_t peer_id,
+                          bool incoming,
+                          uint32_t ts,
+                          team::proto::TeamChatType type,
+                          const std::vector<uint8_t>& payload) override;
+
+    bool loadRecent(const TeamId& team_id,
+                    std::size_t max_count,
+                    std::vector<TeamChatLogEntry>& out) override;
+};
+
+TeamUiSdChatLogStore s_chat_log_store;
 } // namespace
+
+ITeamUiSnapshotStore& team_ui_snapshot_store()
+{
+    return *s_snapshot_store;
+}
+
+void team_ui_set_snapshot_store(ITeamUiSnapshotStore* store)
+{
+    if (store)
+    {
+        s_snapshot_store = store;
+    }
+    else
+    {
+        s_snapshot_store = &s_snapshot_memory_store;
+    }
+}
 
 ITeamUiStore& team_ui_get_store()
 {
-    return *s_store;
+    return team_ui_snapshot_store();
 }
 
 void team_ui_set_store(ITeamUiStore* store)
 {
-    if (store)
-    {
-        s_store = store;
-    }
-    else
-    {
-        s_store = &s_memory_store;
-    }
+    team_ui_set_snapshot_store(store);
+}
+
+ITeamUiChatLogStore& team_ui_chat_log_store()
+{
+    return s_chat_log_store;
 }
 
 bool team_ui_append_key_event(const TeamId& team_id,
@@ -1351,22 +1272,19 @@ bool team_ui_chatlog_append(const TeamId& team_id,
                             uint32_t ts,
                             const std::string& text)
 {
-    std::vector<uint8_t> payload;
-    payload.assign(text.begin(), text.end());
-    return team_ui_chatlog_append_structured(team_id,
-                                             peer_id,
-                                             incoming,
-                                             ts,
-                                             team::proto::TeamChatType::Text,
-                                             payload);
+    return team_ui_chat_log_store().appendText(team_id,
+                                               peer_id,
+                                               incoming,
+                                               ts,
+                                               text);
 }
 
-bool team_ui_chatlog_append_structured(const TeamId& team_id,
-                                       uint32_t peer_id,
-                                       bool incoming,
-                                       uint32_t ts,
-                                       team::proto::TeamChatType type,
-                                       const std::vector<uint8_t>& payload)
+bool TeamUiSdChatLogStore::appendStructured(const TeamId& team_id,
+                                            uint32_t peer_id,
+                                            bool incoming,
+                                            uint32_t ts,
+                                            team::proto::TeamChatType type,
+                                            const std::vector<uint8_t>& payload)
 {
     std::string dir_path;
     if (!ensure_team_dir_for_id(team_id, dir_path))
@@ -1421,9 +1339,24 @@ bool team_ui_chatlog_append_structured(const TeamId& team_id,
     return true;
 }
 
-bool team_ui_chatlog_load_recent(const TeamId& team_id,
-                                 size_t max_count,
-                                 std::vector<TeamChatLogEntry>& out)
+bool team_ui_chatlog_append_structured(const TeamId& team_id,
+                                       uint32_t peer_id,
+                                       bool incoming,
+                                       uint32_t ts,
+                                       team::proto::TeamChatType type,
+                                       const std::vector<uint8_t>& payload)
+{
+    return team_ui_chat_log_store().appendStructured(team_id,
+                                                     peer_id,
+                                                     incoming,
+                                                     ts,
+                                                     type,
+                                                     payload);
+}
+
+bool TeamUiSdChatLogStore::loadRecent(const TeamId& team_id,
+                                      std::size_t max_count,
+                                      std::vector<TeamChatLogEntry>& out)
 {
     out.clear();
     if (SD.cardType() == CARD_NONE)
@@ -1546,6 +1479,13 @@ bool team_ui_chatlog_load_recent(const TeamId& team_id,
         out.push_back(std::move(entry));
     }
     return !out.empty();
+}
+
+bool team_ui_chatlog_load_recent(const TeamId& team_id,
+                                 size_t max_count,
+                                 std::vector<TeamChatLogEntry>& out)
+{
+    return team_ui_chat_log_store().loadRecent(team_id, max_count, out);
 }
 
 bool team_ui_save_keys_now(const TeamId& team_id,

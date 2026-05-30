@@ -16,7 +16,7 @@ void update_gps_marker_position();
 void create_gps_marker();
 void hide_gps_marker();
 
-void refresh_team_markers_from_posring();
+void refresh_team_markers_from_team_source();
 void update_team_marker_positions();
 void clear_team_markers();
 void refresh_team_signal_markers_from_chatlog();

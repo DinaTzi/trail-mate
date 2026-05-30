@@ -703,6 +703,11 @@ class LinuxTeamEventBusSink final : public ::team::ITeamEventSink
         ::sys::EventBus::publish(new ::sys::TeamKeyDistEvent(event), 0);
     }
 
+    void onTeamKeyRequest(const ::team::TeamKeyRequestEvent& event) override
+    {
+        ::sys::EventBus::publish(new ::sys::TeamKeyRequestEvent(event), 0);
+    }
+
     void onTeamStatus(const ::team::TeamStatusEvent& event) override
     {
         ::sys::EventBus::publish(new ::sys::TeamStatusEvent(event), 0);
@@ -1179,7 +1184,7 @@ void applyPairingEventFallback(::chat::contacts::ContactService& contact_service
                                const ::team::TeamPairingEvent& event)
 {
     ::team::ui::TeamUiSnapshot snapshot{};
-    (void)::team::ui::team_ui_get_store().load(snapshot);
+    (void)::team::ui::team_ui_snapshot_store().load(snapshot);
 
     if (event.has_team_id)
     {
@@ -1270,7 +1275,7 @@ void applyPairingEventFallback(::chat::contacts::ContactService& contact_service
         snapshot.pending_join_started_s = 0;
     }
 
-    ::team::ui::team_ui_get_store().save(snapshot);
+    ::team::ui::team_ui_snapshot_store().save(snapshot);
 }
 
 void applyKeyDistEventFallback(::chat::contacts::ContactService& contact_service,
@@ -1279,7 +1284,7 @@ void applyKeyDistEventFallback(::chat::contacts::ContactService& contact_service
                                const ::team::TeamKeyDistEvent& event)
 {
     ::team::ui::TeamUiSnapshot snapshot{};
-    (void)::team::ui::team_ui_get_store().load(snapshot);
+    (void)::team::ui::team_ui_snapshot_store().load(snapshot);
 
     snapshot.team_id = event.msg.team_id;
     snapshot.has_team_id = true;
@@ -1347,7 +1352,7 @@ void applyKeyDistEventFallback(::chat::contacts::ContactService& contact_service
                                           snapshot.team_psk);
     }
 
-    ::team::ui::team_ui_get_store().save(snapshot);
+    ::team::ui::team_ui_snapshot_store().save(snapshot);
 }
 
 bool isTeamUiEvent(const ::sys::Event& event)
@@ -1355,6 +1360,7 @@ bool isTeamUiEvent(const ::sys::Event& event)
     return event.type == ::sys::EventType::TeamKick ||
            event.type == ::sys::EventType::TeamTransferLeader ||
            event.type == ::sys::EventType::TeamKeyDist ||
+           event.type == ::sys::EventType::TeamKeyRequest ||
            event.type == ::sys::EventType::TeamStatus ||
            event.type == ::sys::EventType::TeamPosition ||
            event.type == ::sys::EventType::TeamWaypoint ||
@@ -1931,7 +1937,7 @@ void LinuxAppServices::clearMessageDb()
     ensureServicesReady();
     impl().chat_model.clearAll();
     impl().chat_store.clearAll();
-    ::team::ui::team_ui_get_store().clear();
+    ::team::ui::team_ui_snapshot_store().clear();
 }
 
 bool LinuxAppServices::isBleEnabled() const
@@ -1959,7 +1965,7 @@ void LinuxAppServices::updateCoreServices()
     }
 
     ::team::ui::TeamUiSnapshot snap;
-    const bool has_team = ::team::ui::team_ui_get_store().load(snap) && snap.in_team;
+    const bool has_team = ::team::ui::team_ui_snapshot_store().load(snap) && snap.in_team;
     impl_->team_track_sampler.update(&impl_->team_controller, has_team);
 }
 

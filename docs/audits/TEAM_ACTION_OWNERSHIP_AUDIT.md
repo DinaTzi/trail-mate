@@ -70,7 +70,7 @@ Renderer/controller code may collect user input but must not:
 Team actions are owned by:
 
 ```text
-TeamActionSink / LegacyTeamActionBridge
+TeamActionSink / TeamActionRuntimeSink
 ```
 
 Team payload encoding is owned by:
@@ -88,13 +88,13 @@ TeamChatPresentationSource
 ## Phase 7.2 Decision
 
 Phase 7.2 migrates Team location send behind an explicit Team action sink and
-bridge.
+runtime sink.
 
 The chat UI submits `TeamActionRequest` with marker intent. Current location
 resolution, Team key setup, payload encoding, Team runtime send, and outgoing
-Team log append move behind `LegacyTeamActionBridge` and its runtime ports.
+Team log append move behind `TeamActionRuntimeSink` and its runtime ports.
 
-Phase 7.2 defines Team command action types and bridge behavior, but the
+Phase 7.2 defines Team command action types and runtime sink behavior, but the
 current Chat UI command send path remains unsupported until a real command UI
 surface exists.
 
