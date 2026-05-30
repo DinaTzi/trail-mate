@@ -9,6 +9,7 @@
 #include <Wire.h>
 #include <ctime>
 #include <driver/gpio.h>
+#include <esp_heap_caps.h>
 #include <limits>
 #include <sys/time.h>
 
@@ -35,6 +36,8 @@ constexpr uint8_t kGpsProfileAuto = 0;
 constexpr uint8_t kGpsProfileNmeaPassive = 1;
 constexpr uint8_t kGpsProfileUbxLegacy = 2;
 constexpr uint8_t kGpsProfileUbxModern = 3;
+constexpr size_t kMessageToneMinDmaHeapBytes = 24 * 1024;
+constexpr size_t kMessageToneMinInternalHeapBytes = 48 * 1024;
 uint8_t s_backlight_level = 0;
 
 #if DEVICE_MAX_BRIGHTNESS_LEVEL > 0
@@ -1327,6 +1330,18 @@ void TDeckBoard::playMessageTone()
 
     s_playing = true;
     s_last_play_ms = now;
+
+    if (heap_caps_get_free_size(MALLOC_CAP_DMA) < kMessageToneMinDmaHeapBytes ||
+        heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) <
+            kMessageToneMinInternalHeapBytes)
+    {
+        std::printf("[TDeck] message tone skipped: low heap dma=%u internal=%u\n",
+                    static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_DMA)),
+                    static_cast<unsigned>(
+                        heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
+        s_playing = false;
+        return;
+    }
 
     static const char kMessageToneRtttl[] = "MsgRcv:d=4,o=6,b=200:32e,32g,32b,16c7";
 
