@@ -146,6 +146,15 @@ bool supports_screen_brightness()
     return false;
 }
 
+bool supports_configurable_battery_gauge()
+{
+    return false;
+}
+
+void reload_configurable_battery_gauge()
+{
+}
+
 uint8_t screen_brightness()
 {
     return s_screen_brightness;

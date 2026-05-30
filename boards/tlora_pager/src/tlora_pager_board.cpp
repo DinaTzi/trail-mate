@@ -16,6 +16,7 @@
 
 #include "display/drivers/ST7796.h"
 #include "pins_arduino.h"
+#include "platform/ui/settings_store.h"
 #include "ui/widgets/system_notification.h"
 #include <Preferences.h>
 
@@ -283,11 +284,8 @@ uint32_t TLoRaPagerBoard::begin(uint32_t disable_hw_init)
         // Default 1500mAh, but allow overrides from NVS (for production tuning or advanced settings).
         uint16_t designCapacity = 1500;
         uint16_t fullChargeCapacity = 1500;
-        Preferences prefs;
-        prefs.begin("power", true);
-        uint32_t d = prefs.getUInt("gauge_design_mah", designCapacity);
-        uint32_t f = prefs.getUInt("gauge_full_mah", fullChargeCapacity);
-        prefs.end();
+        uint32_t d = ::platform::ui::settings_store::get_uint("power", "gauge_design_mah", designCapacity);
+        uint32_t f = ::platform::ui::settings_store::get_uint("power", "gauge_full_mah", fullChargeCapacity);
         if (d > 0 && d <= 10000)
         {
             designCapacity = static_cast<uint16_t>(d);
@@ -2241,11 +2239,8 @@ void TLoRaPagerBoard::reloadGaugeCapacityFromPrefs()
 
     uint16_t designCapacity = 1500;
     uint16_t fullChargeCapacity = 1500;
-    Preferences prefs;
-    prefs.begin("power", true);
-    uint32_t d = prefs.getUInt("gauge_design_mah", designCapacity);
-    uint32_t f = prefs.getUInt("gauge_full_mah", fullChargeCapacity);
-    prefs.end();
+    uint32_t d = ::platform::ui::settings_store::get_uint("power", "gauge_design_mah", designCapacity);
+    uint32_t f = ::platform::ui::settings_store::get_uint("power", "gauge_full_mah", fullChargeCapacity);
     if (d > 0 && d <= 10000)
     {
         designCapacity = static_cast<uint16_t>(d);

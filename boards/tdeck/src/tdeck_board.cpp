@@ -193,29 +193,6 @@ int read_battery_mv_adc_fallback()
 #endif
 }
 
-int battery_percent_from_mv(int mv)
-{
-    if (mv <= 0)
-    {
-        return -1;
-    }
-    int pct = static_cast<int>(((mv - 3300) / 900.0f) * 100.0f);
-    if (pct < 0)
-    {
-        pct = 0;
-    }
-    if (pct > 100)
-    {
-        pct = 100;
-    }
-    return pct;
-}
-
-int read_battery_percent_adc_fallback()
-{
-    return battery_percent_from_mv(read_battery_mv_adc_fallback());
-}
-
 bool is_supported_gps_baud(uint32_t baud)
 {
     switch (baud)
@@ -712,78 +689,19 @@ bool TDeckBoard::isCharging()
 
 int TDeckBoard::getBatteryLevel()
 {
-    int percent = -1;
+    power::BatteryEstimatorSample sample{};
+    sample.now_ms = millis();
     if (pmu_ready_)
     {
-        percent = pmu_.getBatteryPercent();
+        sample.pmu_percent = pmu_.getBatteryPercent();
+        sample.pmu_battery_mv = static_cast<int>(pmu_.getBattVoltage());
+        sample.charging = pmu_.isCharging();
+        sample.vbus_present = pmu_.isVbusIn();
     }
 
-    int adc_percent = -1;
-    auto ensure_adc_percent = [&adc_percent]()
-    {
-        if (adc_percent < 0)
-        {
-            adc_percent = read_battery_percent_adc_fallback();
-        }
-    };
-
-    // PMU can transiently return invalid values on noisy buses.
-    if (percent < 0 || percent > 100)
-    {
-        ensure_adc_percent();
-        if (adc_percent >= 0)
-        {
-            percent = adc_percent;
-        }
-    }
-
-    // Guard against fake PMU 0% (common when PMU state is stale/not actually wired).
-    if (percent == 0)
-    {
-        ensure_adc_percent();
-        if (adc_percent >= 10)
-        {
-            percent = adc_percent;
-        }
-    }
-
-    // Guard against unrealistic sudden drops; re-check with ADC before accepting.
-    if (last_battery_level_ >= 0 && percent >= 0 && percent + 40 < last_battery_level_)
-    {
-        ensure_adc_percent();
-        if (adc_percent >= 0)
-        {
-            percent = adc_percent;
-        }
-    }
-
-    if (percent < 0)
-    {
-        return last_battery_level_;
-    }
-
-    if (percent > 100)
-    {
-        percent = 100;
-    }
-
-    // Suppress sudden fake drops to 0% while battery is clearly not empty.
-    bool charging = isCharging();
-    if (!charging && percent == 0 && last_battery_level_ >= 15)
-    {
-        if (battery_zero_streak_ < 3)
-        {
-            battery_zero_streak_++;
-            return last_battery_level_;
-        }
-    }
-    else
-    {
-        battery_zero_streak_ = 0;
-    }
-
-    last_battery_level_ = percent;
-    return percent;
+    sample.adc_battery_mv = read_battery_mv_adc_fallback();
+    const power::BatteryEstimate estimate = battery_estimator_.update(sample);
+    return estimate.percent;
 }
 
 void TDeckBoard::setBrightness(uint8_t level)

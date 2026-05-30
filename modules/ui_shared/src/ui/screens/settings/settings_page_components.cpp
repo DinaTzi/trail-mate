@@ -1582,6 +1582,7 @@ static void on_text_save_clicked(lv_event_t* e)
                 return;
             }
             prefs_put_uint_ns("power", "gauge_design_mah", static_cast<uint32_t>(value));
+            device_runtime::reload_configurable_battery_gauge();
         }
         if (g_state.editing_item->pref_key && strcmp(g_state.editing_item->pref_key, "gauge_full_mah") == 0)
         {
@@ -1595,6 +1596,7 @@ static void on_text_save_clicked(lv_event_t* e)
                 return;
             }
             prefs_put_uint_ns("power", "gauge_full_mah", static_cast<uint32_t>(value));
+            device_runtime::reload_configurable_battery_gauge();
         }
         if (g_state.editing_item->pref_key &&
             (strcmp(g_state.editing_item->pref_key, "wifi_ssid") == 0 ||
@@ -3265,6 +3267,11 @@ static bool should_show_item(const settings::ui::SettingItem& item)
     }
 
     if (has_pref_key(item, "screen_brightness") && !device_runtime::supports_screen_brightness())
+    {
+        return false;
+    }
+    if ((has_pref_key(item, "gauge_design_mah") || has_pref_key(item, "gauge_full_mah")) &&
+        !device_runtime::supports_configurable_battery_gauge())
     {
         return false;
     }

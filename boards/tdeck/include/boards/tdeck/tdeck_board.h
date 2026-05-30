@@ -15,6 +15,7 @@
 #include "display/DisplayInterface.h"
 #include "pins_arduino.h"
 #include "platform/esp/arduino_common/gps/GPS.h"
+#include "power/battery_estimator.h"
 
 #if !defined(SCREEN_WIDTH) || !defined(SCREEN_HEIGHT)
 #error "SCREEN_WIDTH and SCREEN_HEIGHT must be provided via build flags (env .ini)."
@@ -159,8 +160,7 @@ class TDeckBoard : public BoardBase,
     bool keyboard_ready_ = false;
     bool keyboard_pending_release_ = false;
     char keyboard_last_char_ = '\0';
-    int last_battery_level_ = -1;
-    uint8_t battery_zero_streak_ = 0;
+    power::BatteryEstimator battery_estimator_{};
     uint32_t boot_ms_ = 0;
     uint32_t last_trackball_ms_ = 0;
     uint32_t last_click_ms_ = 0;

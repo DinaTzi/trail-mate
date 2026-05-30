@@ -27,6 +27,9 @@
   },
   "dependencies": [
     {
+      "name": "core_sys"
+    },
+    {
       "name": "lvgl"
     },
     {

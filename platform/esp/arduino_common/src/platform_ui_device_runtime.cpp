@@ -11,6 +11,9 @@
 #include "freertos/task.h"
 #include "platform/esp/arduino_common/battery_guard.h"
 #include "platform/esp/common/build_info.h"
+#if defined(ARDUINO_T_LORA_PAGER)
+#include "boards/tlora_pager/tlora_pager_board.h"
+#endif
 
 namespace platform::ui::device
 {
@@ -92,6 +95,22 @@ void handle_low_battery(const BatteryInfo& info)
 bool supports_screen_brightness()
 {
     return true;
+}
+
+bool supports_configurable_battery_gauge()
+{
+#if defined(ARDUINO_T_LORA_PAGER)
+    return true;
+#else
+    return false;
+#endif
+}
+
+void reload_configurable_battery_gauge()
+{
+#if defined(ARDUINO_T_LORA_PAGER)
+    ::boards::tlora_pager::instance.reloadGaugeCapacityFromPrefs();
+#endif
 }
 
 uint8_t screen_brightness()
