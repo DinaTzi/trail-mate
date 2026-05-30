@@ -282,6 +282,9 @@ set(TRAIL_MATE_LINUX_COMMON_SOURCES
     # modules/chat_presentation_adapters
     "${TRAIL_MATE_CHAT_PRESENTATION_ADAPTERS_SRC_ROOT}/chat_conversation_mapper.cpp"
     "${TRAIL_MATE_CHAT_PRESENTATION_ADAPTERS_SRC_ROOT}/chat_message_mapper.cpp"
+    # shared Team presentation projections consumed by Linux runtime models
+    "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/presentation_sources/team_map_overlay_source.cpp"
+    "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/team_presence/team_presence_model.cpp"
 )
 
 set(TRAIL_MATE_LINUX_UI_SHELL_SOURCES
@@ -330,11 +333,9 @@ set(TRAIL_MATE_LINUX_UI_SHELL_SOURCES
     "${TRAIL_MATE_UI_KEY_VERIFICATION_RUNTIME_SRC_ROOT}/key_verification_presentation_source.cpp"
     "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/presentation_sources/team_chat_presentation_source.cpp"
     "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/presentation_sources/team_chat_action_sink.cpp"
-    "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/presentation_sources/team_map_overlay_source.cpp"
     "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/team_actions/team_action_runtime_sink.cpp"
     "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/team_actions/team_runtime_adapters.cpp"
     "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/team_persistence/team_ui_snapshot_codec.cpp"
-    "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/team_presence/team_presence_model.cpp"
     "${TRAIL_MATE_UI_MAP_RUNTIME_SRC_ROOT}/map_overlay_projection_adapter.cpp"
     "${TRAIL_MATE_UI_MAP_RUNTIME_SRC_ROOT}/map_overlay_snapshot_source.cpp"
     "${TRAIL_MATE_UI_MAP_RUNTIME_SRC_ROOT}/map_overlay/map_overlay_projector.cpp"
