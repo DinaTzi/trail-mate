@@ -15,7 +15,7 @@ It exists to prevent drift between:
 - Flash / PSRAM: `16MB QSPI flash + 8MB QSPI PSRAM`
 - Display: `ST7796` SPI TFT
 - UI resolution used by this repo: `480x222`
-- Radio: `SX1262`
+- Radio: `SX1262` or `LR1121`
 - GNSS: `u-blox MIA-M10Q`
 - Input: `rotary encoder + center key + I2C keyboard`
 - Power / battery: `BQ25896 + BQ27220`
@@ -96,12 +96,15 @@ board runtime unless real hardware verification proves otherwise.
 Defined in [tlora_pager.ini](../../variants/lilygo_tlora_pager/envs/tlora_pager.ini):
 
 - `tlora_pager_sx1262`
+- `tlora_pager_lr1121`
 - `tlora_pager_sx1262_debug`
 
 Current build-time facts:
 
 - all Pager environments define `ARDUINO_T_LORA_PAGER`
 - `SX1262` builds define `ARDUINO_LILYGO_LORA_SX1262`
+- `LR1121` builds define `ARDUINO_LILYGO_LORA_LR1121`
+- `LR1121` runtime configures DIO5/DIO6 RF switch control and a 3.0 V TCXO, matching the LilyGo reference bring-up
 - the display driver is built as `ST7796`
 - this repo currently builds the Pager UI with `SCREEN_WIDTH=480` and `SCREEN_HEIGHT=222`
 

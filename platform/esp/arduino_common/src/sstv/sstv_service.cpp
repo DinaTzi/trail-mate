@@ -4,7 +4,9 @@
 #include <Arduino.h>
 #endif
 
-#if (defined(ARDUINO_T_LORA_PAGER) && defined(ARDUINO_LILYGO_LORA_SX1262)) || defined(TRAIL_MATE_ESP_BOARD_TAB5)
+#if (defined(ARDUINO_T_LORA_PAGER) &&                                                 \
+     (defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_LR1121))) || \
+    defined(TRAIL_MATE_ESP_BOARD_TAB5)
 
 #if defined(TRAIL_MATE_ESP_BOARD_TAB5)
 #include <cerrno>
@@ -22,8 +24,8 @@
 #include "sys/clock.h"
 #else
 #include "boards/tlora_pager/tlora_pager_board.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include "platform/esp/common/shared_spi_lock.h"
-#include <SD.h>
 #endif
 
 #include <cmath>
@@ -335,6 +337,7 @@ const char* get_saved_path()
 
 bool ensure_sstv_dir()
 {
+#if defined(TRAIL_MATE_ESP_BOARD_TAB5)
     if (!SD.exists("/sstv"))
     {
         if (!SD.mkdir("/sstv"))
@@ -343,6 +346,13 @@ bool ensure_sstv_dir()
         }
     }
     return true;
+#else
+    if (::platform::esp::arduino_common::storage::sd_exists("/sstv"))
+    {
+        return ::platform::esp::arduino_common::storage::sd_is_directory("/sstv");
+    }
+    return ::platform::esp::arduino_common::storage::sd_mkdir("/sstv");
+#endif
 }
 
 bool build_save_path(char* out_path, size_t out_len)
@@ -375,7 +385,11 @@ bool build_save_path(char* out_path, size_t out_len)
             snprintf(out_path, out_len, "/sstv/%lu_%03d.bmp",
                      static_cast<unsigned long>(millis()), i);
         }
+#if defined(TRAIL_MATE_ESP_BOARD_TAB5)
         if (!SD.exists(out_path))
+#else
+        if (!::platform::esp::arduino_common::storage::sd_exists(out_path))
+#endif
         {
             return true;
         }
@@ -462,7 +476,11 @@ bool save_frame_to_sd()
         return false;
     }
     ::platform::esp::common::SharedSpiLockGuard guard;
+#if defined(TRAIL_MATE_ESP_BOARD_TAB5)
     if (SD.cardType() == CARD_NONE)
+#else
+    if (!::platform::esp::arduino_common::storage::sd_card_ready())
+#endif
     {
         set_error("SD not ready");
         return false;
@@ -487,8 +505,13 @@ bool save_frame_to_sd()
     const uint32_t file_size = 14 + 40 + pixel_bytes;
     const uint32_t data_offset = 14 + 40;
 
+#if defined(TRAIL_MATE_ESP_BOARD_TAB5)
     File f = SD.open(path, FILE_WRITE);
     if (!f)
+#else
+    ::platform::esp::arduino_common::storage::SdRuntimeFile f;
+    if (!f.open(path, "w"))
+#endif
     {
         set_error("SD open failed");
         return false;

@@ -21,6 +21,11 @@ void TeamEventBusSink::onTeamKeyDist(const TeamKeyDistEvent& event)
     sys::EventBus::publish(new sys::TeamKeyDistEvent(event), 0);
 }
 
+void TeamEventBusSink::onTeamKeyRequest(const TeamKeyRequestEvent& event)
+{
+    sys::EventBus::publish(new sys::TeamKeyRequestEvent(event), 0);
+}
+
 void TeamEventBusSink::onTeamStatus(const TeamStatusEvent& event)
 {
     sys::EventBus::publish(new sys::TeamStatusEvent(event), 0);

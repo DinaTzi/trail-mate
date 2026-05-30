@@ -30,6 +30,8 @@ MemoryStats memory_stats();
 const char* firmware_version();
 void handle_low_battery(const BatteryInfo& info);
 bool supports_screen_brightness();
+bool supports_configurable_battery_gauge();
+void reload_configurable_battery_gauge();
 uint8_t screen_brightness();
 void set_screen_brightness(uint8_t level);
 void trigger_haptic();

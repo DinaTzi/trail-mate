@@ -71,6 +71,16 @@ inline void setTimezoneOffsetMinutes(int offset_min)
     platform::ui::time::set_timezone_offset_min(offset_min);
 }
 
+inline int getTimezoneProfileId()
+{
+    return platform::ui::time::timezone_profile_id();
+}
+
+inline void setTimezoneProfileId(int profile_id)
+{
+    platform::ui::time::set_timezone_profile_id(profile_id);
+}
+
 inline bool setMeshtasticGpsFixUnavailable(::phone::meshtastic::MeshtasticGpsFix* out)
 {
     if (!out)

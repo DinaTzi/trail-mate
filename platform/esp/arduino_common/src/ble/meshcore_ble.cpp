@@ -209,7 +209,8 @@ const char* meshCoreCompatManufacturerName()
     return "LilyGo T-Deck";
 #elif defined(ARDUINO_LILYGO_TWATCH_S3)
     return "LilyGo T-Watch S3";
-#elif defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280)
+#elif defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280) || \
+    defined(ARDUINO_LILYGO_LORA_LR1121)
     return "LilyGo T-LoRa-Pager";
 #else
     return "TrailMate";

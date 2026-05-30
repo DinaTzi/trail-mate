@@ -18,6 +18,7 @@
 #include "platform/esp/arduino_common/device_identity.h"
 #include "platform/esp/arduino_common/gps/gps_service.h"
 #include "platform/esp/arduino_common/gps/track_recorder.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include "platform/esp/arduino_common/team/crypto/team_crypto.h"
 #include "platform/esp/arduino_common/team/event/team_app_data_event_bus_bridge.h"
 #include "platform/esp/arduino_common/team/event/team_event_bus_sink.h"
@@ -112,7 +113,8 @@ void set_team_mode_active(bool active)
 
 std::unique_ptr<chat::IChatStore> create_chat_store()
 {
-    const bool sd_available = (SD.cardType() != CARD_NONE);
+    const bool sd_available =
+        ::platform::esp::arduino_common::storage::sd_card_uses_arduino_sd();
     if (sd_available)
     {
         auto log_store = std::unique_ptr<chat::LogStore>(new chat::LogStore());
@@ -275,7 +277,7 @@ void finalize_startup(app::IAppFacade& app_facade)
     if (team_controller)
     {
         team::ui::TeamUiSnapshot snap;
-        if (team::ui::team_ui_get_store().load(snap) &&
+        if (team::ui::team_ui_snapshot_store().load(snap) &&
             snap.has_team_id && snap.has_team_psk && snap.security_round > 0)
         {
             if (team_controller->setKeysFromPsk(snap.team_id,

@@ -10,7 +10,7 @@
 namespace
 {
 
-#if defined(ARDUINO_LILYGO_LORA_SX1262)
+#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_LR1121)
 constexpr int kLowBatteryWarnPercent = 15;
 constexpr int kCriticalBatteryPercent = 5;
 constexpr uint8_t kCriticalStreakToShutdown = 2;
@@ -47,7 +47,7 @@ namespace platform::esp::arduino_common
 
 void handleLowBattery(int level, bool charging)
 {
-#if defined(ARDUINO_LILYGO_LORA_SX1262)
+#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_LR1121)
     if (level < 0)
     {
         return;

@@ -20,11 +20,11 @@ The pass burned down legacy paths already covered by Phase 7 owners and document
 
 | Surface | Reason | Exit condition |
 | --- | --- | --- |
-| `LegacyChatDeliveryEventBridge` | EventBus still reaches `ChatUiController` first for chat send result refresh | Runtime event pump forwards `ChatSendResultEvent` directly |
-| `LegacyChatDeliveryActionBridge` | No visible retry/cancel/clear-failure message menu exists yet | UI submits `ChatDeliveryActionRequest` directly or bridge is renamed as a formal adapter |
-| `LegacyTeamActionBridge` | Team runtime command port still wraps legacy helper APIs | Introduce a non-legacy `TeamActionService` / command port |
+| `LegacyChatDeliveryEventBridge` | Closed by later runtime event pump / delivery adapter work | See `LEGACY_BURNDOWN_REGISTER.md` for current status |
+| `LegacyChatDeliveryActionBridge` | Closed by later delivery action adapter work | See `LEGACY_BURNDOWN_REGISTER.md` for current status |
+| `LegacyTeamActionBridge` | Closed by later Team burn-down; active bridge file/class/test removed | See `LEGACY_BURNDOWN_REGISTER.md` for current owner |
 | `LegacyKeyVerificationSource` / `LegacyKeyVerificationActionSink` | MeshCore / Meshtastic verification APIs still differ behind adapter | Split or rename protocol-specific adapters |
-| `ChatUiController` | Still coordinates legacy LVGL screen, event forwarding, conversation cache, and Team rich text formatting | Future controller thinning moves event pump and rich payload projection out |
+| `ChatUiController` Team ownership | Closed by later Team workflow/rich payload burn-down | Controller no longer owns Team payload formatting or Team action send construction |
 
 ## Checker Changes
 
@@ -41,6 +41,14 @@ The pass burned down legacy paths already covered by Phase 7 owners and document
 | Work | Owner direction |
 | --- | --- |
 | Event pump extraction | `chat_page_runtime.cpp` or app shell should forward runtime events before controller refresh |
-| Team rich payload rendering | Team presentation adapter should project location/command display fields |
+| Team rich payload rendering | Closed by `TeamRichPayloadProjector`, `TeamChatPresentationSource`, and `MessageRow::team_rich_payload` |
 | Key verification modal full view split | A fuller LVGL view object can own modal lifecycle beyond helper functions |
 | ChatUiController thinning | Conversation cache and store flush should move to runtime/app shell owners |
+
+## Later Team Closeout
+
+This Phase 7.6 report is historical. Later Team burn-down passes removed the
+active `LegacyTeamActionBridge`, moved Team send workflow through
+`TeamActionRuntimeSink`, moved rich Team row data into structured presentation
+fields, and closed Team Page command/event/navigation/render seams. Current
+Team status is tracked by `LEGACY_BURNDOWN_REGISTER.md`.

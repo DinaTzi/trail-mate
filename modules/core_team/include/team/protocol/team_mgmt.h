@@ -22,7 +22,8 @@ enum class TeamMgmtType : uint8_t
     Disband = 8,
     Kick = 10,
     TransferLeader = 11,
-    KeyDist = 12
+    KeyDist = 12,
+    KeyRequest = 13
 };
 
 struct TeamParams
@@ -51,6 +52,13 @@ struct TeamKeyDist
     uint8_t channel_psk_len = 0;
 };
 
+struct TeamKeyRequest
+{
+    std::array<uint8_t, kTeamIdSize> team_id{};
+    uint32_t current_key_id = 0;
+    uint32_t requester_id = 0;
+};
+
 struct TeamStatus
 {
     std::array<uint8_t, kTeamMemberListHashSize> member_list_hash{};
@@ -77,6 +85,9 @@ bool decodeTeamTransferLeader(const uint8_t* data, size_t len, TeamTransferLeade
 
 bool encodeTeamKeyDist(const TeamKeyDist& input, std::vector<uint8_t>& out);
 bool decodeTeamKeyDist(const uint8_t* data, size_t len, TeamKeyDist* out);
+
+bool encodeTeamKeyRequest(const TeamKeyRequest& input, std::vector<uint8_t>& out);
+bool decodeTeamKeyRequest(const uint8_t* data, size_t len, TeamKeyRequest* out);
 
 bool encodeTeamStatus(const TeamStatus& input, std::vector<uint8_t>& out);
 bool decodeTeamStatus(const uint8_t* data, size_t len, TeamStatus* out);

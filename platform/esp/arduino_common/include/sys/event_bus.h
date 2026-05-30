@@ -38,6 +38,7 @@ enum class EventType
     TeamKick,                     // Team kick received
     TeamTransferLeader,           // Team transfer leader received
     TeamKeyDist,                  // Team key distribution received
+    TeamKeyRequest,               // Team key refresh requested
     TeamStatus,                   // Team status received
     TeamPosition,                 // Team position received
     TeamWaypoint,                 // Team waypoint received
@@ -360,6 +361,17 @@ struct TeamKeyDistEvent : public Event
 
     explicit TeamKeyDistEvent(const team::TeamKeyDistEvent& evt)
         : Event(EventType::TeamKeyDist), data(evt) {}
+};
+
+/**
+ * @brief Team key request event
+ */
+struct TeamKeyRequestEvent : public Event
+{
+    team::TeamKeyRequestEvent data;
+
+    explicit TeamKeyRequestEvent(const team::TeamKeyRequestEvent& evt)
+        : Event(EventType::TeamKeyRequest), data(evt) {}
 };
 
 /**

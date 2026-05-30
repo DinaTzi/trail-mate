@@ -1,9 +1,8 @@
 #include "platform/ui/tracker_runtime.h"
 
 #include "platform/esp/arduino_common/gps/track_recorder.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include "platform/ui/device_runtime.h"
-
-#include <SD.h>
 
 namespace platform::ui::tracker
 {
@@ -64,7 +63,7 @@ bool remove_track(const std::string& path)
     {
         return false;
     }
-    return SD.remove(path.c_str());
+    return ::platform::esp::arduino_common::storage::sd_remove(path.c_str());
 }
 
 const char* track_dir()

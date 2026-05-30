@@ -214,9 +214,9 @@ The table below describes the **real build targets that exist in the repository 
 | Device / Target | Build Target | Stack | Current Status |
 | --- | --- | --- | --- |
 | **LILYGO T-LoRa-Pager (SX1262)** | `tlora_pager_sx1262` | PlatformIO / Arduino | Current default environment and still the most complete day-to-day validation target |
+| **LILYGO T-LoRa-Pager (LR1121)** | `tlora_pager_lr1121` | PlatformIO / Arduino | Supported Pager RF variant with LR1121 RF switch and TCXO bring-up |
 | **LILYGO T-Deck** | `tdeck` | PlatformIO / Arduino | Primary validation target; keyboard, chat, maps, and shared UI paths are actively used |
 | **GAT562 Mesh EVB Pro** | `gat562_mesh_evb_pro` | PlatformIO / Arduino (nRF52) | Resource-constrained target focused on monochrome UI, Meshtastic, BLE, and persistence paths; some features are intentionally trimmed to fit RAM limits |
-| **LILYGO T-LoRa-Pager (SX1280)** | `tlora_pager_sx1280` | PlatformIO / Arduino | Integrated Pager RF variant for alternate hardware versions |
 | **LILYGO T-Deck Pro** | `tdeck_pro_a7682e` / `tdeck_pro_pcm512a` | PlatformIO / Arduino | Separate environments exist, but this line is still in active bring-up / adaptation work |
 | **LILYGO T-Watch S3** | `lilygo_twatch_s3` | PlatformIO / Arduino | Experimental target used more for system and UI validation than for full feature coverage |
 | **M5Stack Tab5** | `TRAIL_MATE_IDF_TARGET=tab5` | ESP-IDF | Main large-screen IDF bring-up target; the shared shell runs and hardware-specific work is still being filled in |
@@ -231,7 +231,7 @@ The table below describes the **real build targets that exist in the repository 
 - **`tdeck_pro_*`**, **`lilygo_twatch_s3`**, **`t_display_p4_tft`**, and **`t_display_p4_amoled`** are better treated as bring-up, layout, or device-adaptation targets than as the highest-maturity feature-validation path
 - For the **T-Display-P4 family**, this repo currently builds only the **ESP32-P4 firmware**. The board's ESP32-C6 companion firmware is an external flashing contract, not an in-repo build artifact.
 - “The repository has a build target” does not mean every page or capability is equally mature on that device; some features are enabled or hidden dynamically based on capabilities, RAM budget, and input hardware
-- GitHub Actions currently keeps building the main path through **`tlora_pager_sx1262`**, **`tdeck`**, and **`lilygo_twatch_s3`**
+- GitHub Actions currently keeps building the main path through **`tlora_pager_sx1262`**, **`tlora_pager_lr1121`**, **`tdeck`**, **`lilygo_twatch_s3`**, and **`gat562_mesh_evb_pro`**
 
 ---
 
@@ -248,13 +248,13 @@ Common build commands:
 ```bash
 # Primary targets
 platformio run -e tlora_pager_sx1262
+platformio run -e tlora_pager_lr1121
 platformio run -e tdeck
 
 # nRF52 / resource-constrained target
 platformio run -e gat562_mesh_evb_pro
 
 # Other integrated targets
-platformio run -e tlora_pager_sx1280
 platformio run -e tdeck_pro_a7682e
 platformio run -e tdeck_pro_pcm512a
 platformio run -e lilygo_twatch_s3
@@ -264,7 +264,6 @@ If you want more verbose diagnostics, the repository also provides these debug e
 
 ```bash
 platformio run -e tlora_pager_sx1262_debug
-platformio run -e tlora_pager_sx1280_debug
 platformio run -e tdeck_debug
 platformio run -e lilygo_twatch_s3_debug
 ```

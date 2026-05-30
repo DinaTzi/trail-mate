@@ -215,7 +215,7 @@ Trail Mate 的长期目标不是“尽可能支持更多板子”，而是优先
 | **LILYGO T-LoRa-Pager (SX1262)** | `tlora_pager_sx1262` | PlatformIO / Arduino | 当前默认环境，也是最完整、最适合日常开发验证的目标 |
 | **LILYGO T-Deck** | `tdeck` | PlatformIO / Arduino | 当前主力验证目标，键盘、聊天、地图与共享 UI 路径已稳定接入 |
 | **GAT562 Mesh EVB Pro** | `gat562_mesh_evb_pro` | PlatformIO / Arduino（nRF52） | 资源受限目标，当前重点在单色 UI、Meshtastic、BLE 与持久化链路，部分功能会按 RAM 裁剪 |
-| **LILYGO T-LoRa-Pager (SX1280)** | `tlora_pager_sx1280` | PlatformIO / Arduino | 已接入的 Pager 射频变体，用于兼容不同硬件版本 |
+| **LILYGO T-LoRa-Pager (LR1121)** | `tlora_pager_lr1121` | PlatformIO / Arduino | 已接入的 Pager 射频变体，包含 LR1121 RF switch 与 TCXO 初始化 |
 | **LILYGO T-Deck Pro** | `tdeck_pro_a7682e` / `tdeck_pro_pcm512a` | PlatformIO / Arduino | 已有独立环境，仍处于 bring-up / 适配推进阶段 |
 | **LILYGO T-Watch S3** | `lilygo_twatch_s3` | PlatformIO / Arduino | 实验性目标，偏系统与 UI 验证，不是当前完整功能验证主路径 |
 | **M5Stack Tab5** | `TRAIL_MATE_IDF_TARGET=tab5` | ESP-IDF | 当前主要的大屏 IDF bring-up 目标，共享 shell 已跑通，硬件细节仍在补齐 |
@@ -246,13 +246,13 @@ PlatformIO 覆盖了 ESP32 Arduino 目标，也覆盖了当前的 nRF52 Arduino 
 ```bash
 # 主力目标
 platformio run -e tlora_pager_sx1262
+platformio run -e tlora_pager_lr1121
 platformio run -e tdeck
 
 # nRF52 / 资源受限目标
 platformio run -e gat562_mesh_evb_pro
 
 # 其他已接入目标
-platformio run -e tlora_pager_sx1280
 platformio run -e tdeck_pro_a7682e
 platformio run -e tdeck_pro_pcm512a
 platformio run -e lilygo_twatch_s3
@@ -262,7 +262,6 @@ platformio run -e lilygo_twatch_s3
 
 ```bash
 platformio run -e tlora_pager_sx1262_debug
-platformio run -e tlora_pager_sx1280_debug
 platformio run -e tdeck_debug
 platformio run -e lilygo_twatch_s3_debug
 ```

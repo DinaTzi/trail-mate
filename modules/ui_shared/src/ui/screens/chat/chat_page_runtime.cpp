@@ -4,16 +4,16 @@
 #include "app/app_facade_access.h"
 #include "chat/delivery/chat_delivery_action_service.h"
 #include "chat/delivery/chat_delivery_event_port.h"
-#include "platform/ui/gps_runtime.h"
 #include "platform/ui/team_ui_store_runtime.h"
-#include "team/usecase/team_controller.h"
 #include "ui/app_runtime.h"
 #include "ui/presentation_sources/chat_presentation_source.h"
 #include "ui/presentation_sources/legacy_chat_action_sink.h"
 #include "ui/presentation_sources/team_chat_action_sink.h"
 #include "ui/presentation_sources/team_chat_presentation_source.h"
+#include "ui/screens/chat/chat_team_workflow.h"
 #include "ui/screens/chat/chat_ui_controller.h"
-#include "ui/team_actions/legacy_team_action_bridge.h"
+#include "ui/team_actions/team_action_runtime_sink.h"
+#include "ui/team_actions/team_runtime_adapters.h"
 #include "ui/ui_common.h"
 #include "ui_chat_runtime/chat_delivery_action_port_adapter.h"
 #include "ui_chat_runtime/chat_delivery_event_projection_adapter.h"
@@ -49,7 +49,8 @@ std::unique_ptr<::ui::presentation_sources::ITeamChatCommandPort> s_team_chat_co
 std::unique_ptr<::ui::presentation_sources::TeamChatActionSink> s_team_chat_sink = nullptr;
 std::unique_ptr<::ui::chat::ChatWorkspaceModel> s_team_chat_model = nullptr;
 std::unique_ptr<::ui::team_actions::ITeamLocationSource> s_team_location_source = nullptr;
-std::unique_ptr<::ui::team_actions::LegacyTeamActionBridge> s_team_action_sink = nullptr;
+std::unique_ptr<::ui::team_actions::TeamActionRuntimeSink> s_team_action_sink = nullptr;
+std::unique_ptr<chat::ui::ChatTeamWorkflow> s_team_workflow = nullptr;
 std::unique_ptr<chat::ui::UiController> s_ui_controller = nullptr;
 std::unique_ptr<chat::ui::ChatPageRuntimeEventPump> s_event_pump = nullptr;
 std::unique_ptr<chat::ui::IChatUiRuntime> s_runtime_facade = nullptr;
@@ -87,59 +88,6 @@ class ChatPageRuntimeFacade final : public chat::ui::IChatUiRuntime
   private:
     chat::ui::ChatPageRuntimeEventPump& event_pump_;
     chat::ui::UiController& controller_;
-};
-
-class TeamControllerChatCommandPort final
-    : public ::ui::presentation_sources::ITeamChatCommandPort
-{
-  public:
-    explicit TeamControllerChatCommandPort(::team::TeamController& controller)
-        : controller_(controller)
-    {
-    }
-
-    bool setKeysFromPsk(const ::team::TeamId& team_id,
-                        uint32_t key_id,
-                        const uint8_t* psk,
-                        size_t psk_len) override
-    {
-        return controller_.setKeysFromPsk(team_id, key_id, psk, psk_len);
-    }
-
-    bool sendTeamChat(const ::team::proto::TeamChatMessage& message,
-                      uint8_t team_channel_raw) override
-    {
-        return controller_.onChat(
-            message,
-            static_cast<::chat::ChannelId>(team_channel_raw));
-    }
-
-  private:
-    ::team::TeamController& controller_;
-};
-
-class GpsTeamLocationSource final
-    : public ::ui::team_actions::ITeamLocationSource
-{
-  public:
-    bool currentTeamLocation(::ui::team_actions::TeamLocationSnapshot& out) override
-    {
-        const auto gps_state = platform::ui::gps::get_data();
-        if (!gps_state.valid)
-        {
-            out = {};
-            return false;
-        }
-
-        out.valid = true;
-        out.lat = gps_state.lat;
-        out.lon = gps_state.lng;
-        out.has_altitude = gps_state.has_alt;
-        out.altitude_m = gps_state.alt_m;
-        out.accuracy_m = 0.0f;
-        out.timestamp = 0;
-        return true;
-    }
 };
 
 void request_shell_exit(void*)
@@ -184,6 +132,7 @@ void enter(const shell::Host* host, lv_obj_t* parent)
     s_runtime_facade.reset();
     s_event_pump.reset();
     s_ui_controller.reset();
+    s_team_workflow.reset();
     s_team_action_sink.reset();
     s_team_location_source.reset();
     s_team_chat_model.reset();
@@ -284,36 +233,42 @@ void enter(const shell::Host* host, lv_obj_t* parent)
     s_team_chat_source =
         std::unique_ptr<::ui::presentation_sources::TeamChatPresentationSource>(
             new ::ui::presentation_sources::TeamChatPresentationSource(
-                team::ui::team_ui_get_store()));
+                team::ui::team_ui_snapshot_store(),
+                team::ui::team_ui_chat_log_store()));
     if (auto* team_controller = app::teamFacade().getTeamController())
     {
         s_team_chat_command_port =
             std::unique_ptr<::ui::presentation_sources::ITeamChatCommandPort>(
-                new TeamControllerChatCommandPort(*team_controller));
+                new ::ui::team_actions::TeamControllerChatCommandPort(
+                    *team_controller));
     }
     s_team_chat_sink =
         std::unique_ptr<::ui::presentation_sources::TeamChatActionSink>(
             new ::ui::presentation_sources::TeamChatActionSink(
-                team::ui::team_ui_get_store(),
+                team::ui::team_ui_snapshot_store(),
+                team::ui::team_ui_chat_log_store(),
                 s_team_chat_command_port.get()));
     s_team_chat_model = std::unique_ptr<::ui::chat::ChatWorkspaceModel>(
         new ::ui::chat::ChatWorkspaceModel(*s_team_chat_source, *s_team_chat_sink));
     s_team_location_source =
         std::unique_ptr<::ui::team_actions::ITeamLocationSource>(
-            new GpsTeamLocationSource());
+            new ::ui::team_actions::GpsTeamLocationSource());
     s_team_action_sink =
-        std::unique_ptr<::ui::team_actions::LegacyTeamActionBridge>(
-            new ::ui::team_actions::LegacyTeamActionBridge(
-                team::ui::team_ui_get_store(),
+        std::unique_ptr<::ui::team_actions::TeamActionRuntimeSink>(
+            new ::ui::team_actions::TeamActionRuntimeSink(
+                team::ui::team_ui_snapshot_store(),
+                team::ui::team_ui_chat_log_store(),
                 s_team_chat_command_port.get(),
                 s_team_location_source.get()));
+    s_team_workflow = std::unique_ptr<chat::ui::ChatTeamWorkflow>(
+        new chat::ui::ChatTeamWorkflow(*s_team_chat_model,
+                                       s_team_action_sink.get()));
 
     s_ui_controller = std::unique_ptr<chat::ui::UiController>(
         new chat::ui::UiController(s_chat_container,
                                    chat_service,
                                    *s_chat_model,
-                                   *s_team_chat_model,
-                                   s_team_action_sink.get(),
+                                   *s_team_workflow,
                                    s_key_verification_model.get(),
                                    default_channel,
                                    request_shell_exit,
@@ -348,6 +303,7 @@ void exit(lv_obj_t* parent)
     s_runtime_facade.reset();
     s_event_pump.reset();
     s_ui_controller.reset();
+    s_team_workflow.reset();
     s_team_action_sink.reset();
     s_team_location_source.reset();
     s_team_chat_model.reset();

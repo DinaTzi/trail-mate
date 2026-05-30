@@ -197,14 +197,19 @@ def check_required_files() -> int:
         "modules/ui_shared/tests/test_legacy_chat_delivery_event_bridge.cpp",
         "modules/ui_shared/include/ui/team_actions/team_action_types.h",
         "modules/ui_shared/include/ui/team_actions/team_action_sink.h",
-        "modules/ui_shared/include/ui/team_actions/legacy_team_action_bridge.h",
-        "modules/ui_shared/src/ui/team_actions/legacy_team_action_bridge.cpp",
+        "modules/ui_shared/include/ui/team_actions/team_action_runtime_sink.h",
+        "modules/ui_shared/src/ui/team_actions/team_action_runtime_sink.cpp",
+        "modules/ui_shared/include/ui/team_actions/team_runtime_adapters.h",
+        "modules/ui_shared/src/ui/team_actions/team_runtime_adapters.cpp",
         "modules/ui_shared/tests/test_team_action_types.cpp",
-        "modules/ui_shared/tests/test_legacy_team_action_bridge.cpp",
+        "modules/ui_shared/tests/test_team_action_runtime_sink.cpp",
         "modules/ui_shared/include/ui/team_presentation/team_rich_payload_display.h",
         "modules/ui_shared/include/ui/team_presentation/team_rich_payload_projector.h",
         "modules/ui_shared/src/ui/team_presentation/team_rich_payload_projector.cpp",
         "modules/ui_shared/tests/test_team_rich_payload_projector.cpp",
+        "modules/ui_shared/include/ui/presentation_sources/team_map_overlay_source.h",
+        "modules/ui_shared/src/ui/presentation_sources/team_map_overlay_source.cpp",
+        "modules/ui_shared/tests/test_team_map_overlay_source.cpp",
         "modules/ui_presentation/include/ui_presentation/key_verification/key_verification_snapshot.h",
         "modules/ui_presentation/include/ui_presentation/key_verification/key_verification_source.h",
         "modules/ui_presentation/include/ui_presentation/key_verification/key_verification_action_sink.h",
@@ -249,6 +254,60 @@ def check_required_files() -> int:
         "modules/ui_shared/include/ui/screens/chat/chat_ui_refresh_sink.h",
         "modules/ui_shared/include/ui/screens/chat/chat_page_runtime_event_pump.h",
         "modules/ui_shared/src/ui/screens/chat/chat_page_runtime_event_pump.cpp",
+        "modules/ui_shared/include/ui/screens/chat/chat_team_workflow.h",
+        "modules/ui_shared/src/ui/screens/chat/chat_team_workflow.cpp",
+        "modules/ui_shared/tests/test_chat_team_workflow.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_read_model.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_read_model.cpp",
+        "modules/ui_shared/tests/test_team_page_read_model.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_types.h",
+        "modules/ui_shared/include/ui/screens/team/team_page_flow_controller.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_flow_controller.cpp",
+        "modules/ui_shared/tests/test_team_page_flow_controller.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_lvgl_renderer.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_lvgl_renderer.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_command_reducer.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_command_reducer.cpp",
+        "modules/ui_shared/tests/test_team_page_command_reducer.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_create_team_action.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_create_team_action.cpp",
+        "modules/ui_shared/tests/test_team_page_create_team_action.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_pairing_command_action.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_pairing_command_action.cpp",
+        "modules/ui_shared/tests/test_team_page_pairing_command_action.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_request_keys_action.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_request_keys_action.cpp",
+        "modules/ui_shared/tests/test_team_page_request_keys_action.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_event_reducer.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_event_reducer.cpp",
+        "modules/ui_shared/tests/test_team_page_event_reducer.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_event_effect_sink.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_event_effect_sink.cpp",
+        "modules/ui_shared/tests/test_team_page_event_effect_sink.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_key_event_log.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_key_event_log.cpp",
+        "modules/ui_shared/tests/test_team_page_key_event_log.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_runtime_port.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_runtime_adapters.cpp",
+        "modules/ui_shared/src/ui/screens/team/team_page_runtime_port.cpp",
+        "modules/ui_shared/tests/test_team_page_runtime_port.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_activity_sink.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_activity_adapters.cpp",
+        "modules/ui_shared/src/ui/screens/team/team_page_activity_sink.cpp",
+        "modules/ui_shared/tests/test_team_page_activity_sink.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_deferred_dispatch.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_deferred_dispatch.cpp",
+        "modules/ui_shared/src/ui/screens/team/team_page_deferred_dispatch_adapters.cpp",
+        "modules/ui_shared/tests/test_team_page_deferred_dispatch.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_kick_confirm_action.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_kick_confirm_action.cpp",
+        "modules/ui_shared/tests/test_team_page_kick_confirm_action.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_transfer_leader_action.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_transfer_leader_action.cpp",
+        "modules/ui_shared/tests/test_team_page_transfer_leader_action.cpp",
+        "modules/ui_shared/include/ui/screens/team/team_page_state_store.h",
+        "modules/ui_shared/src/ui/screens/team/team_page_state_store.cpp",
+        "modules/ui_shared/tests/test_team_page_state_store.cpp",
         "tools/architecture/check_phase7_runtime_ownership_ready.py",
     ]
 
@@ -364,7 +423,7 @@ def check_docs() -> int:
             "not owned by",
             "composition-root ownership",
             "Team location/command action ownership",
-            "LegacyTeamActionBridge",
+            "TeamActionRuntimeSink",
             "Team rich payload display ownership",
             "TeamRichPayloadProjector",
             "Chat retry/cancel/clear failure actions",
@@ -400,14 +459,14 @@ def check_docs() -> int:
             "Renderer/controller code may collect user input",
             "must not",
             "encode Team payloads",
-            "LegacyTeamActionBridge",
+            "TeamActionRuntimeSink",
         ],
         "docs/specification/TEAM_ACTION_RUNTIME_SPEC.md": [
             "Team action payload encoding belongs to Team action/runtime adapters",
             "TeamActionRequest",
             "ITeamActionSink",
             "ITeamLocationSource",
-            "LegacyTeamActionBridge",
+            "TeamActionRuntimeSink",
             "Phase 7.2 does not turn Team into DirectPeer or Channel chat",
         ],
         "docs/audits/CHAT_RUNTIME_EVENT_PUMP_AUDIT.md": [
@@ -461,7 +520,8 @@ def check_docs() -> int:
             "TeamRichPayloadProjector",
             "TeamChatLogEntry -> TeamRichPayloadDisplay",
             "TeamChatPresentationSource",
-            "Phase 7.8 does not",
+            "TeamMessageRichPayload",
+            "has_team_rich_payload",
         ],
         "docs/specification/TEAM_POSITION_PICKER_RENDERER_SPEC.md": [
             "Picker rendering belongs to `TeamPositionPickerRenderer`",
@@ -481,16 +541,15 @@ def check_docs() -> int:
             "Status",
             "LegacyChatDeliveryEventBridge",
             "LegacyChatDeliveryActionBridge",
-            "LegacyTeamActionBridge",
             "LegacyKeyVerificationSource",
             "LegacyKeyVerificationActionSink",
             "ChatUiController` key verification modal rendering",
-            "ChatUiController` Team payload encoding",
+            "ChatUiController` Team payload/action send special case",
             "ChatUiController` delivery mutation",
             "ChatUiController` runtime event pump",
             "ChatUiController` Team rich payload formatting",
             "ChatUiController` Team position picker renderer",
-            "MessageRow` Team rich display limitations",
+            "Team rich message row structured payload",
             "Map tile path/cache legacy runtime",
             "Map tile visible plan in platform renderer",
             "ESP decoded LVGL tile cache",
@@ -646,16 +705,16 @@ def check_legacy_burndown_register() -> int:
     required_surfaces = [
         "LegacyChatDeliveryEventBridge",
         "LegacyChatDeliveryActionBridge",
-        "LegacyTeamActionBridge",
+        "TeamActionRuntimeSink",
         "LegacyKeyVerificationSource",
         "LegacyKeyVerificationActionSink",
         "ChatUiController` key verification modal rendering",
-        "ChatUiController` Team payload encoding",
+        "ChatUiController` Team payload/action send special case",
         "ChatUiController` delivery mutation",
         "ChatUiController` runtime event pump",
         "ChatUiController` Team rich payload formatting",
         "ChatUiController` Team position picker renderer",
-        "MessageRow` Team rich display limitations",
+        "Team rich message row structured payload",
         "Map tile path/cache legacy runtime",
         "Map tile visible plan in platform renderer",
         "ESP decoded LVGL tile cache",
@@ -920,6 +979,14 @@ def check_presentation_source_enrichment() -> int:
 
 def check_composition_roots_own_delivery() -> int:
     failures = 0
+    active_legacy_roots = [
+        "legacy/app_implementations/linux_sim/src/linux_sim_composition_root.h",
+        "legacy/app_implementations/linux_uconsole/src/uconsole_composition_root.h",
+        "legacy/app_implementations/linux_uconsole/src/uconsole_composition_root.cpp",
+    ]
+    if not any(exists(path) for path in active_legacy_roots):
+        return failures
+
     roots = {
         "legacy/app_implementations/linux_sim/src/linux_sim_composition_root.h": [
             "ChatDeliveryReadModel delivery_read_model_",
@@ -950,7 +1017,6 @@ def check_composition_roots_own_delivery() -> int:
 
     for path, tokens in roots.items():
         if not exists(path):
-            failures += fail(f"missing composition root file: {path}")
             continue
         text = read_text(path)
         for token in tokens:
@@ -1188,9 +1254,11 @@ def check_team_action_type_shape() -> int:
         text = read_text(types)
         for token in [
             "enum class TeamActionKind",
+            "LocationShare",
             "LocationMarker",
             "Command",
             "enum class TeamCommandKind",
+            "TeamLocationShareRequest",
             "TeamLocationMarkerRequest",
             "use_current_location",
             "TeamLocationSnapshot",
@@ -1216,22 +1284,23 @@ def check_team_action_type_shape() -> int:
     return failures
 
 
-def check_team_action_bridge_boundary() -> int:
+def check_team_action_runtime_sink_boundary() -> int:
     failures = 0
-    bridge_files = [
-        "modules/ui_shared/include/ui/team_actions/legacy_team_action_bridge.h",
-        "modules/ui_shared/src/ui/team_actions/legacy_team_action_bridge.cpp",
+    sink_files = [
+        "modules/ui_shared/include/ui/team_actions/team_action_runtime_sink.h",
+        "modules/ui_shared/src/ui/team_actions/team_action_runtime_sink.cpp",
     ]
 
-    for path in bridge_files:
+    for path in sink_files:
         if not exists(path):
-            failures += fail(f"missing Team action bridge file: {path}")
+            failures += fail(f"missing Team action runtime sink file: {path}")
             continue
         text = strip_cpp_comments(read_text(path))
         for token in [
             "lvgl.h",
             "lv_obj_t",
             "LegacyChatActionSink",
+            "Legacy" + "TeamActionBridge",
             "DirectPeer",
             "ConversationKind::Direct",
             "ConversationKind::Channel",
@@ -1241,19 +1310,49 @@ def check_team_action_bridge_boundary() -> int:
             if token in text:
                 failures += fail(f"{path} contains forbidden Team action token: {token}")
 
-    source = "modules/ui_shared/src/ui/team_actions/legacy_team_action_bridge.cpp"
+    for path in [
+        "modules/ui_shared/include/ui/team_actions/" + "legacy_" + "team_action_bridge.h",
+        "modules/ui_shared/src/ui/team_actions/" + "legacy_" + "team_action_bridge.cpp",
+        "modules/ui_shared/tests/test_" + "legacy_" + "team_action_bridge.cpp",
+    ]:
+        if exists(path):
+            failures += fail(f"removed Team action bridge path still exists: {path}")
+
+    source = "modules/ui_shared/src/ui/team_actions/team_action_runtime_sink.cpp"
     if exists(source):
         text = read_text(source)
         for token in [
+            "TeamActionRuntimeSink",
             "ITeamLocationSource",
             "currentTeamLocation",
+            "sendLocationShare",
             "encodeTeamChatLocation",
             "encodeTeamChatCommand",
-            "team_ui_chatlog_append_structured",
+            "ITeamUiSnapshotStore",
+            "ITeamUiChatLogStore",
+            "appendStructured",
             "sendTeamChat",
         ]:
             if token not in text:
-                failures += fail(f"LegacyTeamActionBridge source missing token: {token}")
+                failures += fail(f"TeamActionRuntimeSink source missing token: {token}")
+        for token in ["team_ui_chatlog_append_structured", "team_ui_get_store"]:
+            if token in strip_cpp_comments(text):
+                failures += fail(
+                    f"TeamActionRuntimeSink source still uses legacy Team store token: {token}"
+                )
+
+    runtime_adapter = "modules/ui_shared/src/ui/team_actions/team_runtime_adapters.cpp"
+    if exists(runtime_adapter):
+        text = strip_cpp_comments(read_text(runtime_adapter))
+        for token in [
+            "TeamControllerChatCommandPort",
+            "GpsTeamLocationSource",
+            "setKeysFromPsk",
+            "sendTeamChat",
+            "platform::ui::gps::get_data",
+        ]:
+            if token not in text:
+                failures += fail(f"Team runtime adapter missing token: {token}")
 
     return failures
 
@@ -1272,60 +1371,1731 @@ def check_chat_ui_team_action_migration() -> int:
     failures = 0
     header = "modules/ui_shared/include/ui/screens/chat/chat_ui_controller.h"
     source = "modules/ui_shared/src/ui/screens/chat/chat_ui_controller.cpp"
+    workflow_header = "modules/ui_shared/include/ui/screens/chat/chat_team_workflow.h"
+    workflow_source = "modules/ui_shared/src/ui/screens/chat/chat_team_workflow.cpp"
 
     if exists(header):
-        text = read_text(header)
-        for token in ["ITeamActionSink", "team_action_sink_"]:
+        text = strip_cpp_comments(read_text(header))
+        for token in ["ChatTeamWorkflow", "team_workflow_"]:
             if token not in text:
-                failures += fail(f"ChatUiController header missing Team action token: {token}")
+                failures += fail(f"ChatUiController header missing Team workflow token: {token}")
+        for token in [
+            "ITeamActionSink",
+            "TeamActionRequest",
+            "team_action_sink_",
+            "sendTeamLocationWithIcon",
+        ]:
+            if token in text:
+                failures += fail(f"ChatUiController header still owns Team action token: {token}")
     else:
         failures += fail("ChatUiController header is missing")
 
     if exists(source):
-        text = read_text(source)
+        text = strip_cpp_comments(read_text(source))
+        for token in [
+            "ChatTeamWorkflow",
+            "team_workflow_.sendText",
+            "team_workflow_.sendCurrentLocationMarker",
+            "team_workflow_.buildSelectedSnapshot",
+        ]:
+            if token not in text:
+                failures += fail(f"ChatUiController source missing Team workflow token: {token}")
         for token in [
             "TeamActionRequest",
             "TeamActionKind::LocationMarker",
             "sendTeamAction",
+            "ITeamActionSink",
+            "team_action_sink_",
+            "team_location_marker_icon_name",
+            "team_location_marker_icon_is_valid",
             "team_chat_model_.sendMessage",
         ]:
-            if token not in text:
-                failures += fail(f"ChatUiController source missing Team action token: {token}")
+            if token in text:
+                failures += fail(f"ChatUiController source still owns Team action token: {token}")
         for token in [
             '#include "platform/ui/gps_runtime.h"',
             '#include "team/usecase/team_controller.h"',
+            '#include "ui/team_actions/team_action_sink.h"',
         ]:
             if token in text:
                 failures += fail(f"ChatUiController source reintroduced runtime include: {token}")
-
-        body = strip_cpp_comments(
-            _function_body(
-                text,
-                "bool UiController::sendTeamLocationWithIcon",
-                "void UiController::onTeamPositionIconSelected",
-            )
-        )
-        if not body:
-            failures += fail("ChatUiController sendTeamLocationWithIcon body missing")
-        else:
-            for token in [
-                "encodeTeamChatLocation",
-                "TeamChatMessage",
-                "TeamChatLocation",
-                "team_ui_chatlog_append_structured",
-                "controller->onChat",
-                "setKeysFromPsk",
-                "platform::ui::gps::get_data",
-                "app::teamFacade",
-                "team_ui_get_store",
-                "TeamController",
-            ]:
-                if token in body:
-                    failures += fail(
-                        f"ChatUiController location send still owns Team runtime token: {token}"
-                    )
     else:
         failures += fail("ChatUiController source is missing")
+
+    for path in [workflow_header, workflow_source]:
+        if not exists(path):
+            failures += fail(f"missing Chat Team workflow file: {path}")
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in ["lvgl.h", "lv_obj_t", "ChatService", "TeamController"]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team workflow token: {token}")
+
+    if exists(workflow_source):
+        text = strip_cpp_comments(read_text(workflow_source))
+        for token in [
+            "TeamActionRequest",
+            "TeamActionKind::LocationMarker",
+            "sendTeamAction",
+            "team_location_marker_icon_name",
+            "team_location_marker_icon_is_valid",
+            "sendCurrentLocationMarker",
+            "textSendFailureMessage",
+            "locationSendFailureMessage",
+        ]:
+            if token not in text:
+                failures += fail(f"ChatTeamWorkflow source missing token: {token}")
+
+    return failures
+
+
+def check_team_page_read_model_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_read_model.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_read_model.cpp"
+    test = "modules/ui_shared/tests/test_team_page_read_model.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page read model file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "team_ui_get_store",
+            "ITeamUiSnapshotStore",
+            "team_ui_snapshot_store()",
+            "gps_runtime",
+            "gps_tracker_overlay",
+            "sys::Event",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page read model token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "TeamPageReadModel",
+            "TeamPageReadModelInput",
+            "TeamPageSummaryView",
+            "TeamMemberRowView",
+            "TeamMemberDetailView",
+            "TeamRelativeTimeView",
+            "inputFromSnapshot",
+            "buildSummary",
+            "buildMemberRows",
+            "buildSelectedMember",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page read model header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "isTeamMemberOnline",
+            "formatTeamNameFromId",
+            "management_actions_enabled",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page read model source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_read_model.h",
+            "current_read_model_input",
+            "buildSelectedMember",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing read model token: {token}")
+        for token in [
+            "refreshTeamMemberPresence",
+            "isTeamMemberOnline",
+            "online_count(",
+        ]:
+            if token in text:
+                failures += fail(f"Team page controller still owns read model token: {token}")
+
+    return failures
+
+
+def check_team_page_flow_controller_boundary() -> int:
+    failures = 0
+    types = "modules/ui_shared/include/ui/screens/team/team_page_types.h"
+    header = "modules/ui_shared/include/ui/screens/team/team_page_flow_controller.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_flow_controller.cpp"
+    test = "modules/ui_shared/tests/test_team_page_flow_controller.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [types, header, source, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page flow controller file: {path}")
+
+    for path in [types, header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_",
+            "g_team_state",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+            "render_page",
+            "ui_request_exit_to_menu",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page flow controller token: {token}")
+
+    if exists(types):
+        text = read_text(types)
+        for token in [
+            "enum class TeamPage",
+            "StatusNotInTeam",
+            "StatusInTeam",
+            "JoinPending",
+            "KickedOut",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page types header missing token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "TeamPageFlowState",
+            "TeamPageFlowResult",
+            "TeamPageFlowController",
+            "navigateTo",
+            "navigateBack",
+            "resetTo",
+            "selectInitialPage",
+            "syncRuntime",
+            "isPairingActive",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page flow controller header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "TeamPageFlowController::navigateTo",
+            "TeamPageFlowController::navigateBack",
+            "TeamPageFlowController::resetTo",
+            "TeamPageFlowController::selectInitialPage",
+            "TeamPageFlowController::syncRuntime",
+            "TeamPageFlowController::isPairingActive",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page flow controller source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_flow_controller.h",
+            "flow_state_from_page",
+            "apply_flow_state_to_page",
+            "current_flow_controller",
+            "navigateTo",
+            "navigateBack",
+            "resetTo",
+            "selectInitialPage",
+            "syncRuntime",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing flow controller token: {token}")
+        for function_name in ["nav_to", "nav_back", "nav_reset", "sync_from_controller", "team_page_create"]:
+            match = re.search(
+                rf"(?:void|bool)\s+{function_name}\s*\([^)]*\)\s*\{{(?P<body>.*?)\n\}}",
+                text,
+                re.DOTALL,
+            )
+            if not match:
+                continue
+            body = match.group("body")
+            for token in [
+                "TeamPairingState::Idle &&",
+                "TeamPairingState::Completed",
+                "TeamPairingState::Failed",
+                "g_team_state.nav_stack.push_back",
+                "g_team_state.nav_stack.pop_back",
+            ]:
+                if token in body:
+                    failures += fail(f"{function_name} still owns flow controller token: {token}")
+
+    return failures
+
+
+def check_team_page_lvgl_renderer_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_lvgl_renderer.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_lvgl_renderer.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source]:
+        if not exists(path):
+            failures += fail(f"missing Team Page LVGL renderer file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_",
+            "g_team_state",
+            "g_gps_state",
+            "gps_tracker_load_file",
+            "gps_tracker_overlay",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+            "TeamPageRuntimePort",
+            "TeamPageCommandReducer",
+            "TeamPageEventReducer",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page LVGL renderer token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "ITeamPageLvglNameResolver",
+            "TeamPageLvglRendererHandlers",
+            "TeamPageLvglRendererContext",
+            "TeamPageLvglRendererInput",
+            "TeamPageLvglRenderer",
+            "render",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page LVGL renderer header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "TeamPageLvglRenderer::render",
+            "renderStatusNotInTeam",
+            "renderStatusInTeam",
+            "renderTeamHome",
+            "renderJoinPending",
+            "renderMembers",
+            "renderMemberDetail",
+            "renderKickConfirm",
+            "renderKickedOut",
+            "createActionButton",
+            "createListItem",
+            "renderMemberChipRow",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page LVGL renderer source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_lvgl_renderer.h",
+            "TeamPageLvglRendererContext",
+            "TeamPageLvglRendererHandlers",
+            "TeamPageLvglRendererInput",
+            "TeamPageLvglRenderer(now_secs()).render",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing LVGL renderer token: {token}")
+        for token in [
+            "void render_status_not_in_team",
+            "void render_status_in_team",
+            "void render_team_home",
+            "void render_join_pending",
+            "void render_members",
+            "void render_member_detail",
+            "void render_kick_confirm",
+            "void render_kicked_out",
+            "lv_obj_t* add_label",
+            "lv_obj_t* create_action_button",
+            "lv_obj_t* create_list_item",
+            "render_member_chip_row",
+            "render_member_chips_or_empty",
+            "format_last_seen",
+            "format_last_update",
+        ]:
+            if token in text:
+                failures += fail(f"Team page controller still owns LVGL renderer token: {token}")
+
+    return failures
+
+
+def check_team_page_create_team_action_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_create_team_action.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_create_team_action.cpp"
+    test = "modules/ui_shared/tests/test_team_page_create_team_action.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page create-team action file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_",
+            "g_gps_state",
+            "gps_tracker_load_file",
+            "gps_tracker_overlay",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+            "sys::millis_now",
+            "next_random_byte",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page create-team action token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "ITeamPageCreateTeamRandom",
+            "TeamPageCreateTeamFailureAction",
+            "TeamPageCreateTeamFailureKind",
+            "TeamPageCreateTeamEffects",
+            "TeamPageCreateTeamAction",
+            "createTeam",
+            "TeamPageRuntimePort",
+            "TeamPageKeyEventLog",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page create-team action header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "TeamPageCreateTeamAction::createTeam",
+            "generateTeamId",
+            "generateTeamPsk",
+            "reducer.reduceCreate",
+            "key_log.appendTeamCreated",
+            "runtime.setKeysFromPsk",
+            "runtime.saveKeysNow",
+            "runtime.startLeader",
+            "reducer.reducePairingStarted",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page create-team action source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_create_team_action.h",
+            "TeamPageRandomByteAdapter",
+            "apply_create_team_failures",
+            "TeamPageCreateTeamAction().createTeam",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing create-team action token: {token}")
+        if "handle_create" in text:
+            match = re.search(
+                r"void\s+handle_create\s*\([^)]*\)\s*\{(?P<body>.*?)\n\}",
+                text,
+                re.DOTALL,
+            )
+            if match:
+                body = match.group("body")
+                for token in [
+                    "TeamPageGeneratedTeamSecrets",
+                    "generate_team_id",
+                    "next_random_byte",
+                    "reduceCreate",
+                    "appendTeamCreated",
+                    "setKeysFromPsk",
+                    "saveKeysNow",
+                    "start_pairing_leader",
+                ]:
+                    if token in body:
+                        failures += fail(f"handle_create still owns create-team orchestration token: {token}")
+
+    return failures
+
+
+def check_team_page_pairing_command_action_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_pairing_command_action.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_pairing_command_action.cpp"
+    test = "modules/ui_shared/tests/test_team_page_pairing_command_action.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page pairing command action file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_",
+            "g_gps_state",
+            "gps_tracker_load_file",
+            "gps_tracker_overlay",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+            "sys::millis_now",
+            "next_random_byte",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page pairing command action token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "TeamPagePairingCommandRole",
+            "TeamPagePairingCommandFailureKind",
+            "TeamPagePairingCommandEffects",
+            "TeamPagePairingCommandAction",
+            "startPairing",
+            "TeamPageRuntimePort",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page pairing command action header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "TeamPagePairingCommandAction::startPairing",
+            "runtime.startLeader",
+            "runtime.startMember",
+            "reducer.reducePairingStarted",
+            "TeamPairingRole::Leader",
+            "TeamPairingRole::Member",
+            "TeamPageCommandReducer::formatTeamNameFromId",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page pairing command action source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_pairing_command_action.h",
+            "apply_pairing_command_failures",
+            "TeamPagePairingCommandAction().startPairing",
+            "start_pairing_command",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing pairing command action token: {token}")
+        for token in [
+            "start_pairing_leader",
+            "start_pairing_member",
+            "runtime.startLeader",
+            "runtime.startMember",
+            "reducePairingStarted",
+            "current_team_name",
+        ]:
+            if token in text:
+                failures += fail(f"Team page controller still owns pairing command action token: {token}")
+
+    return failures
+
+
+def check_team_page_request_keys_action_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_request_keys_action.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_request_keys_action.cpp"
+    test = "modules/ui_shared/tests/test_team_page_request_keys_action.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page request-keys action file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_",
+            "g_team_state",
+            "g_gps_state",
+            "gps_tracker_load_file",
+            "gps_tracker_overlay",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+            "sys::millis_now",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page request-keys action token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "TeamPageRequestKeysEffects",
+            "TeamPageRequestKeysAction",
+            "requestKeys",
+            "TeamPageCommandState",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page request-keys action header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "TeamPageRequestKeysAction::requestKeys",
+            "state.in_team",
+            "state.has_team_id",
+            "state.self_is_leader",
+            "runtime.sendKeyRequest",
+            "TeamKeyRequest",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page request-keys action source missing token: {token}")
+        if "effects.unsupported" in text:
+            failures += fail("Team Page request-keys action still reports unsupported")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_request_keys_action.h",
+            "TeamPageRequestKeysAction().requestKeys",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing request-keys action token: {token}")
+        match = re.search(
+            r"void\s+handle_request_keydist\s*\([^)]*\)\s*\{(?P<body>.*?)\n\}",
+            text,
+            re.DOTALL,
+        )
+        if match:
+            body = match.group("body")
+            for token in [
+                "g_team_state.in_team",
+                "g_team_state.self_is_leader",
+                "g_team_state.has_team_id",
+                "return;",
+            ]:
+                if token in body:
+                    failures += fail(f"handle_request_keydist still owns request-keys action token: {token}")
+
+    return failures
+
+
+def check_team_page_event_reducer_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_event_reducer.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_event_reducer.cpp"
+    test = "modules/ui_shared/tests/test_team_page_event_reducer.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page event reducer file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_get_store",
+            "team_ui_snapshot_store",
+            "team_ui_chatlog",
+            "team_ui_posring",
+            "team_ui_append_key_event",
+            "gps_runtime",
+            "gps_tracker_overlay",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page event reducer token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "TeamPageEventState",
+            "ITeamPageMemberNameResolver",
+            "TeamPageEventContext",
+            "TeamPageEventEffects",
+            "TeamPageEventReducer",
+            "findMemberIndex",
+            "touchMember",
+            "fillStatusMembers",
+            "applyStatusRoster",
+            "reduceError",
+            "reduceStatus",
+            "reduceActivity",
+            "reduceKick",
+            "reduceTransferLeader",
+            "reduceKeyDist",
+            "TeamPagePairingUpdate",
+            "reducePairing",
+            "reducePairingStatus",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page event reducer header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "findTeamMemberIndex",
+            "normalizeSeenSeconds",
+            "touchTeamMember",
+            "formatTeamNameFromId",
+            "keydist_confirmed",
+            "epoch_rotated",
+            "member_kicked_key_event",
+            "member_accepted_key_event",
+            "show_pairing_success",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page event reducer source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_event_reducer.h",
+            "TeamPageEventState event_state_from_page",
+            "apply_event_state_to_page",
+            "current_event_reducer",
+            "reduce_event_state",
+            "reduceStatus",
+            "reduceActivity",
+            "reduceError",
+            "reduceKick",
+            "reduceTransferLeader",
+            "reduceKeyDist",
+            "pairing_update_from_event",
+            "pairing_update_from_status",
+            "reducePairing",
+            "reducePairingStatus",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing event reducer token: {token}")
+        for token in [
+            "ui/team_presence/team_presence_model.h",
+            "normalizeSeenSeconds",
+            "touchTeamMember",
+            "findTeamMemberIndex",
+            "apply_member_list_from_status(ev.msg)",
+            "update_team_name_from_id",
+            "assign_member_color",
+            "touch_member(",
+            "find_member_index",
+            "g_team_state.security_round += 1",
+            "g_team_state.team_psk = ev.msg.channel_psk",
+            "g_team_state.pairing_role = ev.role",
+        ]:
+            if token in text:
+                failures += fail(f"Team page controller still owns event reducer token: {token}")
+
+    return failures
+
+
+def check_team_page_event_effect_sink_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_event_effect_sink.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_event_effect_sink.cpp"
+    test = "modules/ui_shared/tests/test_team_page_event_effect_sink.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page event effect sink file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_",
+            "g_team_state",
+            "g_gps_state",
+            "gps_tracker_load_file",
+            "gps_tracker_overlay",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+            "sys::millis_now",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page event effect sink token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "ITeamPageEventDeferred",
+            "ITeamPageEventNotifier",
+            "TeamPageEventEffectResult",
+            "TeamPageEventEffectSink",
+            "applyEffects",
+            "TeamPageRuntimePort",
+            "TeamPageKeyEventLog",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page event effect sink header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "TeamPageEventEffectSink::applyEffects",
+            "deferred.confirmKeyDist",
+            "key_log.appendEpochRotated",
+            "key_log.appendMemberAccepted",
+            "runtime.saveKeysNow",
+            "runtime.setKeysFromPsk",
+            "runtime.sendStatus",
+            "runtime.sendStatusPlain",
+            "deferred.scheduleStatusBroadcast",
+            "notifier.showMessage",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page event effect sink source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_event_effect_sink.h",
+            "TeamPageEventDeferredAdapter",
+            "TeamPageEventNotifierAdapter",
+            "apply_event_effects",
+            "apply_event_navigation_requests",
+            "TeamPageEventEffectSink().applyEffects",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing event effect sink token: {token}")
+        for handler in ["handle_team_status", "handle_team_key_dist", "handle_team_pairing"]:
+            match = re.search(
+                rf"void\s+{handler}\s*\([^)]*\)\s*\{{(?P<body>.*?)\n\}}",
+                text,
+                re.DOTALL,
+            )
+            if not match:
+                failures += fail(f"Team page controller missing handler body: {handler}")
+                continue
+            body = match.group("body")
+            for token in [
+                "appendEpochRotated",
+                "appendMemberAccepted",
+                "saveKeysNow",
+                "setKeysFromPsk",
+                "sendStatus(",
+                "sendStatusPlain(",
+                "schedule_status_broadcast",
+                "SystemNotification::show",
+                "g_team_state.page",
+                "g_team_state.nav_stack.clear",
+            ]:
+                if token in body:
+                    failures += fail(f"{handler} still owns event effect sink token: {token}")
+
+    return failures
+
+
+def check_team_page_command_reducer_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_command_reducer.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_command_reducer.cpp"
+    test = "modules/ui_shared/tests/test_team_page_command_reducer.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page command reducer file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_get_store",
+            "team_ui_snapshot_store",
+            "team_ui_chatlog",
+            "team_ui_posring",
+            "team_ui_append_key_event",
+            "team_ui_save_keys_now",
+            "gps_runtime",
+            "gps_tracker_overlay",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+            "next_random_byte",
+            "sys::millis_now",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page command reducer token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "TeamPageCommandState",
+            "TeamPageCommandContext",
+            "TeamPageGeneratedTeamSecrets",
+            "TeamPageKickRotation",
+            "TeamPageCommandEffects",
+            "TeamPageCommandReducer",
+            "reduceCreate",
+            "reduceLeave",
+            "reduceKickedOut",
+            "reduceClearKickedOut",
+            "reducePairingStarted",
+            "reduceJoinCanceled",
+            "reduceKickConfirmed",
+            "reduceTransferLeader",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page command reducer header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "resetTeamMembership",
+            "resetPairing",
+            "ensureSelfMember",
+            "team_color_index_from_node_id",
+            "formatTeamNameFromId",
+            "keys_changed",
+            "status_should_send",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page command reducer source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_command_reducer.h",
+            "TeamPageCommandState command_state_from_page",
+            "apply_command_state_to_page",
+            "current_command_reducer",
+            "reduce_command_state",
+            "apply_command_runtime_effects",
+            "reduceLeave",
+            "reduceKickedOut",
+            "reduceJoinCanceled",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing command reducer token: {token}")
+
+    return failures
+
+
+def check_team_page_key_event_log_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_key_event_log.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_key_event_log.cpp"
+    test = "modules/ui_shared/tests/test_team_page_key_event_log.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page key event log file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_append_key_event(",
+            "team_ui_snapshot_store",
+            "team_ui_chatlog",
+            "team_ui_posring",
+            "gps_runtime",
+            "gps_tracker_overlay",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page key event log token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "TeamPageKeyEventState",
+            "ITeamPageKeyEventWriter",
+            "TeamPageKeyEventLog",
+            "appendTeamCreated",
+            "appendMemberAccepted",
+            "appendMemberKicked",
+            "appendLeaderTransferred",
+            "appendEpochRotated",
+            "teamIdToU64",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page key event log header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "writeU32Le",
+            "writeU64Le",
+            "TeamKeyEventType::TeamCreated",
+            "TeamKeyEventType::MemberAccepted",
+            "TeamKeyEventType::MemberKicked",
+            "TeamKeyEventType::LeaderTransferred",
+            "TeamKeyEventType::EpochRotated",
+            "state.last_event_seq = next_seq",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page key event log source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_key_event_log.h",
+            "TeamPageRuntimeKeyEventWriter",
+            "key_event_state_from_page",
+            "apply_key_event_state_to_page",
+            "current_key_event_log",
+            "append_key_event_to_page",
+            "appendMemberKicked",
+            "appendEpochRotated",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing key event log token: {token}")
+        for token in [
+            "write_u32_le",
+            "write_u64_le",
+            "team_id_to_u64",
+            "bool append_key_event(",
+        ]:
+            if token in text:
+                failures += fail(f"Team page controller still owns key event log token: {token}")
+
+    return failures
+
+
+def check_team_page_runtime_port_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_runtime_port.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_runtime_port.cpp"
+    adapters = "modules/ui_shared/src/ui/screens/team/team_page_runtime_adapters.cpp"
+    test = "modules/ui_shared/tests/test_team_page_runtime_port.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, adapters, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page runtime port file: {path}")
+
+    for path in [header, source, adapters]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "gps_runtime",
+            "gps_tracker_overlay",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page runtime port token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "ITeamPageControllerPort",
+            "ITeamPagePairingPort",
+            "ITeamPageKeyStorePort",
+            "TeamPageRuntimePort",
+            "TeamPageControllerPortAdapter",
+            "TeamPagePairingPortAdapter",
+            "TeamPageKeyStorePortAdapter",
+            "sendStatus",
+            "sendKeyDist",
+            "startLeader",
+            "saveKeysNow",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page runtime port header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "TeamPageRuntimePort::TeamPageRuntimePort",
+            "TeamPageRuntimePort::clearKeys",
+            "TeamPageRuntimePort::sendStatus",
+            "TeamPageRuntimePort::startLeader",
+            "TeamPageRuntimePort::lastSendError",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page runtime port source missing token: {token}")
+        for token in [
+            "team_ui_save_keys_now",
+            "controller_->on",
+        ]:
+            if token in strip_cpp_comments(text):
+                failures += fail(f"Team Page runtime port source owns adapter token: {token}")
+
+    if exists(adapters):
+        text = read_text(adapters)
+        for token in [
+            "team_ui_save_keys_now",
+            "controller_->onKick",
+            "controller_->onTransferLeader",
+            "controller_->onKeyDist",
+            "controller_->onKeyDistPlain",
+            "controller_->onStatus",
+            "controller_->onStatusPlain",
+            "pairing_->startLeader",
+            "pairing_->startMember",
+            "pairing_->getStatus",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page runtime adapter source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_runtime_port.h",
+            "current_runtime_port",
+            "TeamPageRuntimePort",
+            "TeamPageControllerPortAdapter",
+            "TeamPagePairingPortAdapter",
+            "TeamPageKeyStorePortAdapter",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing runtime port token: {token}")
+        for token in [
+            "TeamController* controller",
+            "TeamPairingService* pairing",
+            "controller->",
+            "pairing->",
+            "team_ui_save_keys_now",
+            "getLastSendError",
+        ]:
+            if token in text:
+                failures += fail(f"Team page controller still owns runtime port token: {token}")
+        if text.count("app::teamFacade()") != 2:
+            failures += fail("Team page controller should access app::teamFacade only in current_runtime_port")
+
+    return failures
+
+
+def check_team_page_activity_sink_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_activity_sink.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_activity_sink.cpp"
+    adapters = "modules/ui_shared/src/ui/screens/team/team_page_activity_adapters.cpp"
+    test = "modules/ui_shared/tests/test_team_page_activity_sink.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, adapters, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page activity sink file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_",
+            "g_gps_state",
+            "gps_tracker_load_file",
+            "gps_tracker_overlay",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page activity sink token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "ITeamPagePositionLog",
+            "ITeamPageChatLog",
+            "ITeamPageGpsTrackLoader",
+            "ITeamPageUnreadPublisher",
+            "TeamPageActivityState",
+            "TeamPageActivityContext",
+            "TeamPageActivitySink",
+            "consumePosition",
+            "consumeWaypoint",
+            "consumeTrack",
+            "consumeChat",
+            "TeamPageActivityStoreAdapter",
+            "TeamPageGpsTrackLoaderAdapter",
+            "TeamPageUnreadPublisherAdapter",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page activity sink header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "decodeTeamPositionMessage",
+            "teamWaypointHasLocation",
+            "decodeTeamTrackMessage",
+            "appendMemberTrack",
+            "memberTrackPath",
+            "loadTrackFile",
+            "appendStructuredChat",
+            "decodeTeamChatLocation",
+            "publishTeamUnread",
+            "std::numeric_limits<uint32_t>::max()",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page activity sink source missing token: {token}")
+
+    if exists(adapters):
+        text = read_text(adapters)
+        for token in [
+            "team_ui_posring_append",
+            "team_ui_append_member_track",
+            "team_ui_get_member_track_path",
+            "team_ui_chatlog_append_structured",
+            "g_gps_state.selected_member_id",
+            "gps_tracker_load_file",
+            "sys::EventBus::publish",
+            "sys::ChatUnreadChangedEvent",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page activity adapter source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_activity_sink.h",
+            "activity_state_from_page",
+            "apply_activity_state_to_page",
+            "current_activity_sink",
+            "consume_activity",
+            "sink.consumePosition",
+            "sink.consumeWaypoint",
+            "sink.consumeTrack",
+            "sink.consumeChat",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing activity sink token: {token}")
+        for token in [
+            "team_ui_posring_append",
+            "team_ui_chatlog_append_structured",
+            "team_ui_append_member_track",
+            "team_ui_get_member_track_path",
+            "gps_tracker_load_file",
+            "g_gps_state",
+            "ChatUnreadChangedEvent",
+            "decodeTeamPositionMessage",
+            "decodeTeamTrackMessage",
+            "decodeTeamChatLocation",
+            "teamWaypointHasLocation",
+        ]:
+            if token in text:
+                failures += fail(f"Team page controller still owns activity sink token: {token}")
+
+    return failures
+
+
+def check_team_page_deferred_dispatch_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_deferred_dispatch.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_deferred_dispatch.cpp"
+    adapters = "modules/ui_shared/src/ui/screens/team/team_page_deferred_dispatch_adapters.cpp"
+    test = "modules/ui_shared/tests/test_team_page_deferred_dispatch.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, adapters, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page deferred dispatch file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_",
+            "g_gps_state",
+            "gps_tracker_load_file",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page deferred dispatch token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "ITeamPageDeferredDispatchPort",
+            "TeamPageDeferredDispatchConfig",
+            "TeamPageDeferredDispatchState",
+            "TeamPageDeferredDispatchEffects",
+            "TeamPageDeferredDispatchQueue",
+            "enqueueKeyDist",
+            "confirmKeyDist",
+            "scheduleStatusBroadcast",
+            "processKeyDistRetries",
+            "processStatusBroadcasts",
+            "TeamPageDeferredDispatchRuntimeAdapter",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page deferred dispatch header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "keydist_pending_",
+            "status_pending_",
+            "sendKeyDistPlain",
+            "sendStatusPlain",
+            "TeamPageDeferredDispatchFailureKind::SendFailedDetail",
+            "keydist_max_retries",
+            "status_rebroadcast_interval_s",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page deferred dispatch source missing token: {token}")
+
+    if exists(adapters):
+        text = read_text(adapters)
+        for token in [
+            "TeamPageDeferredDispatchRuntimeAdapter",
+            "runtime_.sendKeyDistPlain",
+            "runtime_.sendStatus",
+            "runtime_.sendStatusPlain",
+            "runtime_.lastSendError",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page deferred dispatch adapter source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_deferred_dispatch.h",
+            "TeamPageDeferredDispatchQueue deferred_dispatch",
+            "deferred_dispatch_state_from_page",
+            "apply_deferred_dispatch_failures",
+            "team_page_context().deferred_dispatch.enqueueKeyDist",
+            "team_page_context().deferred_dispatch.confirmKeyDist",
+            "team_page_context().deferred_dispatch.scheduleStatusBroadcast",
+            "team_page_context().deferred_dispatch.processKeyDistRetries",
+            "team_page_context().deferred_dispatch.processStatusBroadcasts",
+            "TeamPageDeferredDispatchRuntimeAdapter",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing deferred dispatch token: {token}")
+        for token in [
+            "KeyDistPending",
+            "StatusBroadcastPending",
+            "s_keydist_pending",
+            "s_status_pending",
+            "kKeyDistMaxRetries",
+            "kKeyDistRetryIntervalSec",
+            "std::remove_if",
+            "it->attempts",
+            "it->next_retry_s",
+            "it->remaining",
+        ]:
+            if token in text:
+                failures += fail(f"Team page controller still owns deferred dispatch token: {token}")
+
+    return failures
+
+
+def check_team_page_kick_confirm_action_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_kick_confirm_action.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_kick_confirm_action.cpp"
+    test = "modules/ui_shared/tests/test_team_page_kick_confirm_action.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page kick-confirm action file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_",
+            "g_gps_state",
+            "gps_tracker_load_file",
+            "gps_tracker_overlay",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+            "sys::millis_now",
+            "next_random_byte",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page kick-confirm action token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "ITeamPageKickConfirmRandom",
+            "ITeamPageKickConfirmDeferred",
+            "TeamPageKickConfirmFailureAction",
+            "TeamPageKickConfirmFailureKind",
+            "TeamPageKickConfirmEffects",
+            "TeamPageKickConfirmAction",
+            "confirmKick",
+            "TeamPageRuntimePort",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page kick-confirm action header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "TeamPageKickConfirmAction::confirmKick",
+            "TeamKick kick",
+            "TeamKeyDist key_dist",
+            "runtime.sendKick",
+            "runtime.sendKeyDist",
+            "deferred.enqueueKeyDist",
+            "reducer.reduceKickConfirmed",
+            "runtime.setKeysFromPsk",
+            "runtime.sendStatus",
+            "runtime.sendStatusPlain",
+            "fillStatusMembers",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page kick-confirm action source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_kick_confirm_action.h",
+            "TeamPageRandomByteAdapter",
+            "TeamPageKickConfirmDeferredAdapter",
+            "apply_kick_confirm_failures",
+            "TeamPageKickConfirmAction().confirmKick",
+            "apply_command_state_to_page(state)",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing kick-confirm action token: {token}")
+        for token in [
+            "TeamKick kick",
+            "TeamKeyDist kd",
+            "TeamKeyDist key_dist",
+            "sendKeyDist(kd",
+            "sendKeyDist(key_dist",
+            "new_psk",
+            "reducer.reduceKickConfirmed",
+            "runtime.sendKick",
+        ]:
+            if token in text:
+                failures += fail(f"Team page controller still owns kick-confirm action token: {token}")
+        if "handle_kick_confirm" in text:
+            match = re.search(
+                r"void\s+handle_kick_confirm\s*\([^)]*\)\s*\{(?P<body>.*?)\n\}",
+                text,
+                re.DOTALL,
+            )
+            if match:
+                body = match.group("body")
+                for token in [
+                    "for (const auto&",
+                    "sendStatus(",
+                    "sendStatusPlain(",
+                    "setKeysFromPsk(",
+                    "TeamPageKickRotation",
+                    "fill_status_members",
+                    "add_keydist_pending",
+                ]:
+                    if token in body:
+                        failures += fail(f"handle_kick_confirm still owns kick-confirm orchestration token: {token}")
+
+    return failures
+
+
+def check_team_page_transfer_leader_action_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_transfer_leader_action.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_transfer_leader_action.cpp"
+    test = "modules/ui_shared/tests/test_team_page_transfer_leader_action.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page transfer-leader action file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_",
+            "g_gps_state",
+            "gps_tracker_load_file",
+            "gps_tracker_overlay",
+            "SystemNotification",
+            "sys::Event",
+            "EventBus",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page transfer-leader action token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "TeamPageTransferLeaderFailureAction",
+            "TeamPageTransferLeaderFailureKind",
+            "TeamPageTransferLeaderEffects",
+            "TeamPageTransferLeaderAction",
+            "transferLeader",
+            "TeamPageRuntimePort",
+            "TeamPageKeyEventLog",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page transfer-leader action header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "TeamPageTransferLeaderAction::transferLeader",
+            "TeamTransferLeader transfer",
+            "runtime.sendTransferLeader",
+            "reducer.reduceTransferLeader",
+            "key_log.appendLeaderTransferred",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page transfer-leader action source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_transfer_leader_action.h",
+            "apply_transfer_leader_failures",
+            "TeamPageTransferLeaderAction().transferLeader",
+            "apply_command_state_to_page(command_state)",
+            "apply_key_event_state_to_page(key_state)",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing transfer-leader action token: {token}")
+        if "handle_transfer_leader" in text:
+            match = re.search(
+                r"void\s+handle_transfer_leader\s*\([^)]*\)\s*\{(?P<body>.*?)\n\}",
+                text,
+                re.DOTALL,
+            )
+            if match:
+                body = match.group("body")
+                for token in [
+                    "TeamTransferLeader transfer",
+                    "sendTransferLeader",
+                    "reduceTransferLeader",
+                    "appendLeaderTransferred",
+                    "runtime.hasController",
+                ]:
+                    if token in body:
+                        failures += fail(f"handle_transfer_leader still owns transfer-leader orchestration token: {token}")
+
+    return failures
+
+
+def check_team_page_state_store_boundary() -> int:
+    failures = 0
+    header = "modules/ui_shared/include/ui/screens/team/team_page_state_store.h"
+    source = "modules/ui_shared/src/ui/screens/team/team_page_state_store.cpp"
+    test = "modules/ui_shared/tests/test_team_page_state_store.cpp"
+    controller = "modules/ui_shared/src/ui/screens/team/team_page_components.cpp"
+
+    for path in [header, source, test]:
+        if not exists(path):
+            failures += fail(f"missing Team Page state store file: {path}")
+
+    for path in [header, source]:
+        if not exists(path):
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "lvgl.h",
+            "lv_obj_t",
+            "team_state.h",
+            "TeamPageState&",
+            "TeamPageState*",
+            "TeamController",
+            "TeamPairingService",
+            "app::teamFacade",
+            "app::messagingFacade",
+            "team_ui_get_store",
+            "team_ui_snapshot_store()",
+            "gps_runtime",
+            "gps_tracker_overlay",
+            "sys::Event",
+        ]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Team Page state store token: {token}")
+
+    if exists(header):
+        text = read_text(header)
+        for token in [
+            "TeamPagePersistentState",
+            "TeamPageColorContext",
+            "TeamPageStateStore",
+            "loadOnce",
+            "refresh",
+            "resetLoaded",
+            "snapshotFromState",
+            "applySnapshot",
+            "assignTeamPageMemberColors",
+            "ITeamUiSnapshotStore",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page state store header missing token: {token}")
+
+    if exists(source):
+        text = read_text(source)
+        for token in [
+            "team_color_index_from_node_id",
+            "loaded_ = true",
+            "store.load(snapshot)",
+            "store.save(snapshotFromState(state))",
+            "assignTeamPageMemberColors",
+        ]:
+            if token not in text:
+                failures += fail(f"Team Page state store source missing token: {token}")
+
+    if exists(controller):
+        text = strip_cpp_comments(read_text(controller))
+        for token in [
+            "team_page_state_store.h",
+            "TeamPageStateStore state_store",
+            "persistent_state_from_page",
+            "apply_persistent_state_to_page",
+            "current_color_context",
+            "team_page_context().state_store.loadOnce",
+            "team_page_context().state_store.refresh",
+            "team_page_context().state_store.save",
+            "team_page_context().state_store.resetLoaded",
+        ]:
+            if token not in text:
+                failures += fail(f"Team page controller missing state store token: {token}")
+        for token in [
+            "s_state_loaded",
+            "snapshot_from_state",
+            "apply_snapshot(",
+            "ensure_member_colors",
+            "team_ui_snapshot_store().load",
+            "team_ui_snapshot_store().save",
+        ]:
+            if token in text:
+                failures += fail(f"Team page controller still owns state store token: {token}")
 
     return failures
 
@@ -1417,9 +3187,29 @@ def check_team_rich_payload_presentation_boundary() -> int:
     failures = 0
     controller = "modules/ui_shared/src/ui/screens/chat/chat_ui_controller.cpp"
     presentation = "modules/ui_shared/src/ui/presentation_sources/team_chat_presentation_source.cpp"
+    message_row_header = "modules/ui_presentation/include/ui_presentation/chat/chat_workspace_snapshot.h"
+    chat_renderer = "modules/ui_shared/src/ui/screens/chat/chat_conversation_components.cpp"
+    watch_renderer = "modules/ui_shared/src/ui/screens/chat_watch/chat_conversation_components_watch.cpp"
     display_header = "modules/ui_shared/include/ui/team_presentation/team_rich_payload_display.h"
     projector_header = "modules/ui_shared/include/ui/team_presentation/team_rich_payload_projector.h"
     projector_source = "modules/ui_shared/src/ui/team_presentation/team_rich_payload_projector.cpp"
+
+    if exists(message_row_header):
+        text = strip_cpp_comments(read_text(message_row_header))
+        for token in [
+            "enum class TeamMessageRichPayloadKind",
+            "TeamMessageLocationPayload",
+            "TeamMessageCommandPayload",
+            "TeamMessageRichPayload",
+            "has_team_rich_payload",
+            "team_rich_payload",
+            "resetMessageRow",
+        ]:
+            if token not in text:
+                failures += fail(f"MessageRow missing structured Team rich payload token: {token}")
+        for token in ["lvgl.h", "TeamRichPayloadDisplay", "TeamChatLogEntry", "team/protocol"]:
+            if token in text:
+                failures += fail(f"MessageRow owns forbidden Team rich dependency token: {token}")
 
     if exists(display_header):
         text = read_text(display_header)
@@ -1480,7 +3270,7 @@ def check_team_rich_payload_presentation_boundary() -> int:
             "lv_obj_t",
             "ChatUiController",
             "ChatWorkspaceModel",
-            "LegacyTeamActionBridge",
+            "TeamActionRuntimeSink",
             "sendTeamAction",
             "encodeTeamChatLocation",
             "encodeTeamChatCommand",
@@ -1508,6 +3298,10 @@ def check_team_rich_payload_presentation_boundary() -> int:
             "TeamRichPayloadProjector",
             "TeamRichPayloadDisplay",
             "display.summary",
+            "copyRichPayload",
+            "has_team_rich_payload",
+            "team_rich_payload",
+            "TeamMessageRichPayloadKind",
         ]:
             if token not in text:
                 failures += fail(
@@ -1525,6 +3319,17 @@ def check_team_rich_payload_presentation_boundary() -> int:
                 failures += fail(
                     f"TeamChatPresentationSource still owns inline rich payload formatter token: {token}"
                 )
+
+    for path in [chat_renderer, watch_renderer]:
+        if exists(path):
+            text = strip_cpp_comments(read_text(path))
+            for token in [
+                "has_team_rich_payload",
+                "team_rich_payload",
+                "format_team_rich_payload_text",
+            ]:
+                if token not in text:
+                    failures += fail(f"{path} missing structured Team rich render token: {token}")
 
     if exists(controller):
         text = strip_cpp_comments(read_text(controller))
@@ -1597,8 +3402,7 @@ def check_team_position_picker_renderer_boundary() -> int:
             "team_position_picker_->close(restore_group)",
             "team_position_picker_->updateHint(icon_id)",
             "team_position_picker_->isOpen()",
-            "sendTeamLocationWithIcon",
-            "team_action_sink_->sendTeamAction",
+            "team_workflow_.sendCurrentLocationMarker",
         ]:
             if token not in text:
                 failures += fail(f"ChatUiController missing Team picker delegation token: {token}")
@@ -2057,10 +3861,15 @@ def check_map_overlay_route_tracker_boundary() -> int:
     projector_source = "modules/ui_shared/src/ui/map_overlay/map_overlay_projector.cpp"
     legacy_header = "modules/ui_shared/include/ui/presentation_sources/legacy_map_overlay_source.h"
     legacy_source = "modules/ui_shared/src/ui/presentation_sources/legacy_map_overlay_source.cpp"
+    team_source_header = "modules/ui_shared/include/ui/presentation_sources/team_map_overlay_source.h"
+    team_source_source = "modules/ui_shared/src/ui/presentation_sources/team_map_overlay_source.cpp"
     projector_test = "modules/ui_shared/tests/test_map_overlay_projector.cpp"
     legacy_test = "modules/ui_shared/tests/test_legacy_map_overlay_source.cpp"
+    team_source_test = "modules/ui_shared/tests/test_team_map_overlay_source.cpp"
     viewport_source = "modules/ui_shared/src/ui/widgets/map/map_viewport.cpp"
     runtime_source = "modules/ui_shared/src/ui/screens/gps/gps_page_runtime.cpp"
+    esp_gps_map = "platform/esp/arduino_common/src/ui/screens/gps/gps_page_map.cpp"
+    uconsole_dashboard = "platform/linux/uconsole/src/uconsole_dashboard_model.cpp"
     runtime_register = "docs/audits/PHASE7_RUNTIME_OWNERSHIP_REGISTER.md"
     burndown_register = "docs/audits/LEGACY_BURNDOWN_REGISTER.md"
 
@@ -2177,7 +3986,39 @@ def check_map_overlay_route_tracker_boundary() -> int:
             if token in text:
                 failures += fail(f"MapOverlaySnapshotSource source owns forbidden render/source token: {token}")
 
-    for path in [projector_test, legacy_test]:
+    if exists(team_source_header):
+        text = strip_cpp_comments(read_text(team_source_header))
+        for token in [
+            "TeamMapOverlaySource",
+            "IMapOverlayTeamSource",
+            "latestTeamPoints",
+            "latestTeamLocations",
+            "loadMemberLocation",
+            "ITeamUiSnapshotStore",
+        ]:
+            if token not in text:
+                failures += fail(f"TeamMapOverlaySource header missing token: {token}")
+        for token in ["lvgl.h", "lv_obj_t", "gps_runtime", "ChatWorkspaceModel"]:
+            if token in text:
+                failures += fail(f"TeamMapOverlaySource header exposes forbidden token: {token}")
+
+    if exists(team_source_source):
+        text = strip_cpp_comments(read_text(team_source_source))
+        for token in [
+            "TeamMapOverlaySource::latestTeamPoints",
+            "TeamMapOverlaySource::latestTeamLocations",
+            "TeamMapOverlaySource::loadMemberLocation",
+            "team_ui_posring_load_latest",
+            "locationFromSample",
+            "team_color_from_index",
+        ]:
+            if token not in text:
+                failures += fail(f"TeamMapOverlaySource source missing token: {token}")
+        for token in ["lvgl.h", "lv_obj_t", "team_state.h", "g_team_state", "gps_runtime"]:
+            if token in text:
+                failures += fail(f"TeamMapOverlaySource source owns forbidden token: {token}")
+
+    for path in [projector_test, legacy_test, team_source_test]:
         if exists(path):
             text = read_text(path)
             if "MapOverlay" not in text:
@@ -2201,11 +4042,24 @@ def check_map_overlay_route_tracker_boundary() -> int:
         for token in [
             "MapOverlaySnapshotSource",
             "IMapOverlayGpsSource",
-            "IMapOverlayTeamSource",
+            "TeamMapOverlaySource",
             "buildMapOverlaySnapshot",
         ]:
             if token not in text:
                 failures += fail(f"gps_page_runtime.cpp missing overlay runtime wiring token: {token}")
+        for token in ["team_ui_posring_load_latest", "TeamPosSample"]:
+            if token in strip_cpp_comments(text):
+                failures += fail(f"gps_page_runtime.cpp still reads Team posring directly: {token}")
+
+    for path in [esp_gps_map, uconsole_dashboard]:
+        if exists(path):
+            text = strip_cpp_comments(read_text(path))
+            for token in ["TeamMapOverlaySource"]:
+                if token not in text:
+                    failures += fail(f"{path} missing TeamMapOverlaySource consumer token")
+            for token in ["team_ui_posring_load_latest", "TeamPosSample"]:
+                if token in text:
+                    failures += fail(f"{path} still reads Team posring directly: {token}")
 
     if exists(runtime_register):
         text = read_text(runtime_register)
@@ -2214,6 +4068,7 @@ def check_map_overlay_route_tracker_boundary() -> int:
             "7.12",
             "MapOverlaySnapshot",
             "LegacyMapOverlaySource",
+            "TeamMapOverlaySource",
             "route/tracker overlay sources have exit conditions",
         ]:
             if token not in text:
@@ -2223,6 +4078,7 @@ def check_map_overlay_route_tracker_boundary() -> int:
         text = read_text(burndown_register)
         for token in [
             "Map overlay current/team marker projection",
+            "TeamMapOverlaySource",
             "Map route/tracker overlay projection",
             "MapOverlayProjector",
             "map renderers consume `MapOverlaySnapshotSource` only",
@@ -2328,6 +4184,116 @@ def check_gps_runtime_scheduling_boundary() -> int:
         ]:
             if token not in text:
                 failures += fail(f"LEGACY_BURNDOWN_REGISTER missing GPS scheduling token: {token}")
+
+    return failures
+
+
+def check_team_consumer_shadow_state_closeout() -> int:
+    failures = 0
+
+    hostlink_header = "platform/esp/arduino_common/include/platform/esp/arduino_common/hostlink/hostlink_bridge_radio.h"
+    hostlink_source = "platform/esp/arduino_common/src/hostlink/hostlink_bridge_radio.cpp"
+    esp_gps_map = "platform/esp/arduino_common/src/ui/screens/gps/gps_page_map.cpp"
+    map_source = "modules/ui_shared/src/ui/presentation_sources/legacy_map_presentation_source.cpp"
+    app_events = "platform/esp/arduino_common/src/app_event_runtime_support.cpp"
+    contacts_header = "modules/ui_shared/include/ui/screens/contacts/contacts_team_snapshot_source.h"
+    contacts_source = "modules/ui_shared/src/ui/screens/contacts/contacts_team_snapshot_source.cpp"
+    contacts_page = "modules/ui_shared/src/ui/screens/contacts/contacts_page_components.cpp"
+
+    if exists(hostlink_header):
+        text = strip_cpp_comments(read_text(hostlink_header))
+        for token in ["void on_event", "void on_team_state_changed", "void on_link_ready"]:
+            if token not in text:
+                failures += fail(f"Hostlink bridge header missing Team state closeout token: {token}")
+
+    if exists(hostlink_source):
+        text = strip_cpp_comments(read_text(hostlink_source))
+        for token in [
+            "team_ui_snapshot_store().load",
+            "make_team_state_snapshot(const team::ui::TeamUiSnapshot&",
+            "team_presence::isTeamMemberOnline",
+            "on_team_state_changed",
+            "maybe_send_team_state(false)",
+            "maybe_send_team_state(true)",
+        ]:
+            if token not in text:
+                failures += fail(f"Hostlink bridge missing Team shadow-state closeout token: {token}")
+        for token in [
+            "s_runtime_team_state",
+            "touch_runtime_member",
+            "find_runtime_member_index",
+            "update_runtime_team_context",
+            "ensure_runtime_team_state_loaded",
+            "member.online",
+        ]:
+            if token in text:
+                failures += fail(f"Hostlink bridge still owns Team shadow-state token: {token}")
+
+    if exists(app_events):
+        text = strip_cpp_comments(read_text(app_events))
+        for token in [
+            "isTeamRuntimeEvent",
+            "team::ui::shell::handle_event(nullptr, event)",
+            "hostlink::bridge::on_team_state_changed()",
+        ]:
+            if token not in text:
+                failures += fail(f"ESP app event runtime missing Team state sync token: {token}")
+
+    if exists(esp_gps_map):
+        text = strip_cpp_comments(read_text(esp_gps_map))
+        for token in [
+            "team_ui_snapshot_store().load",
+            "load_team_data",
+            "ensure_member_colors",
+        ]:
+            if token not in text:
+                failures += fail(f"ESP GPS map missing Team snapshot overlay token: {token}")
+        for token in ["team_state.h", "g_team_state"]:
+            if token in text:
+                failures += fail(f"ESP GPS map still reads Team Page shadow state token: {token}")
+
+    if exists(map_source):
+        text = strip_cpp_comments(read_text(map_source))
+        for token in [
+            "team_presence::isTeamMemberOnline",
+            "presenceNowForMember",
+            "ITeamUiSnapshotStore",
+        ]:
+            if token not in text:
+                failures += fail(f"Legacy map presentation source missing Team presence token: {token}")
+        if "member.online" in text:
+            failures += fail("Legacy map presentation source still infers liveness from member.online")
+
+    for path in [contacts_header, contacts_source]:
+        if not exists(path):
+            failures += fail(f"missing Contacts Team snapshot source file: {path}")
+            continue
+        text = strip_cpp_comments(read_text(path))
+        for token in [
+            "ContactsTeamSnapshot",
+            "ContactsTeamSnapshotSource",
+            "ITeamUiSnapshotStore",
+            "contactsTeamDisplayName",
+        ]:
+            if token not in text:
+                failures += fail(f"{path} missing Contacts Team snapshot token: {token}")
+        for token in ["team_state.h", "g_team_state", "lvgl.h", "lv_obj_t"]:
+            if token in text:
+                failures += fail(f"{path} contains forbidden Contacts Team snapshot token: {token}")
+
+    if exists(contacts_page):
+        text = strip_cpp_comments(read_text(contacts_page))
+        for token in [
+            "contacts_team_snapshot_source.h",
+            "contacts_team_snapshot_source",
+            "load_contacts_team_snapshot",
+            "contacts_team_title",
+        ]:
+            if token not in text:
+                failures += fail(f"Contacts page missing Team snapshot closeout token: {token}")
+        for token in ["team_state.h", "g_team_state"]:
+            if token in text:
+                failures += fail(f"Contacts page still reads Team Page state token: {token}")
 
     return failures
 
@@ -2570,15 +4536,18 @@ def check_chat_runtime_wires_team_action_sink() -> int:
 
     text = read_text(path)
     for token in [
-        "LegacyTeamActionBridge",
+        "TeamActionRuntimeSink",
         "GpsTeamLocationSource",
+        "TeamControllerChatCommandPort",
         "s_team_action_sink",
         "s_team_location_source",
         "s_team_action_sink.get()",
-        "platform/ui/gps_runtime.h",
+        "team_runtime_adapters.h",
     ]:
         if token not in text:
             failures += fail(f"chat_page_runtime.cpp missing Team action wiring token: {token}")
+    if "platform/ui/gps_runtime.h" in text:
+        failures += fail("chat_page_runtime.cpp reintroduced direct GPS runtime include")
     return failures
 
 
@@ -2880,8 +4849,24 @@ def main() -> int:
     failures += check_delivery_event_bridge_boundary()
     failures += check_delivery_action_bridge_boundary()
     failures += check_team_action_type_shape()
-    failures += check_team_action_bridge_boundary()
+    failures += check_team_action_runtime_sink_boundary()
     failures += check_chat_ui_team_action_migration()
+    failures += check_team_page_read_model_boundary()
+    failures += check_team_page_flow_controller_boundary()
+    failures += check_team_page_lvgl_renderer_boundary()
+    failures += check_team_page_command_reducer_boundary()
+    failures += check_team_page_create_team_action_boundary()
+    failures += check_team_page_pairing_command_action_boundary()
+    failures += check_team_page_request_keys_action_boundary()
+    failures += check_team_page_event_reducer_boundary()
+    failures += check_team_page_event_effect_sink_boundary()
+    failures += check_team_page_key_event_log_boundary()
+    failures += check_team_page_runtime_port_boundary()
+    failures += check_team_page_activity_sink_boundary()
+    failures += check_team_page_deferred_dispatch_boundary()
+    failures += check_team_page_kick_confirm_action_boundary()
+    failures += check_team_page_transfer_leader_action_boundary()
+    failures += check_team_page_state_store_boundary()
     failures += check_chat_ui_legacy_burndown()
     failures += check_team_rich_payload_presentation_boundary()
     failures += check_team_position_picker_renderer_boundary()
@@ -2889,6 +4874,7 @@ def main() -> int:
     failures += check_map_tile_render_queue_cache_boundary()
     failures += check_map_overlay_route_tracker_boundary()
     failures += check_gps_runtime_scheduling_boundary()
+    failures += check_team_consumer_shadow_state_closeout()
     failures += check_phase7_final_readiness()
     failures += check_chat_runtime_event_pump_boundary()
     failures += check_chat_runtime_wires_team_action_sink()

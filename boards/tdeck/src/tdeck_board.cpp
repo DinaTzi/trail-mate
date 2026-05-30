@@ -2,6 +2,7 @@
 #include "boards/tdeck/tdeck_board.h"
 #include "board/sd_utils.h"
 #include "display/drivers/ST7789TDeck.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include <AudioFileSourcePROGMEM.h>
 #include <AudioGeneratorRTTTL.h>
 #include <AudioOutputI2S.h>
@@ -9,6 +10,7 @@
 #include <Wire.h>
 #include <ctime>
 #include <driver/gpio.h>
+#include <esp_heap_caps.h>
 #include <limits>
 #include <sys/time.h>
 
@@ -35,6 +37,8 @@ constexpr uint8_t kGpsProfileAuto = 0;
 constexpr uint8_t kGpsProfileNmeaPassive = 1;
 constexpr uint8_t kGpsProfileUbxLegacy = 2;
 constexpr uint8_t kGpsProfileUbxModern = 3;
+constexpr size_t kMessageToneMinDmaHeapBytes = 24 * 1024;
+constexpr size_t kMessageToneMinInternalHeapBytes = 48 * 1024;
 uint8_t s_backlight_level = 0;
 
 #if DEVICE_MAX_BRIGHTNESS_LEVEL > 0
@@ -188,29 +192,6 @@ int read_battery_mv_adc_fallback()
 #else
     return -1;
 #endif
-}
-
-int battery_percent_from_mv(int mv)
-{
-    if (mv <= 0)
-    {
-        return -1;
-    }
-    int pct = static_cast<int>(((mv - 3300) / 900.0f) * 100.0f);
-    if (pct < 0)
-    {
-        pct = 0;
-    }
-    if (pct > 100)
-    {
-        pct = 100;
-    }
-    return pct;
-}
-
-int read_battery_percent_adc_fallback()
-{
-    return battery_percent_from_mv(read_battery_mv_adc_fallback());
 }
 
 bool is_supported_gps_baud(uint32_t baud)
@@ -657,8 +638,7 @@ bool TDeckBoard::installSD()
 
     uint8_t cardType = CARD_NONE;
     uint32_t cardSizeMB = 0;
-    // Prefer a practical default speed; fallback ladder inside sd_utils preserves compatibility.
-    bool ok = sdutil::installSpiSd(*this, SD_CS, 4000000U, "/sd",
+    bool ok = sdutil::installSpiSd(*this, SD_CS, SD_SPI_FREQUENCY, "/sd",
                                    extra_cs, extra_cs_count,
                                    &cardType, &cardSizeMB,
                                    display_ready_);
@@ -680,7 +660,7 @@ void TDeckBoard::uninstallSD()
 {
     if (LilyGoDispArduinoSPI::lock(portMAX_DELAY))
     {
-        SD.end();
+        ::platform::esp::arduino_common::storage::unmount_sd_card();
         LilyGoDispArduinoSPI::unlock();
         Serial.println("[TDeckBoard] SD unmounted");
     }
@@ -709,78 +689,19 @@ bool TDeckBoard::isCharging()
 
 int TDeckBoard::getBatteryLevel()
 {
-    int percent = -1;
+    power::BatteryEstimatorSample sample{};
+    sample.now_ms = millis();
     if (pmu_ready_)
     {
-        percent = pmu_.getBatteryPercent();
+        sample.pmu_percent = pmu_.getBatteryPercent();
+        sample.pmu_battery_mv = static_cast<int>(pmu_.getBattVoltage());
+        sample.charging = pmu_.isCharging();
+        sample.vbus_present = pmu_.isVbusIn();
     }
 
-    int adc_percent = -1;
-    auto ensure_adc_percent = [&adc_percent]()
-    {
-        if (adc_percent < 0)
-        {
-            adc_percent = read_battery_percent_adc_fallback();
-        }
-    };
-
-    // PMU can transiently return invalid values on noisy buses.
-    if (percent < 0 || percent > 100)
-    {
-        ensure_adc_percent();
-        if (adc_percent >= 0)
-        {
-            percent = adc_percent;
-        }
-    }
-
-    // Guard against fake PMU 0% (common when PMU state is stale/not actually wired).
-    if (percent == 0)
-    {
-        ensure_adc_percent();
-        if (adc_percent >= 10)
-        {
-            percent = adc_percent;
-        }
-    }
-
-    // Guard against unrealistic sudden drops; re-check with ADC before accepting.
-    if (last_battery_level_ >= 0 && percent >= 0 && percent + 40 < last_battery_level_)
-    {
-        ensure_adc_percent();
-        if (adc_percent >= 0)
-        {
-            percent = adc_percent;
-        }
-    }
-
-    if (percent < 0)
-    {
-        return last_battery_level_;
-    }
-
-    if (percent > 100)
-    {
-        percent = 100;
-    }
-
-    // Suppress sudden fake drops to 0% while battery is clearly not empty.
-    bool charging = isCharging();
-    if (!charging && percent == 0 && last_battery_level_ >= 15)
-    {
-        if (battery_zero_streak_ < 3)
-        {
-            battery_zero_streak_++;
-            return last_battery_level_;
-        }
-    }
-    else
-    {
-        battery_zero_streak_ = 0;
-    }
-
-    last_battery_level_ = percent;
-    return percent;
+    sample.adc_battery_mv = read_battery_mv_adc_fallback();
+    const power::BatteryEstimate estimate = battery_estimator_.update(sample);
+    return estimate.percent;
 }
 
 void TDeckBoard::setBrightness(uint8_t level)
@@ -831,7 +752,7 @@ bool TDeckBoard::isCardReady()
     bool ready = false;
     if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(100)))
     {
-        ready = (SD.sectorSize() != 0);
+        ready = ::platform::esp::arduino_common::storage::sd_card_ready();
         LilyGoDispArduinoSPI::unlock();
     }
     return ready;
@@ -1327,6 +1248,18 @@ void TDeckBoard::playMessageTone()
 
     s_playing = true;
     s_last_play_ms = now;
+
+    if (heap_caps_get_free_size(MALLOC_CAP_DMA) < kMessageToneMinDmaHeapBytes ||
+        heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) <
+            kMessageToneMinInternalHeapBytes)
+    {
+        std::printf("[TDeck] message tone skipped: low heap dma=%u internal=%u\n",
+                    static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_DMA)),
+                    static_cast<unsigned>(
+                        heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
+        s_playing = false;
+        return;
+    }
 
     static const char kMessageToneRtttl[] = "MsgRcv:d=4,o=6,b=200:32e,32g,32b,16c7";
 

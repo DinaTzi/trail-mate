@@ -85,7 +85,7 @@ capabilities:
 capability_bindings:
   lora:
     board_provider: "t_lora_pager.radio"
-    platform_driver: "esp_radiolib_sx1262_packet_radio"
+    platform_driver: "esp_radiolib_pager_packet_radio"
     runtime_owner: "radio_task"
     protocol_consumers: ["core_mesh.meshtastic", "core_mesh.meshcore"]
   gps:
@@ -132,7 +132,6 @@ race_policy:
 build:
   app: "apps/esp32_lvgl"
   board_package: "boards/tlora_pager"
-  platformio_envs: ["tlora_pager_sx1262"]
+  platformio_envs: ["tlora_pager_sx1262", "tlora_pager_lr1121"]
   enabled_modules: ["core_chat", "core_device", "core_gps", "core_hostlink", "core_phone", "core_mesh", "ui_presentation", "core_sys", "core_team", "ui_shared"]
   disabled_modules: []
-

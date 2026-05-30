@@ -1,6 +1,6 @@
 #pragma once
 
-#include "platform/ui/team_ui_store_runtime.h"
+#include "platform/ui/team_ui_chat_log_store.h"
 #include "ui/team_presentation/team_rich_payload_display.h"
 
 namespace ui::team_presentation

@@ -206,6 +206,7 @@ bool initialize()
     callbacks.utc_now_fn = utc_now;
     callbacks.timezone_offset_min_fn = platform::ui::time::timezone_offset_min;
     callbacks.set_timezone_offset_min_fn = platform::ui::time::set_timezone_offset_min;
+    callbacks.apply_timezone_offset_fn = platform::ui::time::apply_timezone_offset_for_utc;
     callbacks.active_lora_frequency_hz_fn = active_lora_frequency_hz;
     callbacks.format_frequency_fn = format_freq;
     callbacks.battery_info_fn = platform::ui::device::battery_info;

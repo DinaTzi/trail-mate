@@ -12,12 +12,11 @@
 #include "chat_presentation_adapters/chat_conversation_mapper.h"
 #include "platform/ui/screen_runtime.h"
 #include "sys/event_bus.h"
-#include "team/protocol/team_location_marker.h"
 #include "ui/app_runtime.h"
 #include "ui/assets/fonts/font_utils.h"
 #include "ui/localization.h"
 #include "ui/screens/chat/chat_protocol_support.h"
-#include "ui/team_actions/team_action_sink.h"
+#include "ui/screens/chat/chat_team_workflow.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/ime/ime_widget.h"
 #include "ui/widgets/system_notification.h"
@@ -174,55 +173,6 @@ void applySnapshotMessagesToConversation(
     conversation.scrollToBottom();
 }
 
-bool buildSelectedTeamSnapshot(::ui::chat::ChatWorkspaceModel& model,
-                               ::ui::chat::ChatWorkspaceSnapshot& out)
-{
-    if (!model.buildSnapshot(out) || out.conversation_count == 0)
-    {
-        return false;
-    }
-
-    (void)model.selectConversation(out.conversations[0].id);
-    (void)model.buildSnapshot(out);
-    return out.header.valid && out.conversation_count > 0;
-}
-
-void showTeamSendFailure(::ui::UiActionResult result)
-{
-    const char* message = "Team chat send failed";
-    if (result.failure == ::ui::UiActionFailure::NotReady)
-    {
-        message = "Team keys not ready";
-    }
-    else if (result.failure == ::ui::UiActionFailure::Unsupported)
-    {
-        message = "Team chat unsupported";
-    }
-    else if (result.failure == ::ui::UiActionFailure::InvalidInput)
-    {
-        message = "Message unavailable";
-    }
-    ::ui::SystemNotification::show(message, 2000);
-}
-
-void showTeamLocationSendFailure(::ui::UiActionResult result)
-{
-    const char* message = "Team location send failed";
-    if (result.failure == ::ui::UiActionFailure::NotReady)
-    {
-        message = "Team location not ready";
-    }
-    else if (result.failure == ::ui::UiActionFailure::Unsupported)
-    {
-        message = "Team location unsupported";
-    }
-    else if (result.failure == ::ui::UiActionFailure::InvalidInput)
-    {
-        message = "Invalid marker";
-    }
-    ::ui::SystemNotification::show(message, 2000);
-}
-
 const char* key_verification_action_failure_message(::ui::UiActionResult result)
 {
     if (result.failure == ::ui::UiActionFailure::NotReady)
@@ -300,16 +250,14 @@ void handle_conversation_back(void* user_data)
 UiController::UiController(lv_obj_t* parent,
                            chat::ChatService& service,
                            ::ui::chat::ChatWorkspaceModel& chat_model,
-                           ::ui::chat::ChatWorkspaceModel& team_chat_model,
-                           ::ui::team_actions::ITeamActionSink* team_action_sink,
+                           ChatTeamWorkflow& team_workflow,
                            ::ui::key_verification::KeyVerificationModel*
                                key_verification_model,
                            chat::ChannelId initial_channel,
                            ExitRequestCallback exit_request,
                            void* exit_request_user_data)
     : parent_(parent), service_(service), chat_model_(chat_model),
-      team_chat_model_(team_chat_model),
-      team_action_sink_(team_action_sink),
+      team_workflow_(team_workflow),
       key_verification_model_(key_verification_model),
       state_(State::ChannelList),
       current_channel_(initial_channel),
@@ -583,7 +531,7 @@ void UiController::switchToConversation(chat::ConversationId conv)
     if (team_conv_active_)
     {
         const bool loaded =
-            buildSelectedTeamSnapshot(team_chat_model_, team_chat_snapshot_buffer_);
+            team_workflow_.buildSelectedSnapshot(team_chat_snapshot_buffer_);
         std::string title = loaded && team_chat_snapshot_buffer_.conversation_count > 0
                                 ? team_chat_snapshot_buffer_.conversations[0].title.c_str()
                                 : "Team";
@@ -599,7 +547,7 @@ void UiController::switchToConversation(chat::ConversationId conv)
         startTeamConversationTimer();
         if (loaded && unread != 0)
         {
-            (void)team_chat_model_.markRead(
+            (void)team_workflow_.markRead(
                 team_chat_snapshot_buffer_.conversations[0].id);
             sys::EventBus::publish(
                 new sys::ChatUnreadChangedEvent(kTeamChatChannelRaw, 0), 0);
@@ -730,7 +678,7 @@ void UiController::switchToCompose(chat::ConversationId conv)
     std::string title = resolveConversationDisplayName(conv);
     if (team_conv_active_)
     {
-        if (buildSelectedTeamSnapshot(team_chat_model_, team_chat_snapshot_buffer_) &&
+        if (team_workflow_.buildSelectedSnapshot(team_chat_snapshot_buffer_) &&
             team_chat_snapshot_buffer_.conversation_count > 0)
         {
             title = team_chat_snapshot_buffer_.conversations[0].title.c_str();
@@ -785,10 +733,12 @@ void UiController::handleSendMessage(const std::string& text)
     if (team_conv_active_)
     {
         const ::ui::UiActionResult result =
-            team_chat_model_.sendMessage(text.c_str());
+            team_workflow_.sendText(text.c_str());
         if (!result.ok)
         {
-            showTeamSendFailure(result);
+            ::ui::SystemNotification::show(
+                team_workflow_.textSendFailureMessage(result),
+                2000);
         }
         handleComposeSendDone(result.ok, false);
         return;
@@ -1027,7 +977,7 @@ bool UiController::loadChatSnapshot()
 
 bool UiController::loadTeamChatSnapshot()
 {
-    return team_chat_model_.buildSnapshot(team_chat_snapshot_buffer_);
+    return team_workflow_.buildSnapshot(team_chat_snapshot_buffer_);
 }
 
 void UiController::refreshTeamConversation()
@@ -1288,38 +1238,16 @@ void UiController::onTeamPositionCancel()
     closeTeamPositionPicker(true);
 }
 
-bool UiController::sendTeamLocationWithIcon(uint8_t icon_id)
-{
-    if (!team::proto::team_location_marker_icon_is_valid(icon_id))
-    {
-        ::ui::SystemNotification::show("Invalid marker", 1500);
-        return false;
-    }
-
-    if (team_action_sink_ == nullptr)
-    {
-        ::ui::SystemNotification::show("Team chat send failed", 2000);
-        return false;
-    }
-
-    ::ui::team_actions::TeamActionRequest request;
-    request.kind = ::ui::team_actions::TeamActionKind::LocationMarker;
-    request.location.use_current_location = true;
-    request.location.marker_icon = icon_id;
-    request.location.label = team::proto::team_location_marker_icon_name(icon_id);
-
-    const auto result = team_action_sink_->sendTeamAction(request);
-    if (!result.ok)
-    {
-        showTeamLocationSendFailure(result);
-    }
-    return result.ok;
-}
-
 void UiController::onTeamPositionIconSelected(uint8_t icon_id)
 {
     closeTeamPositionPicker(true);
-    sendTeamLocationWithIcon(icon_id);
+    const auto result = team_workflow_.sendCurrentLocationMarker(icon_id);
+    if (!result.ok)
+    {
+        ::ui::SystemNotification::show(
+            team_workflow_.locationSendFailureMessage(result),
+            2000);
+    }
     switchToConversation(current_conv_);
 }
 
@@ -1381,10 +1309,12 @@ void UiController::handleComposeAction(ChatComposeScreen::ActionIntent intent)
             return;
         }
         const ::ui::UiActionResult result =
-            team_chat_model_.sendMessage(text.c_str());
+            team_workflow_.sendText(text.c_str());
         if (!result.ok)
         {
-            showTeamSendFailure(result);
+            ::ui::SystemNotification::show(
+                team_workflow_.textSendFailureMessage(result),
+                2000);
         }
         switchToConversation(current_conv_);
         return;

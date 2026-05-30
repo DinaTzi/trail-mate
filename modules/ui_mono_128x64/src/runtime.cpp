@@ -1043,6 +1043,16 @@ void formatTimezoneLabel(int offset_min, char* out, size_t out_len)
     }
 }
 
+time_t applyLocalTimezone(const HostCallbacks& host, time_t utc_seconds)
+{
+    if (host.apply_timezone_offset_fn)
+    {
+        return host.apply_timezone_offset_fn(utc_seconds);
+    }
+    const int tz_offset_s = (host.timezone_offset_min_fn ? host.timezone_offset_min_fn() : 0) * 60;
+    return utc_seconds + static_cast<time_t>(tz_offset_s);
+}
+
 void formatUptimeLabel(uint32_t uptime_seconds, char* out, size_t out_len)
 {
     if (!out || out_len == 0)
@@ -3867,8 +3877,7 @@ void Runtime::buildMessageInfo()
             return;
         }
 
-        const int tz_offset_s = (host_.timezone_offset_min_fn ? host_.timezone_offset_min_fn() : 0) * 60;
-        const time_t adjusted = static_cast<time_t>(timestamp_s + tz_offset_s);
+        const time_t adjusted = applyLocalTimezone(host_, static_cast<time_t>(timestamp_s));
         const std::tm* tm = std::gmtime(&adjusted);
         if (!tm)
         {
@@ -4710,9 +4719,9 @@ void Runtime::formatTime(char* out_time, size_t out_len, char* out_date, size_t 
     time_t now = host_.utc_now_fn ? host_.utc_now_fn() : 0;
     const bool has_valid_wall_clock = now >= static_cast<time_t>(1700000000);
 
-    if (has_valid_wall_clock && host_.timezone_offset_min_fn)
+    if (has_valid_wall_clock)
     {
-        now += static_cast<time_t>(host_.timezone_offset_min_fn()) * 60;
+        now = applyLocalTimezone(host_, now);
     }
 
     if (!has_valid_wall_clock)
@@ -4766,8 +4775,7 @@ void Runtime::formatTimestamp(char* out, size_t out_len, uint32_t timestamp_s) c
         return;
     }
 
-    const int tz_offset_s = (host_.timezone_offset_min_fn ? host_.timezone_offset_min_fn() : 0) * 60;
-    const time_t adjusted = static_cast<time_t>(timestamp_s + tz_offset_s);
+    const time_t adjusted = applyLocalTimezone(host_, static_cast<time_t>(timestamp_s));
     const std::tm* tm = std::gmtime(&adjusted);
     if (!tm)
     {
@@ -4797,8 +4805,7 @@ void Runtime::formatConversationTime(char* out, size_t out_len, uint32_t timesta
 
     if (timestamp_s >= 1700000000U)
     {
-        const int tz_offset_s = (host_.timezone_offset_min_fn ? host_.timezone_offset_min_fn() : 0) * 60;
-        const time_t adjusted = static_cast<time_t>(timestamp_s + tz_offset_s);
+        const time_t adjusted = applyLocalTimezone(host_, static_cast<time_t>(timestamp_s));
         const std::tm* tm = std::gmtime(&adjusted);
         if (tm)
         {

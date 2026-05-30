@@ -28,6 +28,7 @@ constexpr StorageKeyAlias kStorageKeyAliases[] = {
     {"vibration_enabled", "vibe_enabled"},
     {"chat_message_alerts", "chat_msg_alert"},
     {"chat_contact_alerts", "chat_ct_alert"},
+    {"timezone_profile", "timezone_prof"},
     {"gauge_design_mah", "gauge_dsgn"},
 };
 

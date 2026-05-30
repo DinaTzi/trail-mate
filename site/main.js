@@ -119,6 +119,7 @@ const I18N = {
     "install.note":
       "Use Google Chrome or Microsoft Edge over HTTPS with a USB data cable. The browser installer currently targets the ESP32-S3 builds.",
     "install.pagerCopy": "SX1262 build for the keyboard pager hardware.",
+    "install.pagerLr1121Copy": "LR1121 build for the Sub-GHz + 2.4 GHz keyboard pager hardware.",
     "install.tdeckCopy": "Keyboard + touch build tuned for the T-Deck layout.",
     "install.twatchCopy": "Touch-first watch build for compact field experiments.",
     "install.gatCopy":
@@ -262,6 +263,7 @@ const I18N = {
     "install.title": "网页刷机",
     "install.note": "请使用 Google Chrome 或 Microsoft Edge，通过 HTTPS 和 USB 数据线刷写。目前网页刷机目标是 ESP32-S3 构建。",
     "install.pagerCopy": "面向键盘 Pager 硬件的 SX1262 构建。",
+    "install.pagerLr1121Copy": "面向 Sub-GHz + 2.4 GHz 键盘 Pager 硬件的 LR1121 构建。",
     "install.tdeckCopy": "面向 T-Deck 键盘 + 触屏布局调校的构建。",
     "install.twatchCopy": "面向紧凑触屏手表实验的构建。",
     "install.gatCopy": "nRF52 目标暂未接入浏览器刷机，请使用发布包手动刷写。",
@@ -395,6 +397,51 @@ const DEVICES = [
         src: "./assets/showcase/utility-tracker.png",
         title: { en: "Tracker", zh: "轨迹" },
         alt: { en: "T-LoRa Pager tracker screen", zh: "T-LoRa Pager 轨迹界面" },
+      },
+    ],
+  },
+  {
+    id: "tlora-pager-lr1121",
+    chip: "ESP32-S3 + LR1121",
+    title: {
+      en: "LilyGo T-LoRa Pager LR1121",
+      zh: "LilyGo T-LoRa Pager LR1121",
+    },
+    status: {
+      en: "Release build ready",
+      zh: "发布构建已接入",
+    },
+    summary: {
+      en: "LR1121 Pager variant with its own CI build, web flasher target, RF switch setup, and TCXO bring-up.",
+      zh: "LR1121 Pager 变体已接入独立 CI 构建、网页刷机目标、RF switch 配置和 TCXO 启动。",
+    },
+    interactions: {
+      en: [
+        "Use this target for the LR1121 Pager hardware, not the SX1262 Pager firmware.",
+        "The release pipeline publishes a separate OTA image and merged web flasher image for this variant.",
+        "Shared Pager screenshots are shown here until dedicated LR1121 captures are added.",
+      ],
+      zh: [
+        "LR1121 Pager 硬件应使用这个目标，而不是 SX1262 Pager 固件。",
+        "发布流水线会为这个变体产出独立 OTA 镜像和网页刷机合并镜像。",
+        "在补充 LR1121 专属截图前，这里暂用共享 Pager 截图。",
+      ],
+    },
+    screenshots: [
+      {
+        src: "./assets/showcase/home-main.png",
+        title: { en: "Home launcher", zh: "主菜单" },
+        alt: { en: "T-LoRa Pager LR1121 home launcher", zh: "T-LoRa Pager LR1121 主菜单" },
+      },
+      {
+        src: "./assets/showcase/chat-messages.png",
+        title: { en: "Message history", zh: "消息记录" },
+        alt: { en: "T-LoRa Pager LR1121 message history screen", zh: "T-LoRa Pager LR1121 消息记录界面" },
+      },
+      {
+        src: "./assets/showcase/team-map.png",
+        title: { en: "Team map", zh: "团队地图" },
+        alt: { en: "T-LoRa Pager LR1121 team map screen", zh: "T-LoRa Pager LR1121 团队地图界面" },
       },
     ],
   },

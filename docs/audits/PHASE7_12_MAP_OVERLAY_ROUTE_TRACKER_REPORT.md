@@ -8,13 +8,15 @@
 | Team member overlay semantic state | Added `MapOverlayProjector::projectTeamMember(...)` |
 | Renderer-driven runtime reads | Shared map viewport remains free of GPS/team store reads; checker guards the boundary |
 | Legacy overlay fact gathering | Added `LegacyMapOverlaySource` with `IMapOverlayGpsSource` and `IMapOverlayTeamSource` ports |
+| Team location source | Added `TeamMapOverlaySource`; GPS/map/dashboard consumers no longer call Team posring directly |
 
 ## Runtime Wiring
 
 The Linux GPS page runtime now builds a `MapOverlaySnapshot` through
-`LegacyMapOverlaySource` at the runtime/composition boundary. This keeps shared
-map rendering on the passive side of the boundary while preserving current
-visual behavior.
+`MapOverlaySnapshotSource` at the runtime/composition boundary. Team positions
+come from `TeamMapOverlaySource`, which is the only UI consumer seam allowed to
+read Team posring. This keeps shared map rendering on the passive side of the
+boundary while preserving current visual behavior.
 
 ## Still Contained
 

@@ -864,6 +864,10 @@ h1 {
   background-image: url("./assets/animal-island/icons/icon-chat.svg");
 }
 
+.device-tab[data-device-target="tlora-pager-lr1121"]::before {
+  background-image: url("./assets/animal-island/icons/wifi.svg");
+}
+
 .device-tab[data-device-target="tdeck"]::before {
   background-image: url("./assets/animal-island/icons/icon-map.svg");
 }

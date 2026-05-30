@@ -6,6 +6,7 @@
 #include "freertos/task.h"
 #include "platform/esp/arduino_common/app_tasks.h"
 #include "platform/esp/arduino_common/gps/gps_service_api.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include "platform/esp/common/shared_spi_lock.h"
 #include "platform/ui/device_runtime.h"
 #include "screen_sleep.h"
@@ -14,7 +15,6 @@
 #include <cstdio>
 
 #if defined(ARDUINO_USB_MODE)
-#include <SD.h>
 #include <USB.h>
 #include <USBMSC.h>
 #include <esp_event.h>
@@ -65,7 +65,8 @@ int32_t usbReadCallback(uint32_t lba, uint32_t offset, void* buffer, uint32_t bu
         return -1;
     }
 
-    const uint32_t sec_size = SD.sectorSize();
+    const uint32_t sec_size =
+        ::platform::esp::arduino_common::storage::sd_card_info().sector_size;
     if (sec_size == 0)
     {
         return -1;
@@ -73,7 +74,8 @@ int32_t usbReadCallback(uint32_t lba, uint32_t offset, void* buffer, uint32_t bu
 
     for (uint32_t index = 0; index < bufsize / sec_size; ++index)
     {
-        if (!SD.readRAW(reinterpret_cast<uint8_t*>(buffer) + (index * sec_size), lba + index))
+        if (!::platform::esp::arduino_common::storage::sd_read_raw(
+                lba + index, reinterpret_cast<uint8_t*>(buffer) + (index * sec_size)))
         {
             return -1;
         }
@@ -94,13 +96,16 @@ int32_t usbWriteCallback(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_
         return -1;
     }
 
-    uint64_t free_space = SD.totalBytes() - SD.usedBytes();
+    const auto card_info = ::platform::esp::arduino_common::storage::sd_card_info();
+    uint64_t free_space =
+        card_info.total_bytes > card_info.used_bytes ? card_info.total_bytes - card_info.used_bytes
+                                                     : 0;
     if (bufsize > free_space)
     {
         return -1;
     }
 
-    const uint32_t sec_size = SD.sectorSize();
+    const uint32_t sec_size = card_info.sector_size;
     if (sec_size == 0)
     {
         return -1;
@@ -114,7 +119,7 @@ int32_t usbWriteCallback(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_
             return -1;
         }
         std::memcpy(blk_buffer, buffer + sec_size * index, sec_size);
-        if (!SD.writeRAW(blk_buffer, lba + index))
+        if (!::platform::esp::arduino_common::storage::sd_write_raw(lba + index, blk_buffer))
         {
             return -1;
         }
@@ -144,20 +149,21 @@ bool setup_usb_msc()
         return false;
     }
 
-    if (SD.cardType() == CARD_NONE)
+    if (!::platform::esp::arduino_common::storage::sd_card_ready())
     {
         set_status_message("SD Card Not Detected");
         return false;
     }
 
-    const uint32_t sec_size = SD.sectorSize();
+    const auto card_info = ::platform::esp::arduino_common::storage::sd_card_info();
+    const uint32_t sec_size = card_info.sector_size;
     if (sec_size == 0)
     {
         set_status_message("SD Card Sector Error");
         return false;
     }
 
-    const uint64_t card_size = SD.cardSize();
+    const uint64_t card_size = card_info.card_size_bytes;
     if (card_size == 0)
     {
         set_status_message("SD Card Not Ready");

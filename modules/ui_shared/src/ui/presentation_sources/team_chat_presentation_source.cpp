@@ -1,6 +1,7 @@
 #include "ui/presentation_sources/team_chat_presentation_source.h"
 
-#include "platform/ui/team_ui_store_runtime.h"
+#include "platform/ui/team_ui_chat_log_store.h"
+#include "platform/ui/team_ui_snapshot_store.h"
 #include "ui/team_presentation/team_rich_payload_projector.h"
 #include "ui_presentation/common/fixed_text.h"
 
@@ -96,11 +97,76 @@ uint64_t messageLocalId(const ::team::ui::TeamChatLogEntry& entry,
     return id == 0 ? static_cast<uint64_t>(index + 1U) : id;
 }
 
+ui::chat::TeamMessageRichPayloadKind toMessageKind(
+    ::ui::team_presentation::TeamRichPayloadKind kind)
+{
+    switch (kind)
+    {
+    case ::ui::team_presentation::TeamRichPayloadKind::None:
+        return ui::chat::TeamMessageRichPayloadKind::None;
+    case ::ui::team_presentation::TeamRichPayloadKind::Text:
+        return ui::chat::TeamMessageRichPayloadKind::Text;
+    case ::ui::team_presentation::TeamRichPayloadKind::Location:
+        return ui::chat::TeamMessageRichPayloadKind::Location;
+    case ::ui::team_presentation::TeamRichPayloadKind::Command:
+        return ui::chat::TeamMessageRichPayloadKind::Command;
+    case ::ui::team_presentation::TeamRichPayloadKind::Unsupported:
+        return ui::chat::TeamMessageRichPayloadKind::Unsupported;
+    }
+    return ui::chat::TeamMessageRichPayloadKind::Unsupported;
+}
+
+ui::chat::TeamMessageCommandKind toMessageCommandKind(
+    ::ui::team_presentation::TeamCommandDisplayKind kind)
+{
+    switch (kind)
+    {
+    case ::ui::team_presentation::TeamCommandDisplayKind::Unknown:
+        return ui::chat::TeamMessageCommandKind::Unknown;
+    case ::ui::team_presentation::TeamCommandDisplayKind::MoveTo:
+        return ui::chat::TeamMessageCommandKind::MoveTo;
+    case ::ui::team_presentation::TeamCommandDisplayKind::RallyPoint:
+        return ui::chat::TeamMessageCommandKind::RallyPoint;
+    case ::ui::team_presentation::TeamCommandDisplayKind::Hold:
+        return ui::chat::TeamMessageCommandKind::Hold;
+    case ::ui::team_presentation::TeamCommandDisplayKind::Help:
+        return ui::chat::TeamMessageCommandKind::Help;
+    case ::ui::team_presentation::TeamCommandDisplayKind::CheckIn:
+        return ui::chat::TeamMessageCommandKind::CheckIn;
+    case ::ui::team_presentation::TeamCommandDisplayKind::Custom:
+        return ui::chat::TeamMessageCommandKind::Custom;
+    }
+    return ui::chat::TeamMessageCommandKind::Unknown;
+}
+
+void copyRichPayload(
+    ui::chat::TeamMessageRichPayload& out,
+    const ::ui::team_presentation::TeamRichPayloadDisplay& display)
+{
+    out = ui::chat::TeamMessageRichPayload{};
+    out.kind = toMessageKind(display.kind);
+    ui::copyText(out.title, display.title.c_str());
+    ui::copyText(out.summary, display.summary.c_str());
+    ui::copyText(out.badge, display.badge.c_str());
+    out.location.lat = display.location.lat;
+    out.location.lon = display.location.lon;
+    out.location.has_altitude = display.location.has_altitude;
+    out.location.altitude_m = display.location.altitude_m;
+    out.location.marker_icon = display.location.marker_icon;
+    out.command.kind = toMessageCommandKind(display.command.kind);
+    out.command.lat = display.command.lat;
+    out.command.lon = display.command.lon;
+    out.command.radius_m = display.command.radius_m;
+    out.command.priority = display.command.priority;
+}
+
 } // namespace
 
 TeamChatPresentationSource::TeamChatPresentationSource(
-    ::team::ui::ITeamUiStore& team_store)
-    : team_store_(team_store)
+    ::team::ui::ITeamUiSnapshotStore& snapshot_store,
+    ::team::ui::ITeamUiChatLogStore& chat_log_store)
+    : snapshot_store_(snapshot_store),
+      chat_log_store_(chat_log_store)
 {
 }
 
@@ -118,7 +184,7 @@ bool TeamChatPresentationSource::buildChatWorkspaceSnapshot(
     ui::copyText(out.composer_placeholder, "Team message");
 
     ::team::ui::TeamUiSnapshot snap;
-    if (!team_store_.load(snap) || !snap.has_team_id)
+    if (!snapshot_store_.load(snap) || !snap.has_team_id)
     {
         return true;
     }
@@ -138,9 +204,9 @@ bool TeamChatPresentationSource::buildChatWorkspaceSnapshot(
     ui::copyText(conversation.subtitle, "No messages");
 
     std::vector<::team::ui::TeamChatLogEntry> entries;
-    if (team::ui::team_ui_chatlog_load_recent(snap.team_id,
-                                              kMaxMessageRows,
-                                              entries) &&
+    if (chat_log_store_.loadRecent(snap.team_id,
+                                   kMaxMessageRows,
+                                   entries) &&
         !entries.empty())
     {
         ::ui::team_presentation::TeamRichPayloadProjector projector;
@@ -180,6 +246,8 @@ bool TeamChatPresentationSource::buildChatWorkspaceSnapshot(
                                         : ui::chat::MessageOrigin::LocalStored;
         row.ref.local_id = messageLocalId(entry, i);
         ui::copyText(row.text, display.summary.c_str());
+        row.has_team_rich_payload = true;
+        copyRichPayload(row.team_rich_payload, display);
         copyTimeLabel(row.time_label, entry.ts);
         copySenderLabel(row.sender_label, snap, entry);
     }

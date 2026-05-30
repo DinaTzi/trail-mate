@@ -13,7 +13,6 @@
 #include "ui/screens/chat/chat_compose_components.h"
 #include "ui/screens/chat/chat_conversation_components.h"
 #include "ui/screens/chat/chat_message_list_components.h"
-#include "ui/team_actions/team_action_sink.h"
 #include "ui/widgets/ime/ime_widget.h"
 #include "ui_chat_runtime/chat_ui_refresh_sink.h"
 #include "ui_lvgl_ux_packs/common/key_verification_modal_renderer.h"
@@ -35,6 +34,8 @@ namespace chat
 namespace ui
 {
 
+class ChatTeamWorkflow;
+
 // Phase 5.6 note:
 //
 // UiController is still a legacy application controller. It has started
@@ -55,8 +56,7 @@ class UiController : public IChatUiRefreshSink
     UiController(lv_obj_t* parent,
                  chat::ChatService& service,
                  ::ui::chat::ChatWorkspaceModel& chat_model,
-                 ::ui::chat::ChatWorkspaceModel& team_chat_model,
-                 ::ui::team_actions::ITeamActionSink* team_action_sink = nullptr,
+                 ChatTeamWorkflow& team_workflow,
                  ::ui::key_verification::KeyVerificationModel*
                      key_verification_model = nullptr,
                  chat::ChannelId initial_channel = chat::ChannelId::PRIMARY,
@@ -90,8 +90,7 @@ class UiController : public IChatUiRefreshSink
     // presentation should migrate toward ChatWorkspaceModel.
     chat::ChatService& service_;
     ::ui::chat::ChatWorkspaceModel& chat_model_;
-    ::ui::chat::ChatWorkspaceModel& team_chat_model_;
-    ::ui::team_actions::ITeamActionSink* team_action_sink_ = nullptr;
+    ChatTeamWorkflow& team_workflow_;
     ::ui::key_verification::KeyVerificationModel* key_verification_model_ =
         nullptr;
     State state_;
@@ -130,15 +129,11 @@ class UiController : public IChatUiRefreshSink
     void updateConversationMetaForMessage(const chat::ChatMessage& msg, bool increment_unread);
     bool updateConversationViewForIncoming(const chat::ChatMessage& msg);
     void reloadConversationView();
-    // Phase 5.6-f: Team text projection now flows through team_chat_model_.
-    // Team location and command rendering remain a bounded legacy path until
-    // their richer presentation shape is defined.
+    // Team text, read projection, and location action sends flow through
+    // ChatTeamWorkflow.
     void refreshTeamConversation();
     void startTeamConversationTimer();
     void stopTeamConversationTimer();
-    // Phase 7.2: Team location/command sends flow through Team action sinks.
-    // Rich Team payload rendering remains bounded legacy.
-    bool sendTeamLocationWithIcon(uint8_t icon_id);
     void openTeamPositionPicker();
     void closeTeamPositionPicker(bool restore_group);
     void updateTeamPositionPickerHint(uint8_t icon_id);

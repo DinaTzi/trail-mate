@@ -7,6 +7,7 @@
 #include "platform/esp/idf_common/bsp_runtime.h"
 #include "platform/ui/device_runtime.h"
 #include "platform/ui/settings_store.h"
+#include "platform/ui/timezone_profile.h"
 
 extern "C" lv_draw_buf_t* lv_snapshot_take(lv_obj_t* obj, lv_color_format_t cf);
 extern "C" void lv_draw_buf_destroy(lv_draw_buf_t* draw_buf);
@@ -16,7 +17,9 @@ namespace
 
 constexpr const char* kSettingsNs = "settings";
 constexpr const char* kTimezoneKey = "timezone_offset";
+constexpr const char* kTimezoneProfileKey = "timezone_profile";
 int s_timezone_offset_min = 0;
+int s_timezone_profile_id = platform::ui::time::default_timezone_profile()->id;
 bool s_timezone_loaded = false;
 
 void ensure_timezone_loaded()
@@ -26,6 +29,15 @@ void ensure_timezone_loaded()
         return;
     }
     s_timezone_offset_min = platform::ui::settings_store::get_int(kSettingsNs, kTimezoneKey, 0);
+    s_timezone_profile_id = platform::ui::settings_store::get_int(
+        kSettingsNs,
+        kTimezoneProfileKey,
+        platform::ui::time::timezone_profile_id_for_legacy_offset(s_timezone_offset_min));
+    if (!platform::ui::time::timezone_profile_id_is_fixed(s_timezone_profile_id) &&
+        !platform::ui::time::timezone_profile_by_id(s_timezone_profile_id))
+    {
+        s_timezone_profile_id = platform::ui::time::timezone_profile_id_for_legacy_offset(s_timezone_offset_min);
+    }
     s_timezone_loaded = true;
 }
 
@@ -48,19 +60,48 @@ void ui_update_top_bar_battery(ui::widgets::TopBar& bar)
 int ui_get_timezone_offset_min()
 {
     ensure_timezone_loaded();
-    return s_timezone_offset_min;
+    return platform::ui::time::timezone_offset_for_profile_id_at(s_timezone_profile_id,
+                                                                 s_timezone_offset_min,
+                                                                 time(nullptr));
 }
 
 void ui_set_timezone_offset_min(int offset_min)
 {
     s_timezone_offset_min = offset_min;
+    s_timezone_profile_id = platform::ui::time::timezone_profile_id_for_fixed_offset(offset_min);
     s_timezone_loaded = true;
     platform::ui::settings_store::put_int(kSettingsNs, kTimezoneKey, offset_min);
+    platform::ui::settings_store::put_int(kSettingsNs, kTimezoneProfileKey, s_timezone_profile_id);
+}
+
+int ui_get_timezone_profile_id()
+{
+    ensure_timezone_loaded();
+    return s_timezone_profile_id;
+}
+
+void ui_set_timezone_profile_id(int profile_id)
+{
+    const auto* profile = platform::ui::time::timezone_profile_by_id(profile_id);
+    if (!profile)
+    {
+        profile = platform::ui::time::default_timezone_profile();
+    }
+    s_timezone_profile_id = profile->id;
+    s_timezone_offset_min = profile->standard_offset_min;
+    s_timezone_loaded = true;
+    platform::ui::settings_store::put_int(kSettingsNs, kTimezoneProfileKey, s_timezone_profile_id);
+    platform::ui::settings_store::put_int(kSettingsNs, kTimezoneKey, s_timezone_offset_min);
 }
 
 time_t ui_apply_timezone_offset(time_t utc_seconds)
 {
-    return utc_seconds + static_cast<time_t>(ui_get_timezone_offset_min()) * 60;
+    ensure_timezone_loaded();
+    return utc_seconds + static_cast<time_t>(
+                             platform::ui::time::timezone_offset_for_profile_id_at(s_timezone_profile_id,
+                                                                                   s_timezone_offset_min,
+                                                                                   utc_seconds)) *
+                             60;
 }
 
 bool ui_take_screenshot_to_sd()

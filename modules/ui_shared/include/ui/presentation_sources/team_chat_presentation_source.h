@@ -6,8 +6,9 @@ namespace team
 {
 namespace ui
 {
-class ITeamUiStore;
-}
+class ITeamUiChatLogStore;
+class ITeamUiSnapshotStore;
+} // namespace ui
 } // namespace team
 
 namespace ui::presentation_sources
@@ -31,14 +32,16 @@ namespace ui::presentation_sources
 class TeamChatPresentationSource final : public ui::chat::IChatPresentationSource
 {
   public:
-    explicit TeamChatPresentationSource(::team::ui::ITeamUiStore& team_store);
+    TeamChatPresentationSource(::team::ui::ITeamUiSnapshotStore& snapshot_store,
+                               ::team::ui::ITeamUiChatLogStore& chat_log_store);
 
     bool buildChatWorkspaceSnapshot(
         const ui::chat::ChatWorkspaceRequest& request,
         ui::chat::ChatWorkspaceSnapshot& out) const override;
 
   private:
-    ::team::ui::ITeamUiStore& team_store_;
+    ::team::ui::ITeamUiSnapshotStore& snapshot_store_;
+    ::team::ui::ITeamUiChatLogStore& chat_log_store_;
 };
 
 } // namespace ui::presentation_sources

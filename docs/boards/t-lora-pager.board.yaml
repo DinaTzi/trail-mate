@@ -34,7 +34,8 @@ facts:
 
   lora:
     present: true
-    chip: "sx1262"
+    chips: ["sx1262", "lr1121"]
+    default_chip: "sx1262"
     spi_bus: "shared_spi"
     sck_pin: 35
     miso_pin: 33
@@ -44,8 +45,12 @@ facts:
     busy_pin: 48
     dio1_pin: 14
     power_enable_pin: "xl9555:3"
-    dio2_as_rf_switch: true
-    dio3_tcxo_voltage: 1.8
+    sx1262:
+      dio2_as_rf_switch: true
+      dio3_tcxo_voltage: 1.8
+    lr1121:
+      rf_switch_dio_pins: ["DIO5", "DIO6"]
+      tcxo_voltage: 3.0
 
   gps:
     present: true

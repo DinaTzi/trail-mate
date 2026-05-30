@@ -4,9 +4,10 @@
  */
 
 #include "platform/ui/team_ui_store_runtime.h"
+#include "ui/team_persistence/team_ui_snapshot_codec.h"
 
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include "sys/clock.h"
-#include <SD.h>
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -20,11 +21,18 @@ namespace team
 namespace ui
 {
 
-bool TeamUiMemoryStore::has_snapshot_ = false;
-TeamUiSnapshot TeamUiMemoryStore::snapshot_{};
+bool TeamUiSnapshotMemoryStore::has_snapshot_ = false;
+TeamUiSnapshot TeamUiSnapshotMemoryStore::snapshot_{};
 
 namespace
 {
+using ::platform::esp::arduino_common::storage::sd_card_ready;
+using ::platform::esp::arduino_common::storage::sd_exists;
+using ::platform::esp::arduino_common::storage::sd_mkdir;
+using ::platform::esp::arduino_common::storage::sd_remove;
+using ::platform::esp::arduino_common::storage::sd_rename;
+using ::platform::esp::arduino_common::storage::SdRuntimeFile;
+
 constexpr const char* kBaseDir = "/team";
 constexpr const char* kCurrentPath = "/team/current.txt";
 constexpr const char* kCurrentTmpPath = "/team/current.tmp";
@@ -43,7 +51,6 @@ constexpr const char* kGpxHeader =
     "<trk>\n"
     "<trkseg>\n";
 
-constexpr uint16_t kSnapshotVersion = 1;
 constexpr uint16_t kEventVersion = 1;
 constexpr uint8_t kKeysVersion = 1;
 constexpr uint8_t kPosringVersion = 1;
@@ -67,6 +74,24 @@ constexpr uint32_t kMinValidEpoch = 1577836800U; // 2020-01-01
 uint32_t now_secs()
 {
     return sys::uptime_seconds_now();
+}
+
+uint32_t member_presence_fingerprint(const TeamUiSnapshot& in)
+{
+    uint32_t h = 2166136261u;
+    auto mix = [&](uint32_t value)
+    {
+        h ^= value;
+        h *= 16777619u;
+    };
+    mix(static_cast<uint32_t>(in.members.size()));
+    for (const auto& member : in.members)
+    {
+        mix(member.node_id);
+        mix(member.leader ? 1U : 0U);
+        mix(member.last_seen_s);
+    }
+    return h;
 }
 
 uint64_t team_id_to_u64(const TeamId& id)
@@ -126,11 +151,11 @@ std::string team_dir_from_id(const TeamId& id)
 
 bool ensure_dir(const char* path)
 {
-    if (SD.exists(path))
+    if (sd_exists(path))
     {
         return true;
     }
-    return SD.mkdir(path);
+    return sd_mkdir(path);
 }
 
 std::string iso_time(time_t t)
@@ -168,12 +193,12 @@ std::string trim_copy(const std::string& value)
     return value.substr(start, end - start);
 }
 
-std::string read_line(File& file)
+std::string read_line(SdRuntimeFile& file)
 {
     std::string line;
     while (file.available())
     {
-        const int raw = file.read();
+        const int raw = file.read_byte();
         if (raw < 0 || raw == '\n')
         {
             break;
@@ -188,12 +213,12 @@ std::string read_line(File& file)
 
 bool read_current_dir(std::string& out_dir)
 {
-    if (SD.cardType() == CARD_NONE || !SD.exists(kCurrentPath))
+    if (!sd_card_ready() || !sd_exists(kCurrentPath))
     {
         return false;
     }
-    File f = SD.open(kCurrentPath, FILE_READ);
-    if (!f)
+    SdRuntimeFile f;
+    if (!f.open(kCurrentPath, "r"))
     {
         return false;
     }
@@ -209,7 +234,7 @@ bool read_current_dir(std::string& out_dir)
 
 bool write_current_dir(const std::string& dir)
 {
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         return false;
     }
@@ -217,8 +242,8 @@ bool write_current_dir(const std::string& dir)
     {
         return false;
     }
-    File f = SD.open(kCurrentTmpPath, FILE_WRITE);
-    if (!f)
+    SdRuntimeFile f;
+    if (!f.open(kCurrentTmpPath, "w"))
     {
         return false;
     }
@@ -226,33 +251,33 @@ bool write_current_dir(const std::string& dir)
     f.print("\n");
     f.flush();
     f.close();
-    if (SD.exists(kCurrentPath))
+    if (sd_exists(kCurrentPath))
     {
-        SD.remove(kCurrentPath);
+        sd_remove(kCurrentPath);
     }
-    return SD.rename(kCurrentTmpPath, kCurrentPath);
+    return sd_rename(kCurrentTmpPath, kCurrentPath);
 }
 
 bool clear_current_dir()
 {
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         return false;
     }
-    if (SD.exists(kCurrentPath))
+    if (sd_exists(kCurrentPath))
     {
-        SD.remove(kCurrentPath);
+        sd_remove(kCurrentPath);
     }
-    if (SD.exists(kCurrentTmpPath))
+    if (sd_exists(kCurrentTmpPath))
     {
-        SD.remove(kCurrentTmpPath);
+        sd_remove(kCurrentTmpPath);
     }
     return true;
 }
 
 bool ensure_team_dir_for_id_internal(const TeamId& id, std::string& out_dir_path, bool update_current)
 {
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         return false;
     }
@@ -278,12 +303,12 @@ bool ensure_team_dir_for_id(const TeamId& id, std::string& out_dir_path)
     return ensure_team_dir_for_id_internal(id, out_dir_path, true);
 }
 
-void write_u8(File& f, uint8_t v)
+void write_u8(SdRuntimeFile& f, uint8_t v)
 {
     f.write(&v, 1);
 }
 
-void write_u16(File& f, uint16_t v)
+void write_u16(SdRuntimeFile& f, uint16_t v)
 {
     uint8_t b[2] = {
         static_cast<uint8_t>(v & 0xFF),
@@ -291,7 +316,7 @@ void write_u16(File& f, uint16_t v)
     f.write(b, 2);
 }
 
-void write_u32(File& f, uint32_t v)
+void write_u32(SdRuntimeFile& f, uint32_t v)
 {
     uint8_t b[4];
     for (int i = 0; i < 4; ++i)
@@ -301,7 +326,7 @@ void write_u32(File& f, uint32_t v)
     f.write(b, 4);
 }
 
-void write_u64(File& f, uint64_t v)
+void write_u64(SdRuntimeFile& f, uint64_t v)
 {
     uint8_t b[8];
     for (int i = 0; i < 8; ++i)
@@ -490,12 +515,12 @@ void apply_key_event(TeamUiSnapshot& snap, TeamKeyEventType type, const std::vec
 
 bool load_snapshot_from_path(const std::string& snapshot_path, TeamUiSnapshot& out)
 {
-    if (!SD.exists(snapshot_path.c_str()))
+    if (!sd_exists(snapshot_path.c_str()))
     {
         return false;
     }
-    File f = SD.open(snapshot_path.c_str(), FILE_READ);
-    if (!f)
+    SdRuntimeFile f;
+    if (!f.open(snapshot_path.c_str(), "r"))
     {
         return false;
     }
@@ -508,116 +533,14 @@ bool load_snapshot_from_path(const std::string& snapshot_path, TeamUiSnapshot& o
         return false;
     }
 
-    size_t off = 0;
-    if (off + 4 > buf.size())
-    {
-        return false;
-    }
-    if (std::memcmp(buf.data(), "TMS1", 4) != 0)
-    {
-        return false;
-    }
-    off += 4;
-
-    uint8_t version = 0;
-    uint8_t flags = 0;
-    uint16_t reserved = 0;
-    uint32_t updated_ts = 0;
-    uint64_t team_id = 0;
-    uint32_t epoch = 0;
-    uint32_t last_event_seq = 0;
-    uint32_t self_node_id = 0;
-    uint32_t leader_node_id = 0;
-    uint8_t self_role = 0;
-    uint16_t member_count = 0;
-    uint16_t reserved3 = 0;
-
-    if (!read_u8(buf, off, version) ||
-        !read_u8(buf, off, flags) ||
-        !read_u16(buf, off, reserved) ||
-        !read_u32(buf, off, updated_ts) ||
-        !read_u64(buf, off, team_id) ||
-        !read_u32(buf, off, epoch) ||
-        !read_u32(buf, off, last_event_seq) ||
-        !read_u32(buf, off, self_node_id) ||
-        !read_u32(buf, off, leader_node_id) ||
-        !read_u8(buf, off, self_role))
-    {
-        return false;
-    }
-    if (off + 3 > buf.size())
-    {
-        return false;
-    }
-    off += 3;
-    if (!read_u16(buf, off, member_count) ||
-        !read_u16(buf, off, reserved3))
-    {
-        return false;
-    }
-
-    if (version != kSnapshotVersion)
-    {
-        return false;
-    }
-
-    out.in_team = (flags & 0x01) != 0;
-    out.has_team_id = (team_id != 0);
-    out.team_id = team_id_from_u64(team_id);
-    out.security_round = epoch;
-    out.last_event_seq = last_event_seq;
-    out.self_is_leader = (self_role == kRoleLeader);
-    out.members.clear();
-
-    for (uint16_t i = 0; i < member_count; ++i)
-    {
-        uint32_t node_id = 0;
-        uint8_t role = 0;
-        uint8_t mflags = 0;
-        uint16_t name_len = 0;
-        if (!read_u32(buf, off, node_id) ||
-            !read_u8(buf, off, role) ||
-            !read_u8(buf, off, mflags) ||
-            !read_u16(buf, off, name_len))
-        {
-            return false;
-        }
-        if (off + name_len > buf.size())
-        {
-            return false;
-        }
-        std::string name;
-        if (name_len > 0)
-        {
-            name.assign(reinterpret_cast<const char*>(buf.data() + off), name_len);
-        }
-        off += name_len;
-
-        TeamMemberUi m;
-        m.node_id = node_id;
-        m.name = name;
-        m.leader = (role == kRoleLeader);
-        out.members.push_back(m);
-    }
-
-    uint32_t chat_unread = 0;
-    if (off + sizeof(chat_unread) <= buf.size())
-    {
-        if (read_u32(buf, off, chat_unread))
-        {
-            out.team_chat_unread = chat_unread;
-        }
-    }
-
-    (void)updated_ts;
-    (void)self_node_id;
-    (void)leader_node_id;
-    return true;
+    return ::ui::team_persistence::decodeTeamUiSnapshot(buf.data(),
+                                                        buf.size(),
+                                                        out);
 }
 
 bool save_snapshot_to_path(const std::string& dir_path, const TeamUiSnapshot& in)
 {
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         return false;
     }
@@ -633,85 +556,39 @@ bool save_snapshot_to_path(const std::string& dir_path, const TeamUiSnapshot& in
     std::string tmp_path = dir_path + "/" + kSnapshotTmpName;
     std::string out_path = dir_path + "/" + kSnapshotName;
 
-    File f = SD.open(tmp_path.c_str(), FILE_WRITE);
-    if (!f)
+    std::vector<uint8_t> encoded;
+    if (!::ui::team_persistence::encodeTeamUiSnapshot(in, now_secs(), encoded))
     {
         return false;
     }
 
-    f.write(reinterpret_cast<const uint8_t*>("TMS1"), 4);
-    write_u8(f, kSnapshotVersion);
-    uint8_t flags = in.in_team ? 0x01 : 0x00;
-    write_u8(f, flags);
-    write_u16(f, 0);
-    write_u32(f, now_secs());
-    write_u64(f, in.has_team_id ? team_id_to_u64(in.team_id) : 0);
-    write_u32(f, in.security_round);
-    write_u32(f, in.last_event_seq);
-    write_u32(f, 0);
-    uint32_t leader_node_id = 0;
-    for (const auto& m : in.members)
+    SdRuntimeFile f;
+    if (!f.open(tmp_path.c_str(), "w"))
     {
-        if (m.leader)
-        {
-            leader_node_id = m.node_id;
-            break;
-        }
-    }
-    write_u32(f, leader_node_id);
-    write_u8(f, in.self_is_leader ? kRoleLeader : (in.in_team ? kRoleMember : kRoleNone));
-    write_u8(f, 0);
-    write_u8(f, 0);
-    write_u8(f, 0);
-    uint16_t member_count = static_cast<uint16_t>(in.members.size());
-    write_u16(f, member_count);
-    write_u16(f, 0);
-
-    for (const auto& m : in.members)
-    {
-        write_u32(f, m.node_id);
-        write_u8(f, m.leader ? kRoleLeader : kRoleMember);
-        uint16_t name_len = 0;
-        uint8_t name_flag = 0;
-        std::string name = m.name;
-        if (!name.empty())
-        {
-            if (name.size() > 24)
-            {
-                name.resize(24);
-            }
-            name_len = static_cast<uint16_t>(name.size());
-            name_flag = 0x01;
-        }
-        write_u8(f, name_flag);
-        write_u16(f, name_len);
-        if (name_len > 0)
-        {
-            f.write(reinterpret_cast<const uint8_t*>(name.data()), name_len);
-        }
+        return false;
     }
 
-    write_u32(f, in.team_chat_unread);
+    f.write(encoded.data(), encoded.size());
 
     f.flush();
     f.close();
 
     std::string out_path_c = out_path;
-    if (SD.exists(out_path_c.c_str()))
+    if (sd_exists(out_path_c.c_str()))
     {
-        SD.remove(out_path_c.c_str());
+        sd_remove(out_path_c.c_str());
     }
-    return SD.rename(tmp_path.c_str(), out_path_c.c_str());
+    return sd_rename(tmp_path.c_str(), out_path_c.c_str());
 }
 
 bool load_keys_from_path(const std::string& keys_path, TeamUiSnapshot& out)
 {
-    if (!SD.exists(keys_path.c_str()))
+    if (!sd_exists(keys_path.c_str()))
     {
         return false;
     }
-    File f = SD.open(keys_path.c_str(), FILE_READ);
-    if (!f)
+    SdRuntimeFile f;
+    if (!f.open(keys_path.c_str(), "r"))
     {
         return false;
     }
@@ -764,8 +641,8 @@ bool save_keys_to_path(const std::string& dir_path, const TeamUiSnapshot& in)
     }
     std::string tmp_path = dir_path + "/" + kKeysTmpName;
     std::string out_path = dir_path + "/" + kKeysName;
-    File f = SD.open(tmp_path.c_str(), FILE_WRITE);
-    if (!f)
+    SdRuntimeFile f;
+    if (!f.open(tmp_path.c_str(), "w"))
     {
         return false;
     }
@@ -778,21 +655,21 @@ bool save_keys_to_path(const std::string& dir_path, const TeamUiSnapshot& in)
     f.write(in.team_psk.data(), in.team_psk.size());
     f.flush();
     f.close();
-    if (SD.exists(out_path.c_str()))
+    if (sd_exists(out_path.c_str()))
     {
-        SD.remove(out_path.c_str());
+        sd_remove(out_path.c_str());
     }
-    return SD.rename(tmp_path.c_str(), out_path.c_str());
+    return sd_rename(tmp_path.c_str(), out_path.c_str());
 }
 
 bool load_events_apply(const std::string& events_path, TeamUiSnapshot& out)
 {
-    if (!SD.exists(events_path.c_str()))
+    if (!sd_exists(events_path.c_str()))
     {
         return false;
     }
-    File f = SD.open(events_path.c_str(), FILE_READ);
-    if (!f)
+    SdRuntimeFile f;
+    if (!f.open(events_path.c_str(), "r"))
     {
         return false;
     }
@@ -861,7 +738,7 @@ bool append_event(const TeamId& team_id, TeamKeyEventType type,
                   uint32_t event_seq, uint32_t ts,
                   const uint8_t* payload, size_t len)
 {
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         return false;
     }
@@ -872,8 +749,8 @@ bool append_event(const TeamId& team_id, TeamKeyEventType type,
     }
 
     std::string events_path = dir_path + "/" + kEventsName;
-    File f = SD.open(events_path.c_str(), FILE_APPEND);
-    if (!f)
+    SdRuntimeFile f;
+    if (!f.open(events_path.c_str(), "a"))
     {
         return false;
     }
@@ -947,7 +824,7 @@ bool should_write_pos(uint32_t member_id, int32_t lat_e7, int32_t lon_e7, uint32
     return true;
 }
 
-bool init_posring(File& f)
+bool init_posring(SdRuntimeFile& f)
 {
     f.seek(0);
     f.write(reinterpret_cast<const uint8_t*>("PSR1"), 4);
@@ -963,7 +840,7 @@ bool init_posring(File& f)
     return true;
 }
 
-bool read_posring_header(File& f, uint32_t& write_offset)
+bool read_posring_header(SdRuntimeFile& f, uint32_t& write_offset)
 {
     f.seek(0);
     uint8_t header[kPosHeaderSize];
@@ -999,7 +876,7 @@ bool read_posring_header(File& f, uint32_t& write_offset)
     return true;
 }
 
-bool write_posring_header(File& f, uint32_t write_offset)
+bool write_posring_header(SdRuntimeFile& f, uint32_t write_offset)
 {
     f.seek(0);
     f.write(reinterpret_cast<const uint8_t*>("PSR1"), 4);
@@ -1015,12 +892,12 @@ bool write_posring_header(File& f, uint32_t write_offset)
     return true;
 }
 
-class TeamUiStorePersisted : public ITeamUiStore
+class TeamUiSnapshotStorePersisted : public ITeamUiSnapshotStore
 {
   public:
     bool load(TeamUiSnapshot& out) override
     {
-        if (SD.cardType() == CARD_NONE)
+        if (!sd_card_ready())
         {
             return false;
         }
@@ -1068,7 +945,7 @@ class TeamUiStorePersisted : public ITeamUiStore
 
     void save(const TeamUiSnapshot& in) override
     {
-        if (SD.cardType() == CARD_NONE)
+        if (!sd_card_ready())
         {
             return;
         }
@@ -1083,7 +960,8 @@ class TeamUiStorePersisted : public ITeamUiStore
                            (in.self_is_leader != last_snapshot_self_is_leader_) ||
                            (in.security_round != last_snapshot_epoch_) ||
                            (in.has_team_psk != last_snapshot_has_psk_) ||
-                           (in.team_chat_unread != last_snapshot_unread_);
+                           (in.team_chat_unread != last_snapshot_unread_) ||
+                           (member_presence_fingerprint(in) != last_member_presence_fingerprint_);
         bool seq_trigger = (in.last_event_seq >= last_snapshot_seq_ + 10);
         bool time_trigger = (now - last_snapshot_ts_ >= 60);
 
@@ -1108,6 +986,7 @@ class TeamUiStorePersisted : public ITeamUiStore
             last_snapshot_epoch_ = in.security_round;
             last_snapshot_has_psk_ = in.has_team_psk;
             last_snapshot_unread_ = in.team_chat_unread;
+            last_member_presence_fingerprint_ = member_presence_fingerprint(in);
         }
     }
 
@@ -1124,12 +1003,13 @@ class TeamUiStorePersisted : public ITeamUiStore
     uint32_t last_snapshot_epoch_ = 0;
     bool last_snapshot_has_psk_ = false;
     uint32_t last_snapshot_unread_ = 0;
+    uint32_t last_member_presence_fingerprint_ = 0;
 };
 
-TeamUiStorePersisted s_persisted_store;
+TeamUiSnapshotStorePersisted s_persisted_snapshot_store;
 } // namespace
 
-bool TeamUiMemoryStore::load(TeamUiSnapshot& out)
+bool TeamUiSnapshotMemoryStore::load(TeamUiSnapshot& out)
 {
     if (!has_snapshot_)
     {
@@ -1139,38 +1019,86 @@ bool TeamUiMemoryStore::load(TeamUiSnapshot& out)
     return true;
 }
 
-void TeamUiMemoryStore::save(const TeamUiSnapshot& in)
+void TeamUiSnapshotMemoryStore::save(const TeamUiSnapshot& in)
 {
     snapshot_ = in;
     has_snapshot_ = true;
 }
 
-void TeamUiMemoryStore::clear()
+void TeamUiSnapshotMemoryStore::clear()
 {
     has_snapshot_ = false;
 }
 
 namespace
 {
-TeamUiMemoryStore s_memory_store;
-ITeamUiStore* s_store = &s_persisted_store;
+TeamUiSnapshotMemoryStore s_snapshot_memory_store;
+ITeamUiSnapshotStore* s_snapshot_store = &s_persisted_snapshot_store;
+
+class TeamUiSdChatLogStore final : public ITeamUiChatLogStore
+{
+  public:
+    bool appendText(const TeamId& team_id,
+                    uint32_t peer_id,
+                    bool incoming,
+                    uint32_t ts,
+                    const std::string& text) override
+    {
+        std::vector<uint8_t> payload;
+        payload.assign(text.begin(), text.end());
+        return appendStructured(team_id,
+                                peer_id,
+                                incoming,
+                                ts,
+                                team::proto::TeamChatType::Text,
+                                payload);
+    }
+
+    bool appendStructured(const TeamId& team_id,
+                          uint32_t peer_id,
+                          bool incoming,
+                          uint32_t ts,
+                          team::proto::TeamChatType type,
+                          const std::vector<uint8_t>& payload) override;
+
+    bool loadRecent(const TeamId& team_id,
+                    std::size_t max_count,
+                    std::vector<TeamChatLogEntry>& out) override;
+};
+
+TeamUiSdChatLogStore s_chat_log_store;
 } // namespace
+
+ITeamUiSnapshotStore& team_ui_snapshot_store()
+{
+    return *s_snapshot_store;
+}
+
+void team_ui_set_snapshot_store(ITeamUiSnapshotStore* store)
+{
+    if (store)
+    {
+        s_snapshot_store = store;
+    }
+    else
+    {
+        s_snapshot_store = &s_snapshot_memory_store;
+    }
+}
 
 ITeamUiStore& team_ui_get_store()
 {
-    return *s_store;
+    return team_ui_snapshot_store();
 }
 
 void team_ui_set_store(ITeamUiStore* store)
 {
-    if (store)
-    {
-        s_store = store;
-    }
-    else
-    {
-        s_store = &s_memory_store;
-    }
+    team_ui_set_snapshot_store(store);
+}
+
+ITeamUiChatLogStore& team_ui_chat_log_store()
+{
+    return s_chat_log_store;
 }
 
 bool team_ui_append_key_event(const TeamId& team_id,
@@ -1203,14 +1131,14 @@ bool team_ui_posring_append(const TeamId& team_id,
     }
 
     std::string path = dir_path + "/" + kPosringName;
-    File f = SD.open(path.c_str(), FILE_READ);
-    bool exists = f;
-    if (f)
+    SdRuntimeFile f;
+    bool exists = f.open(path.c_str(), "r");
+    if (exists)
     {
         f.close();
     }
-    File rw = SD.open(path.c_str(), FILE_WRITE);
-    if (!rw)
+    SdRuntimeFile rw;
+    if (!rw.open(path.c_str(), exists ? "r+" : "w+"))
     {
         return false;
     }
@@ -1252,19 +1180,19 @@ bool team_ui_posring_load_latest(const TeamId& team_id,
                                  std::vector<TeamPosSample>& out)
 {
     out.clear();
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         return false;
     }
     std::string dir = team_dir_from_id(team_id);
     std::string dir_path = std::string(kBaseDir) + "/" + dir;
     std::string path = dir_path + "/" + kPosringName;
-    if (!SD.exists(path.c_str()))
+    if (!sd_exists(path.c_str()))
     {
         return false;
     }
-    File f = SD.open(path.c_str(), FILE_READ);
-    if (!f)
+    SdRuntimeFile f;
+    if (!f.open(path.c_str(), "r"))
     {
         return false;
     }
@@ -1351,22 +1279,19 @@ bool team_ui_chatlog_append(const TeamId& team_id,
                             uint32_t ts,
                             const std::string& text)
 {
-    std::vector<uint8_t> payload;
-    payload.assign(text.begin(), text.end());
-    return team_ui_chatlog_append_structured(team_id,
-                                             peer_id,
-                                             incoming,
-                                             ts,
-                                             team::proto::TeamChatType::Text,
-                                             payload);
+    return team_ui_chat_log_store().appendText(team_id,
+                                               peer_id,
+                                               incoming,
+                                               ts,
+                                               text);
 }
 
-bool team_ui_chatlog_append_structured(const TeamId& team_id,
-                                       uint32_t peer_id,
-                                       bool incoming,
-                                       uint32_t ts,
-                                       team::proto::TeamChatType type,
-                                       const std::vector<uint8_t>& payload)
+bool TeamUiSdChatLogStore::appendStructured(const TeamId& team_id,
+                                            uint32_t peer_id,
+                                            bool incoming,
+                                            uint32_t ts,
+                                            team::proto::TeamChatType type,
+                                            const std::vector<uint8_t>& payload)
 {
     std::string dir_path;
     if (!ensure_team_dir_for_id(team_id, dir_path))
@@ -1376,27 +1301,27 @@ bool team_ui_chatlog_append_structured(const TeamId& team_id,
 
     std::string path = dir_path + "/" + kChatlogName;
     size_t record_len = 2 + 1 + 1 + 4 + 4 + 1 + 3 + 2 + 2 + payload.size();
-    if (SD.exists(path.c_str()))
+    if (sd_exists(path.c_str()))
     {
-        File f = SD.open(path.c_str(), FILE_READ);
-        if (f)
+        SdRuntimeFile f;
+        if (f.open(path.c_str(), "r"))
         {
             size_t size = f.size();
             f.close();
             if (size + record_len > kChatlogMaxBytes)
             {
                 std::string old_path = dir_path + "/" + kChatlogOldName;
-                if (SD.exists(old_path.c_str()))
+                if (sd_exists(old_path.c_str()))
                 {
-                    SD.remove(old_path.c_str());
+                    sd_remove(old_path.c_str());
                 }
-                SD.rename(path.c_str(), old_path.c_str());
+                sd_rename(path.c_str(), old_path.c_str());
             }
         }
     }
 
-    File out = SD.open(path.c_str(), FILE_APPEND);
-    if (!out)
+    SdRuntimeFile out;
+    if (!out.open(path.c_str(), "a"))
     {
         return false;
     }
@@ -1421,12 +1346,27 @@ bool team_ui_chatlog_append_structured(const TeamId& team_id,
     return true;
 }
 
-bool team_ui_chatlog_load_recent(const TeamId& team_id,
-                                 size_t max_count,
-                                 std::vector<TeamChatLogEntry>& out)
+bool team_ui_chatlog_append_structured(const TeamId& team_id,
+                                       uint32_t peer_id,
+                                       bool incoming,
+                                       uint32_t ts,
+                                       team::proto::TeamChatType type,
+                                       const std::vector<uint8_t>& payload)
+{
+    return team_ui_chat_log_store().appendStructured(team_id,
+                                                     peer_id,
+                                                     incoming,
+                                                     ts,
+                                                     type,
+                                                     payload);
+}
+
+bool TeamUiSdChatLogStore::loadRecent(const TeamId& team_id,
+                                      std::size_t max_count,
+                                      std::vector<TeamChatLogEntry>& out)
 {
     out.clear();
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         return false;
     }
@@ -1436,12 +1376,12 @@ bool team_ui_chatlog_load_recent(const TeamId& team_id,
         return false;
     }
     std::string path = dir_path + "/" + kChatlogName;
-    if (!SD.exists(path.c_str()))
+    if (!sd_exists(path.c_str()))
     {
         return false;
     }
-    File f = SD.open(path.c_str(), FILE_READ);
-    if (!f)
+    SdRuntimeFile f;
+    if (!f.open(path.c_str(), "r"))
     {
         return false;
     }
@@ -1548,11 +1488,18 @@ bool team_ui_chatlog_load_recent(const TeamId& team_id,
     return !out.empty();
 }
 
+bool team_ui_chatlog_load_recent(const TeamId& team_id,
+                                 size_t max_count,
+                                 std::vector<TeamChatLogEntry>& out)
+{
+    return team_ui_chat_log_store().loadRecent(team_id, max_count, out);
+}
+
 bool team_ui_save_keys_now(const TeamId& team_id,
                            uint32_t key_id,
                            const std::array<uint8_t, team::proto::kTeamChannelPskSize>& psk)
 {
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         return false;
     }
@@ -1578,7 +1525,7 @@ bool team_ui_get_member_track_path(const TeamId& team_id,
                                    uint32_t member_id,
                                    std::string& out_path)
 {
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         return false;
     }
@@ -1602,7 +1549,7 @@ bool team_ui_append_member_track(const TeamId& team_id,
                                  uint32_t member_id,
                                  const team::proto::TeamTrackMessage& track)
 {
-    if (SD.cardType() == CARD_NONE)
+    if (!sd_card_ready())
     {
         return false;
     }
@@ -1638,8 +1585,8 @@ bool team_ui_append_member_track(const TeamId& team_id,
     snprintf(name, sizeof(name), "%08lX.gpx", static_cast<unsigned long>(member_id));
     std::string path = tracks_dir + "/" + name;
 
-    File f = SD.open(path.c_str(), FILE_WRITE);
-    if (!f)
+    SdRuntimeFile f;
+    if (!f.open(path.c_str(), "a+"))
     {
         return false;
     }

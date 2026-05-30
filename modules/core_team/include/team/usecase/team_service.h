@@ -69,6 +69,9 @@ class TeamService
     bool sendKeyDistPlain(const team::proto::TeamKeyDist& msg,
                           chat::ChannelId channel, chat::NodeId dest,
                           bool want_ack = false, bool want_response = false);
+    bool sendKeyRequest(const team::proto::TeamKeyRequest& msg,
+                        chat::ChannelId channel, chat::NodeId dest = 0,
+                        bool want_ack = false, bool want_response = false);
     bool sendStatus(const team::proto::TeamStatus& msg,
                     chat::ChannelId channel, chat::NodeId dest = 0,
                     bool want_ack = false, bool want_response = false);

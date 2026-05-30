@@ -6,8 +6,9 @@
 #include "platform/esp/arduino_common/chat/infra/meshtastic/node_store.h"
 #include "../../internal/blob_store_io.h"
 #include "chat/infra/node_store_blob_format.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 
-#include <SD.h>
+#include <Arduino.h>
 #include <cstdio>
 #include <esp_err.h>
 #include <nvs.h>
@@ -89,7 +90,9 @@ NodeStore::NodeStore()
 
 void NodeStore::begin()
 {
-    backend_ = (SD.cardType() != CARD_NONE) ? StorageBackend::Sd : StorageBackend::Nvs;
+    backend_ = ::platform::esp::arduino_common::storage::sd_card_ready()
+                   ? StorageBackend::Sd
+                   : StorageBackend::Nvs;
     NODE_STORE_LOG("[NodeStore] backend=%s\n",
                    backend_ == StorageBackend::Sd ? "sd" : "nvs");
     core_.begin();
@@ -201,9 +204,10 @@ bool NodeStore::saveBlob(const uint8_t* data, size_t len)
 
 void NodeStore::clearBlob()
 {
-    if (SD.cardType() != CARD_NONE && SD.exists(kPersistNodesFile))
+    if (::platform::esp::arduino_common::storage::sd_card_ready() &&
+        ::platform::esp::arduino_common::storage::sd_exists(kPersistNodesFile))
     {
-        SD.remove(kPersistNodesFile);
+        ::platform::esp::arduino_common::storage::sd_remove(kPersistNodesFile);
     }
     clearNvs();
 }
@@ -300,14 +304,14 @@ bool NodeStore::loadFromNvs(std::vector<uint8_t>& out)
 
 bool NodeStore::loadFromSd(std::vector<uint8_t>& out) const
 {
-    if (SD.cardType() == CARD_NONE)
+    if (!::platform::esp::arduino_common::storage::sd_card_ready())
     {
         NODE_STORE_LOG("[NodeStore] load SD skipped: card none\n");
         return false;
     }
 
-    File file = SD.open(kPersistNodesFile, FILE_READ);
-    if (!file)
+    ::platform::esp::arduino_common::storage::SdRuntimeFile file;
+    if (!file.open(kPersistNodesFile, "r"))
     {
         NODE_STORE_LOG("[NodeStore] load SD open failed path=%s\n", kPersistNodesFile);
         return false;
@@ -452,7 +456,7 @@ bool NodeStore::saveToNvs(const uint8_t* data, size_t len) const
 
 bool NodeStore::saveToSd(const uint8_t* data, size_t len) const
 {
-    if (SD.cardType() == CARD_NONE)
+    if (!::platform::esp::arduino_common::storage::sd_card_ready())
     {
         return false;
     }
@@ -463,13 +467,13 @@ bool NodeStore::saveToSd(const uint8_t* data, size_t len) const
     }
 
     const std::string temp_path = std::string(kPersistNodesFile) + ".tmp";
-    if (SD.exists(temp_path.c_str()))
+    if (::platform::esp::arduino_common::storage::sd_exists(temp_path.c_str()))
     {
-        SD.remove(temp_path.c_str());
+        ::platform::esp::arduino_common::storage::sd_remove(temp_path.c_str());
     }
 
-    File file = SD.open(temp_path.c_str(), FILE_WRITE);
-    if (!file)
+    ::platform::esp::arduino_common::storage::SdRuntimeFile file;
+    if (!file.open(temp_path.c_str(), "w"))
     {
         return false;
     }
@@ -485,18 +489,18 @@ bool NodeStore::saveToSd(const uint8_t* data, size_t len) const
     file.close();
     if (!ok)
     {
-        SD.remove(temp_path.c_str());
+        ::platform::esp::arduino_common::storage::sd_remove(temp_path.c_str());
         return false;
     }
 
-    if (SD.exists(kPersistNodesFile))
+    if (::platform::esp::arduino_common::storage::sd_exists(kPersistNodesFile))
     {
-        SD.remove(kPersistNodesFile);
+        ::platform::esp::arduino_common::storage::sd_remove(kPersistNodesFile);
     }
 
-    if (!SD.rename(temp_path.c_str(), kPersistNodesFile))
+    if (!::platform::esp::arduino_common::storage::sd_rename(temp_path.c_str(), kPersistNodesFile))
     {
-        SD.remove(temp_path.c_str());
+        ::platform::esp::arduino_common::storage::sd_remove(temp_path.c_str());
         return false;
     }
 

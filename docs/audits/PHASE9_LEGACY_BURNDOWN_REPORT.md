@@ -51,9 +51,11 @@ forwarding aliases for downstream includes.
 These code-level legacy adapters remain governed by
 `docs/audits/LEGACY_BURNDOWN_REGISTER.md`:
 
-- `LegacyTeamActionBridge`
 - map tile compatibility surfaces
 - route/tracker overlay fallback surfaces
+
+`LegacyTeamActionBridge` has since been removed from active code by the Team
+burn-down and is no longer a remaining Phase 9 target.
 
 ## Next Burn-down Target
 

@@ -13,6 +13,7 @@ class ITeamEventSink
     virtual void onTeamKick(const TeamKickEvent& event) = 0;
     virtual void onTeamTransferLeader(const TeamTransferLeaderEvent& event) = 0;
     virtual void onTeamKeyDist(const TeamKeyDistEvent& event) = 0;
+    virtual void onTeamKeyRequest(const TeamKeyRequestEvent& event) = 0;
     virtual void onTeamStatus(const TeamStatusEvent& event) = 0;
     virtual void onTeamPosition(const TeamPositionEvent& event) = 0;
     virtual void onTeamWaypoint(const TeamWaypointEvent& event) = 0;

@@ -18,6 +18,8 @@ void ui_update_top_bar_battery(ui::widgets::TopBar& bar);
 // Timezone offset (minutes) for display-only local time
 int ui_get_timezone_offset_min();
 void ui_set_timezone_offset_min(int offset_min);
+int ui_get_timezone_profile_id();
+void ui_set_timezone_profile_id(int profile_id);
 time_t ui_apply_timezone_offset(time_t utc_seconds);
 
 // Screenshot helper (BMP, RGB565) saved to /sd

@@ -53,6 +53,13 @@ bool TeamController::onKeyDistPlain(const team::proto::TeamKeyDist& msg,
     return service_.sendKeyDistPlain(msg, channel, dest, want_ack, want_response);
 }
 
+bool TeamController::onKeyRequest(const team::proto::TeamKeyRequest& msg,
+                                  chat::ChannelId channel, chat::NodeId dest,
+                                  bool want_ack, bool want_response)
+{
+    return service_.sendKeyRequest(msg, channel, dest, want_ack, want_response);
+}
+
 bool TeamController::onStatus(const team::proto::TeamStatus& status,
                               chat::ChannelId channel, chat::NodeId dest,
                               bool want_ack, bool want_response)

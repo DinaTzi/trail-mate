@@ -95,6 +95,26 @@ It must not:
 The adapter exists to contain legacy GPS/team fact gathering. It does not render,
 open files, or mutate map viewport state.
 
+## Team Location Source
+
+`TeamMapOverlaySource` owns Team member position projection for map consumers.
+
+It may depend on:
+
+- `ITeamUiSnapshotStore`
+- Team posring storage API
+- `IMapOverlayTeamSource`
+
+It exposes fixed-capacity map facts through:
+
+- `latestTeamPoints(...)`
+- `latestTeamLocations(...)`
+- `loadMemberLocation(...)`
+
+GPS pages, map runtimes, dashboards, and renderers must not call
+`team_ui_posring_load_latest(...)` directly. They consume `TeamMapOverlaySource`
+or a built `MapOverlaySnapshot`.
+
 ## Runtime Wiring
 
 Map page runtime or composition root owns:

@@ -9,6 +9,7 @@
 
 #include "display/DisplayInterface.h"
 #include "input/morse_engine.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include "screen_sleep.h"
 #include "ui/LV_Helper.h"
 #include "ui/app_runtime.h"
@@ -45,7 +46,9 @@ constexpr char kLvglFlashFsLetter = 'F';
 constexpr const char* kLvglFlashFsMountPoint = "/fs";
 
 lv_fs_drv_t s_flash_fs_drv;
+lv_fs_drv_t s_sd_fs_drv;
 bool s_flash_fs_ready = false;
+bool s_sd_fs_ready = false;
 
 inline int flash_fs_fd_from_ptr(void* file_p)
 {
@@ -88,6 +91,192 @@ lv_fs_res_t flash_fs_errno_to_res(int errno_val)
     default:
         return LV_FS_RES_UNKNOWN;
     }
+}
+
+lv_fs_res_t sd_fs_error_to_res()
+{
+    return LV_FS_RES_FS_ERR;
+}
+
+bool sd_fs_ready_cb(lv_fs_drv_t* drv)
+{
+    LV_UNUSED(drv);
+    return ::platform::esp::arduino_common::storage::sd_card_ready();
+}
+
+void* sd_fs_open(lv_fs_drv_t* drv, const char* path, lv_fs_mode_t mode)
+{
+    LV_UNUSED(drv);
+
+    const char* open_mode = "r";
+    if (mode == LV_FS_MODE_WR)
+    {
+        open_mode = "w";
+    }
+    else if (mode == (LV_FS_MODE_WR | LV_FS_MODE_RD))
+    {
+        open_mode = "r+";
+    }
+
+    auto* file = new (std::nothrow)::platform::esp::arduino_common::storage::SdRuntimeFile();
+    if (file == nullptr)
+    {
+        return nullptr;
+    }
+    if (!file->open(path, open_mode))
+    {
+        delete file;
+        return nullptr;
+    }
+    return file;
+}
+
+lv_fs_res_t sd_fs_close(lv_fs_drv_t* drv, void* file_p)
+{
+    LV_UNUSED(drv);
+    auto* file = static_cast<::platform::esp::arduino_common::storage::SdRuntimeFile*>(file_p);
+    if (file == nullptr)
+    {
+        return LV_FS_RES_INV_PARAM;
+    }
+    file->close();
+    delete file;
+    return LV_FS_RES_OK;
+}
+
+lv_fs_res_t sd_fs_read(lv_fs_drv_t* drv, void* file_p, void* buf, uint32_t btr, uint32_t* br)
+{
+    LV_UNUSED(drv);
+    auto* file = static_cast<::platform::esp::arduino_common::storage::SdRuntimeFile*>(file_p);
+    if (file == nullptr || buf == nullptr)
+    {
+        return LV_FS_RES_INV_PARAM;
+    }
+
+    const int result = file->read(buf, btr);
+    if (result < 0)
+    {
+        return sd_fs_error_to_res();
+    }
+    if (br != nullptr)
+    {
+        *br = static_cast<uint32_t>(result);
+    }
+    return LV_FS_RES_OK;
+}
+
+lv_fs_res_t sd_fs_write(lv_fs_drv_t* drv,
+                        void* file_p,
+                        const void* buf,
+                        uint32_t btw,
+                        uint32_t* bw)
+{
+    LV_UNUSED(drv);
+    auto* file = static_cast<::platform::esp::arduino_common::storage::SdRuntimeFile*>(file_p);
+    if (file == nullptr || buf == nullptr)
+    {
+        return LV_FS_RES_INV_PARAM;
+    }
+
+    const std::size_t result = file->write(buf, btw);
+    if (bw != nullptr)
+    {
+        *bw = static_cast<uint32_t>(result);
+    }
+    return result == btw ? LV_FS_RES_OK : sd_fs_error_to_res();
+}
+
+lv_fs_res_t sd_fs_seek(lv_fs_drv_t* drv, void* file_p, uint32_t pos, lv_fs_whence_t whence)
+{
+    LV_UNUSED(drv);
+    auto* file = static_cast<::platform::esp::arduino_common::storage::SdRuntimeFile*>(file_p);
+    if (file == nullptr)
+    {
+        return LV_FS_RES_INV_PARAM;
+    }
+
+    uint64_t target = pos;
+    switch (whence)
+    {
+    case LV_FS_SEEK_CUR:
+        target = file->position() + pos;
+        break;
+    case LV_FS_SEEK_END:
+        target = file->size() + pos;
+        break;
+    case LV_FS_SEEK_SET:
+    default:
+        target = pos;
+        break;
+    }
+
+    return file->seek(target) ? LV_FS_RES_OK : sd_fs_error_to_res();
+}
+
+lv_fs_res_t sd_fs_tell(lv_fs_drv_t* drv, void* file_p, uint32_t* pos_p)
+{
+    LV_UNUSED(drv);
+    auto* file = static_cast<::platform::esp::arduino_common::storage::SdRuntimeFile*>(file_p);
+    if (file == nullptr || pos_p == nullptr)
+    {
+        return LV_FS_RES_INV_PARAM;
+    }
+    *pos_p = static_cast<uint32_t>(file->position());
+    return LV_FS_RES_OK;
+}
+
+void* sd_fs_dir_open(lv_fs_drv_t* drv, const char* path)
+{
+    LV_UNUSED(drv);
+
+    auto* dir = new (std::nothrow)::platform::esp::arduino_common::storage::SdRuntimeDir();
+    if (dir == nullptr)
+    {
+        return nullptr;
+    }
+    if (!dir->open(path))
+    {
+        delete dir;
+        return nullptr;
+    }
+    return dir;
+}
+
+lv_fs_res_t sd_fs_dir_read(lv_fs_drv_t* drv, void* dir_p, char* fn, uint32_t fn_len)
+{
+    LV_UNUSED(drv);
+    auto* dir = static_cast<::platform::esp::arduino_common::storage::SdRuntimeDir*>(dir_p);
+    if (dir == nullptr || fn == nullptr || fn_len == 0)
+    {
+        return LV_FS_RES_INV_PARAM;
+    }
+
+    bool is_dir = false;
+    if (!dir->read_next(fn, fn_len, &is_dir))
+    {
+        lv_strlcpy(fn, "", fn_len);
+        return LV_FS_RES_OK;
+    }
+    if (is_dir && fn[0] != '/')
+    {
+        char tmp[LV_FS_MAX_PATH_LEN];
+        lv_snprintf(tmp, sizeof(tmp), "/%s", fn);
+        lv_strlcpy(fn, tmp, fn_len);
+    }
+    return LV_FS_RES_OK;
+}
+
+lv_fs_res_t sd_fs_dir_close(lv_fs_drv_t* drv, void* dir_p)
+{
+    LV_UNUSED(drv);
+    auto* dir = static_cast<::platform::esp::arduino_common::storage::SdRuntimeDir*>(dir_p);
+    if (dir == nullptr)
+    {
+        return LV_FS_RES_INV_PARAM;
+    }
+    dir->close();
+    delete dir;
+    return LV_FS_RES_OK;
 }
 
 bool flash_fs_ready_for_io()
@@ -352,6 +541,37 @@ void init_flash_fs_driver()
     Serial.printf("[LVGL][FS] flash driver registered letter=%c ready=%d letters=%s\n",
                   kLvglFlashFsLetter,
                   lv_fs_is_ready(kLvglFlashFsLetter) ? 1 : 0,
+                  letters);
+}
+
+void init_sd_fs_driver()
+{
+    if (s_sd_fs_ready)
+    {
+        return;
+    }
+
+    lv_fs_drv_init(&s_sd_fs_drv);
+    s_sd_fs_drv.letter = LV_FS_POSIX_LETTER;
+    s_sd_fs_drv.ready_cb = sd_fs_ready_cb;
+    s_sd_fs_drv.open_cb = sd_fs_open;
+    s_sd_fs_drv.close_cb = sd_fs_close;
+    s_sd_fs_drv.read_cb = sd_fs_read;
+    s_sd_fs_drv.write_cb = sd_fs_write;
+    s_sd_fs_drv.seek_cb = sd_fs_seek;
+    s_sd_fs_drv.tell_cb = sd_fs_tell;
+    s_sd_fs_drv.dir_open_cb = sd_fs_dir_open;
+    s_sd_fs_drv.dir_read_cb = sd_fs_dir_read;
+    s_sd_fs_drv.dir_close_cb = sd_fs_dir_close;
+    lv_fs_drv_register(&s_sd_fs_drv);
+    s_sd_fs_ready = true;
+
+    char letters[16];
+    letters[0] = '\0';
+    lv_fs_get_letters(letters);
+    Serial.printf("[LVGL][FS] SD driver registered letter=%c ready=%d letters=%s\n",
+                  LV_FS_POSIX_LETTER,
+                  lv_fs_is_ready(LV_FS_POSIX_LETTER) ? 1 : 0,
                   letters);
 }
 } // namespace
@@ -723,6 +943,7 @@ void beginLvglHelper(LilyGo_Display& board, bool debug)
     lv_init();
     Serial.println("[LVGL] init done");
 
+    init_sd_fs_driver();
     init_flash_fs_driver();
 
 #if LV_USE_LOG

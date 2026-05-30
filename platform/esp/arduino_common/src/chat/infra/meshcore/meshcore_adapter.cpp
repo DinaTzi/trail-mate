@@ -1648,7 +1648,8 @@ bool MeshCoreAdapter::transmitFrameNow(const uint8_t* data, size_t len, uint32_t
                                 : 0U;
 
     int state = RADIOLIB_ERR_UNSUPPORTED;
-#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280)
+#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280) || \
+    defined(ARDUINO_LILYGO_LORA_LR1121)
     state = board_.transmitRadio(data, len);
 #endif
     if (state == RADIOLIB_ERR_NONE)
@@ -3147,7 +3148,8 @@ void MeshCoreAdapter::applyConfig(const MeshConfig& config)
     last_auto_discover_hash_ = 0;
     loadPeerPubKeysFromPrefs();
 
-#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280)
+#if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280) || \
+    defined(ARDUINO_LILYGO_LORA_LR1121)
     if (board_.isRadioOnline())
     {
         board_.configureLoraRadio(config_.meshcore_freq_mhz,

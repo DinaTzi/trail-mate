@@ -1,11 +1,23 @@
 #include "ui/presentation_sources/legacy_map_presentation_source.h"
 
+#include "sys/clock.h"
+#include "ui/team_presence/team_presence_model.h"
 #include "ui_presentation/common/fixed_text.h"
 
 namespace ui::presentation_sources
 {
 namespace
 {
+constexpr uint32_t kMinValidEpoch = 1577836800U; // 2020-01-01
+
+uint32_t presenceNowForMember(uint32_t last_seen_s)
+{
+    if (last_seen_s >= kMinValidEpoch)
+    {
+        return sys::epoch_seconds_now();
+    }
+    return sys::uptime_seconds_now();
+}
 
 void copyStatusLine(const ui::gps::GpsStatusSnapshot& gps,
                     ui::map::MapWorkspaceSnapshot& out)
@@ -31,7 +43,7 @@ void copyStatusLine(const ui::gps::GpsStatusSnapshot& gps,
     ui::copyText(out.status_line, gps.fix_valid ? "GPS fix" : "No GPS fix");
 }
 
-void projectTeamSummary(team::ui::ITeamUiStore* store,
+void projectTeamSummary(team::ui::ITeamUiSnapshotStore* store,
                         ui::map::TeamOverlaySummary& out)
 {
     out = ui::map::TeamOverlaySummary{};
@@ -50,7 +62,8 @@ void projectTeamSummary(team::ui::ITeamUiStore* store,
     for (const auto& member : snapshot.members)
     {
         ++out.visible_members;
-        if (!member.online)
+        if (!::ui::team_presence::isTeamMemberOnline(presenceNowForMember(member.last_seen_s),
+                                                     member.last_seen_s))
         {
             ++out.stale_members;
         }
@@ -62,7 +75,7 @@ void projectTeamSummary(team::ui::ITeamUiStore* store,
 LegacyMapPresentationSource::LegacyMapPresentationSource(
     ui::gps::IGpsStatusSource& gps_source,
     const LegacyMapPresentationState& state,
-    team::ui::ITeamUiStore* team_store)
+    team::ui::ITeamUiSnapshotStore* team_store)
     : gps_source_(gps_source),
       state_(state),
       team_store_(team_store)

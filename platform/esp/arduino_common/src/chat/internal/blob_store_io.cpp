@@ -5,8 +5,9 @@
 
 #include "blob_store_io.h"
 
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
+
 #include <Preferences.h>
-#include <SD.h>
 #include <string>
 
 namespace chat
@@ -87,13 +88,14 @@ bool savePreferencesMetadata(Preferences& prefs,
 bool loadRawBlobFromSd(const char* path, std::vector<uint8_t>& out)
 {
     out.clear();
-    if (!path || path[0] == '\0' || SD.cardType() == CARD_NONE)
+    if (!path || path[0] == '\0' ||
+        !::platform::esp::arduino_common::storage::sd_card_ready())
     {
         return false;
     }
 
-    File file = SD.open(path, FILE_READ);
-    if (!file)
+    ::platform::esp::arduino_common::storage::SdRuntimeFile file;
+    if (!file.open(path, "r"))
     {
         return false;
     }
@@ -118,7 +120,8 @@ bool loadRawBlobFromSd(const char* path, std::vector<uint8_t>& out)
 
 bool saveRawBlobToSd(const char* path, const uint8_t* data, size_t len)
 {
-    if (!path || path[0] == '\0' || SD.cardType() == CARD_NONE)
+    if (!path || path[0] == '\0' ||
+        !::platform::esp::arduino_common::storage::sd_card_ready())
     {
         return false;
     }
@@ -129,13 +132,13 @@ bool saveRawBlobToSd(const char* path, const uint8_t* data, size_t len)
         return false;
     }
 
-    if (SD.exists(temp_path.c_str()))
+    if (::platform::esp::arduino_common::storage::sd_exists(temp_path.c_str()))
     {
-        SD.remove(temp_path.c_str());
+        ::platform::esp::arduino_common::storage::sd_remove(temp_path.c_str());
     }
 
-    File file = SD.open(temp_path.c_str(), FILE_WRITE);
-    if (!file)
+    ::platform::esp::arduino_common::storage::SdRuntimeFile file;
+    if (!file.open(temp_path.c_str(), "w"))
     {
         return false;
     }
@@ -148,18 +151,18 @@ bool saveRawBlobToSd(const char* path, const uint8_t* data, size_t len)
     file.close();
     if (!ok)
     {
-        SD.remove(temp_path.c_str());
+        ::platform::esp::arduino_common::storage::sd_remove(temp_path.c_str());
         return false;
     }
 
-    if (SD.exists(path))
+    if (::platform::esp::arduino_common::storage::sd_exists(path))
     {
-        SD.remove(path);
+        ::platform::esp::arduino_common::storage::sd_remove(path);
     }
 
-    if (!SD.rename(temp_path.c_str(), path))
+    if (!::platform::esp::arduino_common::storage::sd_rename(temp_path.c_str(), path))
     {
-        SD.remove(temp_path.c_str());
+        ::platform::esp::arduino_common::storage::sd_remove(temp_path.c_str());
         return false;
     }
 

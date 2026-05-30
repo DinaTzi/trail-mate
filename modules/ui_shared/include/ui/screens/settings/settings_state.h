@@ -118,6 +118,7 @@ struct SettingsData
     int screen_timeout_ms = 30000;
     int screen_brightness = 16;
     int timezone_offset_min = 0;
+    int timezone_profile_id = 0;
     int speaker_volume = 45;
     int display_locale_index = 0;
     bool ble_enabled = true;

@@ -183,6 +183,432 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_ui_presentation_screen_binding_registry_smoke
              COMMAND trailmate_ui_presentation_screen_binding_registry_smoke)
 
+    add_executable(trailmate_timezone_profile_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/tests/test_timezone_profile.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/src/platform/ui/timezone_profile.cpp")
+    target_include_directories(trailmate_timezone_profile_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include")
+    target_compile_features(trailmate_timezone_profile_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_timezone_profile_smoke
+             COMMAND trailmate_timezone_profile_smoke)
+
+    add_executable(trailmate_battery_estimator_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/tests/test_battery_estimator.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/src/power/battery_estimator.cpp")
+    target_include_directories(trailmate_battery_estimator_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include")
+    target_compile_features(trailmate_battery_estimator_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_battery_estimator_smoke
+             COMMAND trailmate_battery_estimator_smoke)
+
+    add_executable(trailmate_team_presence_snapshot_codec_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_presence_and_snapshot_codec.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/team_presence/team_presence_model.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/team_persistence/team_ui_snapshot_codec.cpp")
+    target_include_directories(trailmate_team_presence_snapshot_codec_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include")
+    target_compile_features(trailmate_team_presence_snapshot_codec_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_presence_snapshot_codec_smoke
+             COMMAND trailmate_team_presence_snapshot_codec_smoke)
+
+    add_executable(trailmate_team_mgmt_key_request_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/tests/test_team_mgmt_key_request.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_mgmt.cpp")
+    target_include_directories(trailmate_team_mgmt_key_request_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_mgmt_key_request_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_mgmt_key_request_smoke
+             COMMAND trailmate_team_mgmt_key_request_smoke)
+
+    add_executable(trailmate_team_app_data_poll_order_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/tests/test_team_app_data_poll_order.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/domain/chat_model.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/usecase/chat_service.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_chat.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_wire.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_waypoint.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_mgmt.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/usecase/team_service.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/src/sys/clock.cpp")
+    target_include_directories(trailmate_team_app_data_poll_order_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include")
+    target_compile_features(trailmate_team_app_data_poll_order_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_app_data_poll_order_smoke
+             COMMAND trailmate_team_app_data_poll_order_smoke)
+
+    add_executable(trailmate_team_page_read_model_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_read_model.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_read_model.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/team_presence/team_presence_model.cpp")
+    target_include_directories(trailmate_team_page_read_model_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include")
+    target_compile_features(trailmate_team_page_read_model_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_read_model_smoke
+             COMMAND trailmate_team_page_read_model_smoke)
+
+    add_executable(trailmate_team_page_state_store_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_state_store.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_state_store.cpp")
+    target_include_directories(trailmate_team_page_state_store_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include")
+    target_compile_features(trailmate_team_page_state_store_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_state_store_smoke
+             COMMAND trailmate_team_page_state_store_smoke)
+
+    add_executable(trailmate_contacts_team_snapshot_source_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_contacts_team_snapshot_source.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/contacts/contacts_team_snapshot_source.cpp")
+    target_include_directories(trailmate_contacts_team_snapshot_source_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include")
+    target_compile_features(trailmate_contacts_team_snapshot_source_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_contacts_team_snapshot_source_smoke
+             COMMAND trailmate_contacts_team_snapshot_source_smoke)
+
+    add_executable(trailmate_team_map_overlay_source_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_map_overlay_source.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/presentation_sources/team_map_overlay_source.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/platform/linux/common/src/platform/ui/team_ui_store_runtime.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/platform/linux/common/src/platform/linux/runtime_paths.cpp")
+    target_include_directories(trailmate_team_map_overlay_source_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_map_runtime/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_presentation/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include"
+            "${TRAIL_MATE_REPO_ROOT}/platform/linux/common/include")
+    target_compile_features(trailmate_team_map_overlay_source_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_map_overlay_source_smoke
+             COMMAND trailmate_team_map_overlay_source_smoke)
+
+    add_executable(trailmate_team_page_event_reducer_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_event_reducer.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_event_reducer.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/team_presence/team_presence_model.cpp")
+    target_include_directories(trailmate_team_page_event_reducer_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_page_event_reducer_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_event_reducer_smoke
+             COMMAND trailmate_team_page_event_reducer_smoke)
+
+    add_executable(trailmate_team_page_command_reducer_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_command_reducer.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_command_reducer.cpp")
+    target_include_directories(trailmate_team_page_command_reducer_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_page_command_reducer_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_command_reducer_smoke
+             COMMAND trailmate_team_page_command_reducer_smoke)
+
+    add_executable(trailmate_team_page_key_event_log_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_key_event_log.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_key_event_log.cpp")
+    target_include_directories(trailmate_team_page_key_event_log_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_page_key_event_log_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_key_event_log_smoke
+             COMMAND trailmate_team_page_key_event_log_smoke)
+
+    add_executable(trailmate_team_page_runtime_port_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_runtime_port.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_runtime_port.cpp")
+    target_include_directories(trailmate_team_page_runtime_port_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_page_runtime_port_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_runtime_port_smoke
+             COMMAND trailmate_team_page_runtime_port_smoke)
+
+    add_executable(trailmate_team_page_activity_sink_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_activity_sink.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_activity_sink.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_chat.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_position.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_track.cpp")
+    target_include_directories(trailmate_team_page_activity_sink_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_page_activity_sink_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_activity_sink_smoke
+             COMMAND trailmate_team_page_activity_sink_smoke)
+
+    add_executable(trailmate_team_page_deferred_dispatch_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_deferred_dispatch.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_deferred_dispatch.cpp")
+    target_include_directories(trailmate_team_page_deferred_dispatch_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_page_deferred_dispatch_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_deferred_dispatch_smoke
+             COMMAND trailmate_team_page_deferred_dispatch_smoke)
+
+    add_executable(trailmate_team_page_kick_confirm_action_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_kick_confirm_action.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_kick_confirm_action.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_command_reducer.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_runtime_port.cpp")
+    target_include_directories(trailmate_team_page_kick_confirm_action_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_page_kick_confirm_action_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_kick_confirm_action_smoke
+             COMMAND trailmate_team_page_kick_confirm_action_smoke)
+
+    add_executable(trailmate_team_page_transfer_leader_action_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_transfer_leader_action.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_transfer_leader_action.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_command_reducer.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_key_event_log.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_runtime_port.cpp")
+    target_include_directories(trailmate_team_page_transfer_leader_action_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_page_transfer_leader_action_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_transfer_leader_action_smoke
+             COMMAND trailmate_team_page_transfer_leader_action_smoke)
+
+    add_executable(trailmate_team_page_create_team_action_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_create_team_action.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_create_team_action.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_command_reducer.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_key_event_log.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_runtime_port.cpp")
+    target_include_directories(trailmate_team_page_create_team_action_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_page_create_team_action_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_create_team_action_smoke
+             COMMAND trailmate_team_page_create_team_action_smoke)
+
+    add_executable(trailmate_team_page_pairing_command_action_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_pairing_command_action.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_pairing_command_action.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_command_reducer.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_runtime_port.cpp")
+    target_include_directories(trailmate_team_page_pairing_command_action_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_page_pairing_command_action_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_pairing_command_action_smoke
+             COMMAND trailmate_team_page_pairing_command_action_smoke)
+
+    add_executable(trailmate_team_page_event_effect_sink_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_event_effect_sink.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_event_effect_sink.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_event_reducer.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_key_event_log.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_runtime_port.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/team_presence/team_presence_model.cpp")
+    target_include_directories(trailmate_team_page_event_effect_sink_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_page_event_effect_sink_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_event_effect_sink_smoke
+             COMMAND trailmate_team_page_event_effect_sink_smoke)
+
+    add_executable(trailmate_team_page_request_keys_action_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_request_keys_action.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_request_keys_action.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_command_reducer.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_runtime_port.cpp")
+    target_include_directories(trailmate_team_page_request_keys_action_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_page_request_keys_action_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_request_keys_action_smoke
+             COMMAND trailmate_team_page_request_keys_action_smoke)
+
+    add_executable(trailmate_team_page_key_request_action_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_key_request_action.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_key_request_action.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_runtime_port.cpp")
+    target_include_directories(trailmate_team_page_key_request_action_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_team_page_key_request_action_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_key_request_action_smoke
+             COMMAND trailmate_team_page_key_request_action_smoke)
+
+    add_executable(trailmate_team_page_flow_controller_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_page_flow_controller.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/team/team_page_flow_controller.cpp")
+    target_include_directories(trailmate_team_page_flow_controller_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include")
+    target_compile_features(trailmate_team_page_flow_controller_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_page_flow_controller_smoke
+             COMMAND trailmate_team_page_flow_controller_smoke)
+
+    add_executable(trailmate_team_chat_action_sink_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_chat_action_sink.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/presentation_sources/team_chat_action_sink.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/platform/linux/common/src/platform/ui/team_ui_store_runtime.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/platform/linux/common/src/platform/linux/runtime_paths.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/src/sys/clock.cpp")
+    target_include_directories(trailmate_team_chat_action_sink_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_presentation/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/platform/linux/common/include")
+    target_compile_features(trailmate_team_chat_action_sink_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_chat_action_sink_smoke
+             COMMAND trailmate_team_chat_action_sink_smoke)
+
+    add_executable(trailmate_team_chat_presentation_source_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_chat_presentation_source.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/presentation_sources/team_chat_presentation_source.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/team_presentation/team_rich_payload_projector.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_chat.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_location_marker.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/platform/linux/common/src/platform/ui/team_ui_store_runtime.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/platform/linux/common/src/platform/linux/runtime_paths.cpp")
+    target_include_directories(trailmate_team_chat_presentation_source_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_presentation/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/platform/linux/common/include")
+    target_compile_features(trailmate_team_chat_presentation_source_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_chat_presentation_source_smoke
+             COMMAND trailmate_team_chat_presentation_source_smoke)
+
+    add_executable(trailmate_chat_team_workflow_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_chat_team_workflow.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/screens/chat/chat_team_workflow.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_presentation/src/chat/chat_workspace_model.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_location_marker.cpp")
+    target_include_directories(trailmate_chat_team_workflow_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_presentation/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include")
+    target_compile_features(trailmate_chat_team_workflow_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_chat_team_workflow_smoke
+             COMMAND trailmate_chat_team_workflow_smoke)
+
+    add_executable(trailmate_team_action_runtime_sink_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_action_runtime_sink.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/team_actions/team_action_runtime_sink.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_chat.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_team/src/protocol/team_location_marker.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/platform/linux/common/src/platform/ui/team_ui_store_runtime.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/platform/linux/common/src/platform/linux/runtime_paths.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/src/sys/clock.cpp")
+    target_include_directories(trailmate_team_action_runtime_sink_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_presentation/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_team/include"
+            "${TRAIL_MATE_REPO_ROOT}/platform/linux/common/include")
+    target_compile_features(trailmate_team_action_runtime_sink_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_action_runtime_sink_smoke
+             COMMAND trailmate_team_action_runtime_sink_smoke)
+
+    add_executable(trailmate_team_action_types_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_action_types.cpp")
+    target_include_directories(trailmate_team_action_types_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include")
+    target_compile_features(trailmate_team_action_types_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_team_action_types_smoke
+             COMMAND trailmate_team_action_types_smoke)
+
     foreach(ux_pack_test IN ITEMS
         screen_registry
         input_binding_set

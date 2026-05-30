@@ -1,4 +1,5 @@
-#include "platform/ui/team_ui_store_runtime.h"
+#include "platform/ui/team_ui_chat_log_store.h"
+#include "platform/ui/team_ui_snapshot_store.h"
 #include "ui/presentation_sources/team_chat_action_sink.h"
 
 #include <cassert>
@@ -112,12 +113,16 @@ ui::chat::SendMessageView sendView(ui::chat::ConversationId id,
 
 int main()
 {
-    team::ui::ITeamUiStore& store = team::ui::team_ui_get_store();
+    team::ui::ITeamUiSnapshotStore& store = team::ui::team_ui_snapshot_store();
     store.clear();
     store.save(makeSnapshot());
 
     FakeTeamChatCommandPort fake_port;
-    ui::presentation_sources::TeamChatActionSink sink(store, &fake_port, 7);
+    ui::presentation_sources::TeamChatActionSink sink(
+        store,
+        team::ui::team_ui_chat_log_store(),
+        &fake_port,
+        7);
 
     assert(sink.selectConversation(teamConversation()).ok);
     const auto direct_select = sink.selectConversation(directConversation());
@@ -136,7 +141,10 @@ int main()
     assert(!empty_send.ok);
     assert(empty_send.failure == ui::UiActionFailure::InvalidInput);
 
-    ui::presentation_sources::TeamChatActionSink no_port_sink(store, nullptr);
+    ui::presentation_sources::TeamChatActionSink no_port_sink(
+        store,
+        team::ui::team_ui_chat_log_store(),
+        nullptr);
     const auto no_port_send =
         no_port_sink.sendMessage(sendView(teamConversation(), "no controller"));
     assert(!no_port_send.ok);
@@ -163,7 +171,10 @@ int main()
                        fake_port.last_message.payload.end()) == "team hello");
 
     std::vector<team::ui::TeamChatLogEntry> entries;
-    assert(team::ui::team_ui_chatlog_load_recent(testTeamId(), 4, entries));
+    assert(team::ui::team_ui_chat_log_store().loadRecent(
+        testTeamId(),
+        4,
+        entries));
     assert(entries.size() == 1);
     assert(!entries[0].incoming);
     assert(entries[0].type == team::proto::TeamChatType::Text);

@@ -1,4 +1,4 @@
-#include "ui/team_actions/legacy_team_action_bridge.h"
+#include "ui/team_actions/team_action_runtime_sink.h"
 
 #include "sys/clock.h"
 #include "team/protocol/team_chat.h"
@@ -83,25 +83,29 @@ team::proto::TeamCommandType toProtoCommand(TeamCommandKind kind)
 
 } // namespace
 
-LegacyTeamActionBridge::LegacyTeamActionBridge(
-    ::team::ui::ITeamUiStore& team_store,
+TeamActionRuntimeSink::TeamActionRuntimeSink(
+    ::team::ui::ITeamUiSnapshotStore& snapshot_store,
+    ::team::ui::ITeamUiChatLogStore& chat_log_store,
     ::ui::presentation_sources::ITeamChatCommandPort* command_port,
     ITeamLocationSource* location_source,
     uint8_t team_channel_raw)
-    : team_store_(team_store),
+    : snapshot_store_(snapshot_store),
+      chat_log_store_(chat_log_store),
       command_port_(command_port),
       location_source_(location_source),
       team_channel_raw_(team_channel_raw)
 {
 }
 
-ui::UiActionResult LegacyTeamActionBridge::sendTeamAction(
+ui::UiActionResult TeamActionRuntimeSink::sendTeamAction(
     const TeamActionRequest& request)
 {
     switch (request.kind)
     {
     case TeamActionKind::Text:
         return sendText(request);
+    case TeamActionKind::LocationShare:
+        return sendLocationShare(request);
     case TeamActionKind::LocationMarker:
         return sendLocationMarker(request);
     case TeamActionKind::Command:
@@ -110,7 +114,7 @@ ui::UiActionResult LegacyTeamActionBridge::sendTeamAction(
     return ui::UiActionResult::fail(ui::UiActionFailure::Unsupported);
 }
 
-ui::UiActionResult LegacyTeamActionBridge::sendText(
+ui::UiActionResult TeamActionRuntimeSink::sendText(
     const TeamActionRequest& request)
 {
     if (request.text == nullptr || request.text[0] == '\0')
@@ -119,7 +123,7 @@ ui::UiActionResult LegacyTeamActionBridge::sendText(
     }
 
     ::team::ui::TeamUiSnapshot snap;
-    if (!team_store_.load(snap) || !snap.has_team_id || !snap.has_team_psk ||
+    if (!snapshot_store_.load(snap) || !snap.has_team_id || !snap.has_team_psk ||
         command_port_ == nullptr)
     {
         return ui::UiActionResult::fail(ui::UiActionFailure::NotReady);
@@ -150,7 +154,7 @@ ui::UiActionResult LegacyTeamActionBridge::sendText(
         return ui::UiActionResult::fail(ui::UiActionFailure::Rejected);
     }
 
-    (void)::team::ui::team_ui_chatlog_append_structured(
+    (void)chat_log_store_.appendStructured(
         snap.team_id,
         0,
         false,
@@ -160,7 +164,100 @@ ui::UiActionResult LegacyTeamActionBridge::sendText(
     return ui::UiActionResult::success();
 }
 
-ui::UiActionResult LegacyTeamActionBridge::sendLocationMarker(
+ui::UiActionResult TeamActionRuntimeSink::sendLocationShare(
+    const TeamActionRequest& request)
+{
+    TeamLocationShareRequest location = request.location_share;
+    if (location.use_current_location)
+    {
+        if (location_source_ == nullptr)
+        {
+            return ui::UiActionResult::fail(ui::UiActionFailure::NotReady);
+        }
+
+        TeamLocationSnapshot snapshot;
+        if (!location_source_->currentTeamLocation(snapshot) || !snapshot.valid)
+        {
+            return ui::UiActionResult::fail(ui::UiActionFailure::NotReady);
+        }
+
+        location.lat = snapshot.lat;
+        location.lon = snapshot.lon;
+        location.has_altitude = snapshot.has_altitude;
+        location.altitude_m = snapshot.altitude_m;
+        if (location.timestamp == 0)
+        {
+            location.timestamp = snapshot.timestamp;
+        }
+    }
+
+    if (!validCoordinate(location.lat, location.lon))
+    {
+        return ui::UiActionResult::fail(ui::UiActionFailure::InvalidInput);
+    }
+
+    ::team::ui::TeamUiSnapshot snap;
+    if (!snapshot_store_.load(snap) || !snap.has_team_id || !snap.has_team_psk ||
+        command_port_ == nullptr)
+    {
+        return ui::UiActionResult::fail(ui::UiActionFailure::NotReady);
+    }
+    if (!command_port_->setKeysFromPsk(snap.team_id,
+                                       snap.security_round,
+                                       snap.team_psk.data(),
+                                       snap.team_psk.size()))
+    {
+        return ui::UiActionResult::fail(ui::UiActionFailure::NotReady);
+    }
+
+    uint32_t ts = location.timestamp;
+    if (ts == 0)
+    {
+        ts = currentTimestamp();
+    }
+
+    team::proto::TeamChatLocation loc;
+    loc.lat_e7 = coordinateToE7(location.lat);
+    loc.lon_e7 = coordinateToE7(location.lon);
+    loc.alt_m = location.has_altitude ? clampAltitude(location.altitude_m) : 0;
+    loc.ts = ts;
+    if (location.label != nullptr)
+    {
+        loc.label = location.label;
+    }
+
+    std::vector<uint8_t> payload;
+    if (!team::proto::encodeTeamChatLocation(loc, payload))
+    {
+        return ui::UiActionResult::fail(ui::UiActionFailure::Rejected);
+    }
+
+    team::proto::TeamChatMessage message;
+    message.header.type = team::proto::TeamChatType::Location;
+    message.header.ts = ts;
+    message.header.msg_id = next_message_id_++;
+    if (next_message_id_ == 0)
+    {
+        next_message_id_ = kTeamComposeMsgIdStart;
+    }
+    message.payload = payload;
+
+    if (!command_port_->sendTeamChat(message, team_channel_raw_))
+    {
+        return ui::UiActionResult::fail(ui::UiActionFailure::Rejected);
+    }
+
+    (void)chat_log_store_.appendStructured(
+        snap.team_id,
+        0,
+        false,
+        ts,
+        team::proto::TeamChatType::Location,
+        payload);
+    return ui::UiActionResult::success();
+}
+
+ui::UiActionResult TeamActionRuntimeSink::sendLocationMarker(
     const TeamActionRequest& request)
 {
     TeamLocationMarkerRequest location = request.location;
@@ -202,7 +299,7 @@ ui::UiActionResult LegacyTeamActionBridge::sendLocationMarker(
     }
 
     ::team::ui::TeamUiSnapshot snap;
-    if (!team_store_.load(snap) || !snap.has_team_id || !snap.has_team_psk ||
+    if (!snapshot_store_.load(snap) || !snap.has_team_id || !snap.has_team_psk ||
         command_port_ == nullptr)
     {
         return ui::UiActionResult::fail(ui::UiActionFailure::NotReady);
@@ -254,7 +351,7 @@ ui::UiActionResult LegacyTeamActionBridge::sendLocationMarker(
         return ui::UiActionResult::fail(ui::UiActionFailure::Rejected);
     }
 
-    (void)::team::ui::team_ui_chatlog_append_structured(
+    (void)chat_log_store_.appendStructured(
         snap.team_id,
         0,
         false,
@@ -264,7 +361,7 @@ ui::UiActionResult LegacyTeamActionBridge::sendLocationMarker(
     return ui::UiActionResult::success();
 }
 
-ui::UiActionResult LegacyTeamActionBridge::sendCommand(
+ui::UiActionResult TeamActionRuntimeSink::sendCommand(
     const TeamActionRequest& request)
 {
     const auto& command = request.command;
@@ -282,7 +379,7 @@ ui::UiActionResult LegacyTeamActionBridge::sendCommand(
     }
 
     ::team::ui::TeamUiSnapshot snap;
-    if (!team_store_.load(snap) || !snap.has_team_id || !snap.has_team_psk ||
+    if (!snapshot_store_.load(snap) || !snap.has_team_id || !snap.has_team_psk ||
         command_port_ == nullptr)
     {
         return ui::UiActionResult::fail(ui::UiActionFailure::NotReady);
@@ -329,7 +426,7 @@ ui::UiActionResult LegacyTeamActionBridge::sendCommand(
         return ui::UiActionResult::fail(ui::UiActionFailure::Rejected);
     }
 
-    (void)::team::ui::team_ui_chatlog_append_structured(
+    (void)chat_log_store_.appendStructured(
         snap.team_id,
         0,
         false,

@@ -38,6 +38,12 @@ struct TeamKeyDistEvent
     team::proto::TeamKeyDist msg;
 };
 
+struct TeamKeyRequestEvent
+{
+    TeamEventContext ctx;
+    team::proto::TeamKeyRequest msg;
+};
+
 struct TeamStatusEvent
 {
     TeamEventContext ctx;

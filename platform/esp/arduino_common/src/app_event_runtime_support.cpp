@@ -29,6 +29,21 @@ bool messageAlertsEnabled()
     return platform::ui::settings_store::get_int(kSettingsNs, kMessageAlertsKey, 1) != 0;
 }
 
+bool isTeamRuntimeEvent(sys::EventType type)
+{
+    return type == sys::EventType::TeamKick ||
+           type == sys::EventType::TeamTransferLeader ||
+           type == sys::EventType::TeamKeyDist ||
+           type == sys::EventType::TeamKeyRequest ||
+           type == sys::EventType::TeamStatus ||
+           type == sys::EventType::TeamPosition ||
+           type == sys::EventType::TeamWaypoint ||
+           type == sys::EventType::TeamTrack ||
+           type == sys::EventType::TeamChat ||
+           type == sys::EventType::TeamPairing ||
+           type == sys::EventType::TeamError;
+}
+
 void triggerMessageFeedback(app::IAppFacade& app_context)
 {
     BoardBase* board = app_context.getBoard();
@@ -216,19 +231,14 @@ bool handleUiEvent(app::IAppFacade& app_context, sys::Event* event)
         break;
     }
 
-    if (event->type == sys::EventType::TeamKick ||
-        event->type == sys::EventType::TeamTransferLeader ||
-        event->type == sys::EventType::TeamKeyDist ||
-        event->type == sys::EventType::TeamStatus ||
-        event->type == sys::EventType::TeamPosition ||
-        event->type == sys::EventType::TeamWaypoint ||
-        event->type == sys::EventType::TeamTrack ||
-        event->type == sys::EventType::TeamChat ||
-        event->type == sys::EventType::TeamPairing ||
-        event->type == sys::EventType::TeamError ||
-        event->type == sys::EventType::SystemTick)
+    const bool team_runtime_event = isTeamRuntimeEvent(event->type);
+    if (team_runtime_event || event->type == sys::EventType::SystemTick)
     {
         team::ui::shell::handle_event(nullptr, event);
+        if (team_runtime_event)
+        {
+            hostlink::bridge::on_team_state_changed();
+        }
         delete event;
         return true;
     }

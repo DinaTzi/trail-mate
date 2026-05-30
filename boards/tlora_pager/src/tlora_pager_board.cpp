@@ -16,6 +16,8 @@
 
 #include "display/drivers/ST7796.h"
 #include "pins_arduino.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
+#include "platform/ui/settings_store.h"
 #include "ui/widgets/system_notification.h"
 #include <Preferences.h>
 
@@ -283,11 +285,8 @@ uint32_t TLoRaPagerBoard::begin(uint32_t disable_hw_init)
         // Default 1500mAh, but allow overrides from NVS (for production tuning or advanced settings).
         uint16_t designCapacity = 1500;
         uint16_t fullChargeCapacity = 1500;
-        Preferences prefs;
-        prefs.begin("power", true);
-        uint32_t d = prefs.getUInt("gauge_design_mah", designCapacity);
-        uint32_t f = prefs.getUInt("gauge_full_mah", fullChargeCapacity);
-        prefs.end();
+        uint32_t d = ::platform::ui::settings_store::get_uint("power", "gauge_design_mah", designCapacity);
+        uint32_t f = ::platform::ui::settings_store::get_uint("power", "gauge_full_mah", fullChargeCapacity);
         if (d > 0 && d <= 10000)
         {
             designCapacity = static_cast<uint16_t>(d);
@@ -724,6 +723,32 @@ bool TLoRaPagerBoard::initLoRa()
     }
 
     devices_probe |= HW_RADIO_ONLINE;
+#if defined(ARDUINO_LILYGO_LORA_LR1121)
+    static const uint32_t rfswitch_dio_pins[] = {
+        RADIOLIB_LR11X0_DIO5,
+        RADIOLIB_LR11X0_DIO6,
+        RADIOLIB_NC,
+        RADIOLIB_NC,
+        RADIOLIB_NC,
+    };
+    static const Module::RfSwitchMode_t rfswitch_table[] = {
+        {LR11x0::MODE_STBY, {LOW, LOW}},
+        {LR11x0::MODE_RX, {LOW, HIGH}},
+        {LR11x0::MODE_TX, {HIGH, LOW}},
+        {LR11x0::MODE_TX_HP, {HIGH, LOW}},
+        {LR11x0::MODE_TX_HF, {LOW, LOW}},
+        {LR11x0::MODE_GNSS, {LOW, LOW}},
+        {LR11x0::MODE_WIFI, {LOW, LOW}},
+        END_OF_MODE_TABLE,
+    };
+
+    radio_.setRfSwitchTable(rfswitch_dio_pins, rfswitch_table);
+    state = radio_.setTCXO(3.0f);
+    if (state != RADIOLIB_ERR_NONE)
+    {
+        log_w("LR1121 TCXO config returned code: %d", state);
+    }
+#endif
     log_i("✅Radio init succeeded");
     return true;
 }
@@ -748,7 +773,7 @@ bool TLoRaPagerBoard::installSD()
 
     uint8_t card_type = CARD_NONE;
     uint32_t card_size_mb = 0;
-    bool ok = sdutil::installSpiSd(*this, SD_CS, 4000000U, "/sd",
+    bool ok = sdutil::installSpiSd(*this, SD_CS, SD_SPI_FREQUENCY, "/sd",
                                    nullptr, 0, &card_type, &card_size_mb);
     if (!ok)
     {
@@ -765,7 +790,7 @@ void TLoRaPagerBoard::uninstallSD()
     // Safely unmount SD card (requires SPI lock)
     if (LilyGoDispArduinoSPI::lock(portMAX_DELAY))
     {
-        SD.end();
+        ::platform::esp::arduino_common::storage::unmount_sd_card();
         LilyGoDispArduinoSPI::unlock();
         log_d("SD card unmounted");
     }
@@ -781,7 +806,7 @@ bool TLoRaPagerBoard::isCardReady()
     bool ready = false;
     if (LilyGoDispArduinoSPI::lock(pdTICKS_TO_MS(100)))
     {
-        ready = (SD.sectorSize() != 0);
+        ready = ::platform::esp::arduino_common::storage::sd_card_ready();
         LilyGoDispArduinoSPI::unlock();
     }
     return ready;
@@ -1366,7 +1391,11 @@ float TLoRaPagerBoard::getRadioInstantRSSI()
 {
     if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20)))
     {
+#if defined(ARDUINO_LILYGO_LORA_SX1262)
         const float rssi = radio_.getRSSI(false);
+#else
+        const float rssi = radio_.getRSSI();
+#endif
         LilyGoDispArduinoSPI::unlock();
         return rssi;
     }
@@ -1398,8 +1427,13 @@ int TLoRaPagerBoard::configureFskRadio(float freq_mhz, float bit_rate_kbps, floa
         int rc = radio_.standby();
         if (rc == RADIOLIB_ERR_NONE)
         {
+#if defined(ARDUINO_LILYGO_LORA_LR1121)
+            rc = radio_.beginGFSK(freq_mhz, bit_rate_kbps, freq_dev_khz, rx_bw_khz,
+                                  tx_power, preamble_len, 3.0f);
+#else
             rc = radio_.beginFSK(freq_mhz, bit_rate_kbps, freq_dev_khz, rx_bw_khz,
                                  tx_power, preamble_len, tcxo_voltage);
+#endif
         }
         if (rc == RADIOLIB_ERR_NONE)
         {
@@ -1425,7 +1459,18 @@ int TLoRaPagerBoard::restoreLoRaRadio()
 
     if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(200)))
     {
+#if defined(ARDUINO_LILYGO_LORA_LR1121)
+        int rc = radio_.begin(cached.valid ? cached.freq_mhz : 434.0f,
+                              cached.valid ? cached.bw_khz : 125.0f,
+                              cached.valid ? cached.sf : 9,
+                              cached.valid ? cached.cr_denom : 7,
+                              cached.valid ? cached.sync_word : RADIOLIB_LR11X0_LORA_SYNC_WORD_PRIVATE,
+                              cached.valid ? cached.tx_power : 10,
+                              cached.valid ? cached.preamble_len : 8,
+                              3.0f);
+#else
         int rc = radio_.begin();
+#endif
         LilyGoDispArduinoSPI::unlock();
         if (rc != RADIOLIB_ERR_NONE)
         {
@@ -2241,11 +2286,8 @@ void TLoRaPagerBoard::reloadGaugeCapacityFromPrefs()
 
     uint16_t designCapacity = 1500;
     uint16_t fullChargeCapacity = 1500;
-    Preferences prefs;
-    prefs.begin("power", true);
-    uint32_t d = prefs.getUInt("gauge_design_mah", designCapacity);
-    uint32_t f = prefs.getUInt("gauge_full_mah", fullChargeCapacity);
-    prefs.end();
+    uint32_t d = ::platform::ui::settings_store::get_uint("power", "gauge_design_mah", designCapacity);
+    uint32_t f = ::platform::ui::settings_store::get_uint("power", "gauge_full_mah", fullChargeCapacity);
     if (d > 0 && d <= 10000)
     {
         designCapacity = static_cast<uint16_t>(d);

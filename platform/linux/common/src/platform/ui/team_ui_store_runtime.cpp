@@ -151,15 +151,78 @@ TeamUiRuntimeMemory& runtime_memory()
 constexpr size_t kMaxChatEntriesPerTeam = 128;
 constexpr size_t kMaxPosSamplesPerTeam = 96;
 
-TeamUiMemoryStore s_memory_store{};
-ITeamUiStore* s_store = &s_memory_store;
+TeamUiSnapshotMemoryStore s_snapshot_memory_store{};
+ITeamUiSnapshotStore* s_snapshot_store = &s_snapshot_memory_store;
+
+class TeamUiRuntimeChatLogStore final : public ITeamUiChatLogStore
+{
+  public:
+    bool appendText(const TeamId& team_id,
+                    uint32_t peer_id,
+                    bool incoming,
+                    uint32_t ts,
+                    const std::string& text) override
+    {
+        return appendStructured(team_id,
+                                peer_id,
+                                incoming,
+                                ts,
+                                team::proto::TeamChatType::Text,
+                                std::vector<uint8_t>(text.begin(), text.end()));
+    }
+
+    bool appendStructured(const TeamId& team_id,
+                          uint32_t peer_id,
+                          bool incoming,
+                          uint32_t ts,
+                          team::proto::TeamChatType type,
+                          const std::vector<uint8_t>& payload) override
+    {
+        auto& chat_log = runtime_memory().chat_logs[team_id_to_u64(team_id)];
+        TeamChatLogEntry entry;
+        entry.incoming = incoming;
+        entry.ts = ts;
+        entry.peer_id = peer_id;
+        entry.type = type;
+        entry.payload = payload;
+        chat_log.push_back(std::move(entry));
+        while (chat_log.size() > kMaxChatEntriesPerTeam)
+        {
+            chat_log.pop_front();
+        }
+        return true;
+    }
+
+    bool loadRecent(const TeamId& team_id,
+                    std::size_t max_count,
+                    std::vector<TeamChatLogEntry>& out) override
+    {
+        out.clear();
+        const auto it = runtime_memory().chat_logs.find(team_id_to_u64(team_id));
+        if (it == runtime_memory().chat_logs.end())
+        {
+            return false;
+        }
+
+        const auto& log = it->second;
+        const size_t available = log.size();
+        const size_t count = std::min(max_count, available);
+        out.reserve(count);
+        auto start = log.end();
+        std::advance(start, -static_cast<long long>(count));
+        out.assign(start, log.end());
+        return !out.empty();
+    }
+};
+
+TeamUiRuntimeChatLogStore s_chat_log_store{};
 
 } // namespace
 
-bool TeamUiMemoryStore::has_snapshot_ = false;
-TeamUiSnapshot TeamUiMemoryStore::snapshot_{};
+bool TeamUiSnapshotMemoryStore::has_snapshot_ = false;
+TeamUiSnapshot TeamUiSnapshotMemoryStore::snapshot_{};
 
-bool TeamUiMemoryStore::load(TeamUiSnapshot& out)
+bool TeamUiSnapshotMemoryStore::load(TeamUiSnapshot& out)
 {
     if (!has_snapshot_)
     {
@@ -170,27 +233,42 @@ bool TeamUiMemoryStore::load(TeamUiSnapshot& out)
     return true;
 }
 
-void TeamUiMemoryStore::save(const TeamUiSnapshot& in)
+void TeamUiSnapshotMemoryStore::save(const TeamUiSnapshot& in)
 {
     snapshot_ = in;
     has_snapshot_ = true;
 }
 
-void TeamUiMemoryStore::clear()
+void TeamUiSnapshotMemoryStore::clear()
 {
     snapshot_ = TeamUiSnapshot{};
     has_snapshot_ = false;
     runtime_memory() = TeamUiRuntimeMemory{};
 }
 
+ITeamUiSnapshotStore& team_ui_snapshot_store()
+{
+    return *s_snapshot_store;
+}
+
+void team_ui_set_snapshot_store(ITeamUiSnapshotStore* store)
+{
+    s_snapshot_store = store ? store : &s_snapshot_memory_store;
+}
+
 ITeamUiStore& team_ui_get_store()
 {
-    return *s_store;
+    return team_ui_snapshot_store();
 }
 
 void team_ui_set_store(ITeamUiStore* store)
 {
-    s_store = store ? store : &s_memory_store;
+    team_ui_set_snapshot_store(store);
+}
+
+ITeamUiChatLogStore& team_ui_chat_log_store()
+{
+    return s_chat_log_store;
 }
 
 bool team_ui_append_key_event(const TeamId& team_id,
@@ -205,7 +283,7 @@ bool team_ui_append_key_event(const TeamId& team_id,
     (void)len;
 
     TeamUiSnapshot snapshot{};
-    if (!team_ui_get_store().load(snapshot))
+    if (!team_ui_snapshot_store().load(snapshot))
     {
         snapshot = TeamUiSnapshot{};
     }
@@ -221,7 +299,7 @@ bool team_ui_append_key_event(const TeamId& team_id,
         snapshot.kicked_out = false;
     }
 
-    team_ui_get_store().save(snapshot);
+    team_ui_snapshot_store().save(snapshot);
     return true;
 }
 
@@ -234,14 +312,14 @@ bool team_ui_posring_append(const TeamId& team_id,
                             uint32_t ts)
 {
     auto& positions = runtime_memory().latest_positions[team_id_to_u64(team_id)];
-    positions.push_back(TeamPosSample{
-        .member_id = member_id,
-        .lat_e7 = lat_e7,
-        .lon_e7 = lon_e7,
-        .alt_m = alt_m,
-        .speed_dmps = speed_dmps,
-        .ts = ts,
-    });
+    TeamPosSample sample;
+    sample.member_id = member_id;
+    sample.lat_e7 = lat_e7;
+    sample.lon_e7 = lon_e7;
+    sample.alt_m = alt_m;
+    sample.speed_dmps = speed_dmps;
+    sample.ts = ts;
+    positions.push_back(sample);
     while (positions.size() > kMaxPosSamplesPerTeam)
     {
         positions.pop_front();
@@ -268,12 +346,11 @@ bool team_ui_chatlog_append(const TeamId& team_id,
                             uint32_t ts,
                             const std::string& text)
 {
-    return team_ui_chatlog_append_structured(team_id,
-                                             peer_id,
-                                             incoming,
-                                             ts,
-                                             team::proto::TeamChatType::Text,
-                                             std::vector<uint8_t>(text.begin(), text.end()));
+    return team_ui_chat_log_store().appendText(team_id,
+                                               peer_id,
+                                               incoming,
+                                               ts,
+                                               text);
 }
 
 bool team_ui_chatlog_append_structured(const TeamId& team_id,
@@ -283,40 +360,19 @@ bool team_ui_chatlog_append_structured(const TeamId& team_id,
                                        team::proto::TeamChatType type,
                                        const std::vector<uint8_t>& payload)
 {
-    auto& chat_log = runtime_memory().chat_logs[team_id_to_u64(team_id)];
-    chat_log.push_back(TeamChatLogEntry{
-        .incoming = incoming,
-        .ts = ts,
-        .peer_id = peer_id,
-        .type = type,
-        .payload = payload,
-    });
-    while (chat_log.size() > kMaxChatEntriesPerTeam)
-    {
-        chat_log.pop_front();
-    }
-    return true;
+    return team_ui_chat_log_store().appendStructured(team_id,
+                                                     peer_id,
+                                                     incoming,
+                                                     ts,
+                                                     type,
+                                                     payload);
 }
 
 bool team_ui_chatlog_load_recent(const TeamId& team_id,
                                  size_t max_count,
                                  std::vector<TeamChatLogEntry>& out)
 {
-    out.clear();
-    const auto it = runtime_memory().chat_logs.find(team_id_to_u64(team_id));
-    if (it == runtime_memory().chat_logs.end())
-    {
-        return false;
-    }
-
-    const auto& log = it->second;
-    const size_t available = log.size();
-    const size_t count = std::min(max_count, available);
-    out.reserve(count);
-    auto start = log.end();
-    std::advance(start, -static_cast<long long>(count));
-    out.assign(start, log.end());
-    return !out.empty();
+    return team_ui_chat_log_store().loadRecent(team_id, max_count, out);
 }
 
 bool team_ui_save_keys_now(const TeamId& team_id,
@@ -324,7 +380,7 @@ bool team_ui_save_keys_now(const TeamId& team_id,
                            const std::array<uint8_t, team::proto::kTeamChannelPskSize>& psk)
 {
     TeamUiSnapshot snapshot{};
-    if (!team_ui_get_store().load(snapshot))
+    if (!team_ui_snapshot_store().load(snapshot))
     {
         snapshot = TeamUiSnapshot{};
     }
@@ -333,7 +389,7 @@ bool team_ui_save_keys_now(const TeamId& team_id,
     snapshot.security_round = key_id;
     snapshot.team_psk = psk;
     snapshot.has_team_psk = true;
-    team_ui_get_store().save(snapshot);
+    team_ui_snapshot_store().save(snapshot);
     return true;
 }
 

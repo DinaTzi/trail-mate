@@ -31,6 +31,7 @@ enum class EventType
     TeamKick,
     TeamTransferLeader,
     TeamKeyDist,
+    TeamKeyRequest,
     TeamStatus,
     TeamPosition,
     TeamWaypoint,
@@ -310,6 +311,12 @@ struct TeamKeyDistEvent : public Event
 {
     team::TeamKeyDistEvent data;
     explicit TeamKeyDistEvent(const team::TeamKeyDistEvent& evt) : Event(EventType::TeamKeyDist), data(evt) {}
+};
+
+struct TeamKeyRequestEvent : public Event
+{
+    team::TeamKeyRequestEvent data;
+    explicit TeamKeyRequestEvent(const team::TeamKeyRequestEvent& evt) : Event(EventType::TeamKeyRequest), data(evt) {}
 };
 
 struct TeamStatusEvent : public Event

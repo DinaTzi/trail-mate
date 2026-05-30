@@ -245,6 +245,16 @@ ErrorCode send_team_mgmt_wire(team::TeamController* controller,
                  : controller->onKeyDist(msg, channel, to, false, want_response);
         break;
     }
+    case team::proto::TeamMgmtType::KeyRequest:
+    {
+        team::proto::TeamKeyRequest msg;
+        if (!team::proto::decodeTeamKeyRequest(mgmt_payload.data(), mgmt_payload.size(), &msg))
+        {
+            return ErrorCode::InvalidParam;
+        }
+        ok = controller->onKeyRequest(msg, channel, to, false, want_response);
+        break;
+    }
     case team::proto::TeamMgmtType::Status:
     {
         team::proto::TeamStatus msg;

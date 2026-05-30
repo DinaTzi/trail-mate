@@ -41,6 +41,10 @@ int main()
     reset_probe.messages[0].ref.origin = ui::chat::MessageOrigin::RemoteStored;
     reset_probe.messages[0].delivery = ui::chat::MessageDeliveryState::Delivered;
     ui::copyText(reset_probe.messages[0].text, "stale");
+    reset_probe.messages[0].has_team_rich_payload = true;
+    reset_probe.messages[0].team_rich_payload.kind =
+        ui::chat::TeamMessageRichPayloadKind::Location;
+    ui::copyText(reset_probe.messages[0].team_rich_payload.summary, "stale rich");
     ui::chat::resetChatWorkspaceSnapshot(reset_probe);
     assert(!reset_probe.header.valid);
     assert(reset_probe.conversation_count == 0);
@@ -52,6 +56,10 @@ int main()
     assert(reset_probe.messages[0].delivery ==
            ui::chat::MessageDeliveryState::Unknown);
     assert(reset_probe.messages[0].text.empty());
+    assert(!reset_probe.messages[0].has_team_rich_payload);
+    assert(reset_probe.messages[0].team_rich_payload.kind ==
+           ui::chat::TeamMessageRichPayloadKind::None);
+    assert(reset_probe.messages[0].team_rich_payload.summary.empty());
 
     ui::tests::FakeChatPresentationSource source;
     source.snapshot_value.header.valid = true;

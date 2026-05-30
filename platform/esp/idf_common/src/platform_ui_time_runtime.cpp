@@ -26,9 +26,24 @@ void set_timezone_offset_min(int offset_min)
     ui_set_timezone_offset_min(offset_min);
 }
 
+int timezone_profile_id()
+{
+    return ui_get_timezone_profile_id();
+}
+
+void set_timezone_profile_id(int profile_id)
+{
+    ui_set_timezone_profile_id(profile_id);
+}
+
 time_t apply_timezone_offset(time_t utc_seconds)
 {
     return ui_apply_timezone_offset(utc_seconds);
+}
+
+time_t apply_timezone_offset_for_utc(time_t utc_seconds)
+{
+    return apply_timezone_offset(utc_seconds);
 }
 
 bool localtime_now(struct tm* out_tm)

@@ -241,6 +241,29 @@ bool decodeTeamKeyDist(const uint8_t* data, size_t len, TeamKeyDist* out)
     return true;
 }
 
+bool encodeTeamKeyRequest(const TeamKeyRequest& input, std::vector<uint8_t>& out)
+{
+    out.clear();
+    ByteWriter writer(out);
+    writer.putBytes(input.team_id.data(), input.team_id.size());
+    writer.putU32(input.current_key_id);
+    writer.putU32(input.requester_id);
+    return true;
+}
+
+bool decodeTeamKeyRequest(const uint8_t* data, size_t len, TeamKeyRequest* out)
+{
+    if (!data || !out)
+    {
+        return false;
+    }
+    ByteReader reader(data, len);
+    if (!reader.getBytes(out->team_id.data(), out->team_id.size())) return false;
+    if (!reader.getU32(&out->current_key_id)) return false;
+    if (!reader.getU32(&out->requester_id)) return false;
+    return true;
+}
+
 bool encodeTeamStatus(const TeamStatus& input, std::vector<uint8_t>& out)
 {
     out.clear();

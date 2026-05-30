@@ -25,6 +25,12 @@ int main()
     assert(action.location.use_current_location);
     assert(location_snapshot.valid);
 
+    action.kind = ui::team_actions::TeamActionKind::LocationShare;
+    action.location_share.use_current_location = true;
+    action.location_share.label = "camp";
+    assert(action.location_share.use_current_location);
+    assert(action.location_share.label != nullptr);
+
     action.kind = ui::team_actions::TeamActionKind::Command;
     action.command.kind = ui::team_actions::TeamCommandKind::RallyPoint;
     action.command.payload = "rally";

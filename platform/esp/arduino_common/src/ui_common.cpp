@@ -6,7 +6,9 @@
 #include "ui/ui_common.h"
 #include "board/BoardBase.h"
 #include "lvgl.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include "platform/ui/settings_store.h"
+#include "platform/ui/timezone_profile.h"
 #if LV_USE_SNAPSHOT
 extern "C" lv_draw_buf_t* lv_snapshot_take(lv_obj_t* obj, lv_color_format_t cf);
 extern "C" void lv_draw_buf_destroy(lv_draw_buf_t* draw_buf);
@@ -23,9 +25,30 @@ namespace
 {
 constexpr const char* kPrefsNs = "settings";
 constexpr const char* kTimezoneKey = "timezone_offset";
+constexpr const char* kTimezoneProfileKey = "timezone_profile";
 
 static bool s_tz_loaded = false;
 static int s_tz_offset_min = 0;
+static int s_tz_profile_id = ::platform::ui::time::default_timezone_profile()->id;
+
+void ensure_timezone_loaded()
+{
+    if (s_tz_loaded)
+    {
+        return;
+    }
+    s_tz_offset_min = ::platform::ui::settings_store::get_int(kPrefsNs, kTimezoneKey, 0);
+    s_tz_profile_id = ::platform::ui::settings_store::get_int(
+        kPrefsNs,
+        kTimezoneProfileKey,
+        ::platform::ui::time::timezone_profile_id_for_legacy_offset(s_tz_offset_min));
+    if (!::platform::ui::time::timezone_profile_id_is_fixed(s_tz_profile_id) &&
+        !::platform::ui::time::timezone_profile_by_id(s_tz_profile_id))
+    {
+        s_tz_profile_id = ::platform::ui::time::timezone_profile_id_for_legacy_offset(s_tz_offset_min);
+    }
+    s_tz_loaded = true;
+}
 } // namespace
 
 void ui_update_top_bar_battery(ui::widgets::TopBar& bar)
@@ -39,19 +62,39 @@ void ui_update_top_bar_battery(ui::widgets::TopBar& bar)
 
 int ui_get_timezone_offset_min()
 {
-    if (!s_tz_loaded)
-    {
-        s_tz_offset_min = ::platform::ui::settings_store::get_int(kPrefsNs, kTimezoneKey, 0);
-        s_tz_loaded = true;
-    }
-    return s_tz_offset_min;
+    ensure_timezone_loaded();
+    return ::platform::ui::time::timezone_offset_for_profile_id_at(s_tz_profile_id,
+                                                                   s_tz_offset_min,
+                                                                   std::time(nullptr));
 }
 
 void ui_set_timezone_offset_min(int offset_min)
 {
     s_tz_offset_min = offset_min;
+    s_tz_profile_id = ::platform::ui::time::timezone_profile_id_for_fixed_offset(offset_min);
     s_tz_loaded = true;
     ::platform::ui::settings_store::put_int(kPrefsNs, kTimezoneKey, offset_min);
+    ::platform::ui::settings_store::put_int(kPrefsNs, kTimezoneProfileKey, s_tz_profile_id);
+}
+
+int ui_get_timezone_profile_id()
+{
+    ensure_timezone_loaded();
+    return s_tz_profile_id;
+}
+
+void ui_set_timezone_profile_id(int profile_id)
+{
+    const auto* profile = ::platform::ui::time::timezone_profile_by_id(profile_id);
+    if (!profile)
+    {
+        profile = ::platform::ui::time::default_timezone_profile();
+    }
+    s_tz_profile_id = profile->id;
+    s_tz_offset_min = profile->standard_offset_min;
+    s_tz_loaded = true;
+    ::platform::ui::settings_store::put_int(kPrefsNs, kTimezoneProfileKey, s_tz_profile_id);
+    ::platform::ui::settings_store::put_int(kPrefsNs, kTimezoneKey, s_tz_offset_min);
 }
 
 time_t ui_apply_timezone_offset(time_t utc_seconds)
@@ -60,22 +103,24 @@ time_t ui_apply_timezone_offset(time_t utc_seconds)
     {
         return utc_seconds;
     }
-    int offset_min = ui_get_timezone_offset_min();
+    ensure_timezone_loaded();
+    const int offset_min =
+        ::platform::ui::time::timezone_offset_for_profile_id_at(s_tz_profile_id, s_tz_offset_min, utc_seconds);
     return utc_seconds + static_cast<time_t>(offset_min) * 60;
 }
 
 bool ui_take_screenshot_to_sd()
 {
 #if LV_USE_SNAPSHOT
-    if (SD.cardType() == CARD_NONE)
+    if (!::platform::esp::arduino_common::storage::sd_card_ready())
     {
         Serial.println("[Screenshot] SD not available");
         return false;
     }
 
-    if (!SD.exists("/screen"))
+    if (!::platform::esp::arduino_common::storage::sd_exists("/screen"))
     {
-        if (!SD.mkdir("/screen"))
+        if (!::platform::esp::arduino_common::storage::sd_mkdir("/screen"))
         {
             Serial.println("[Screenshot] mkdir /screen failed");
         }
@@ -124,8 +169,8 @@ bool ui_take_screenshot_to_sd()
                  static_cast<unsigned long>(millis()));
     }
 
-    File f = SD.open(path, FILE_WRITE);
-    if (!f)
+    ::platform::esp::arduino_common::storage::SdRuntimeFile f;
+    if (!f.open(path, "w"))
     {
         Serial.printf("[Screenshot] Open failed: %s\n", path);
         lv_draw_buf_destroy(snap);
