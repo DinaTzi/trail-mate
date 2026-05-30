@@ -183,6 +183,17 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_ui_presentation_screen_binding_registry_smoke
              COMMAND trailmate_ui_presentation_screen_binding_registry_smoke)
 
+    add_executable(trailmate_timezone_profile_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/tests/test_timezone_profile.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/src/platform/ui/timezone_profile.cpp")
+    target_include_directories(trailmate_timezone_profile_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include")
+    target_compile_features(trailmate_timezone_profile_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_timezone_profile_smoke
+             COMMAND trailmate_timezone_profile_smoke)
+
     add_executable(trailmate_team_presence_snapshot_codec_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_team_presence_and_snapshot_codec.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/team_presence/team_presence_model.cpp"

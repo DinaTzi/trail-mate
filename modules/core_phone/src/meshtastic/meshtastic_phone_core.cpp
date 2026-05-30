@@ -7,6 +7,7 @@
 #include "pb_encode.h"
 #include "phone/meshtastic/meshtastic_defaults.h"
 #include "phone/meshtastic/meshtastic_phone_config_bridge.h"
+#include "platform/ui/timezone_profile.h"
 #include "sys/clock.h"
 
 #include <algorithm>
@@ -137,115 +138,12 @@ void logChannelSummary(const char* prefix, const meshtastic_Channel& channel)
 
 bool parsePosixTzOffsetMinutes(const char* tzdef, int* out_offset_min)
 {
-    if (!tzdef || !out_offset_min || tzdef[0] == '\0')
-    {
-        return false;
-    }
-
-    const char* cursor = tzdef;
-    if (*cursor == '<')
-    {
-        ++cursor;
-        while (*cursor != '\0' && *cursor != '>')
-        {
-            ++cursor;
-        }
-        if (*cursor != '>')
-        {
-            return false;
-        }
-        ++cursor;
-    }
-    else
-    {
-        size_t name_len = 0;
-        while (*cursor != '\0' && std::isalpha(static_cast<unsigned char>(*cursor)))
-        {
-            ++cursor;
-            ++name_len;
-        }
-        if (name_len < 3U)
-        {
-            return false;
-        }
-    }
-
-    int sign = 1;
-    if (*cursor == '-')
-    {
-        sign = -1;
-        ++cursor;
-    }
-    else if (*cursor == '+')
-    {
-        ++cursor;
-    }
-
-    if (!std::isdigit(static_cast<unsigned char>(*cursor)))
-    {
-        return false;
-    }
-
-    int hours = 0;
-    while (std::isdigit(static_cast<unsigned char>(*cursor)))
-    {
-        hours = (hours * 10) + (*cursor - '0');
-        ++cursor;
-    }
-
-    int minutes = 0;
-    if (*cursor == ':')
-    {
-        ++cursor;
-        if (!std::isdigit(static_cast<unsigned char>(*cursor)))
-        {
-            return false;
-        }
-        while (std::isdigit(static_cast<unsigned char>(*cursor)))
-        {
-            minutes = (minutes * 10) + (*cursor - '0');
-            ++cursor;
-        }
-
-        if (*cursor == ':')
-        {
-            ++cursor;
-            while (std::isdigit(static_cast<unsigned char>(*cursor)))
-            {
-                ++cursor;
-            }
-        }
-    }
-
-    const int posix_offset_min = sign * ((hours * 60) + minutes);
-    *out_offset_min = -posix_offset_min;
-    return true;
+    return ::platform::ui::time::parse_posix_tz_standard_offset_minutes(tzdef, out_offset_min);
 }
 
 void buildFixedPosixTzdef(int offset_min, char* out, size_t out_len)
 {
-    if (!out || out_len == 0)
-    {
-        return;
-    }
-
-    const int posix_offset_min = -offset_min;
-    const int abs_minutes = posix_offset_min < 0 ? -posix_offset_min : posix_offset_min;
-    const int abs_hours = abs_minutes / 60;
-    const int rem_minutes = abs_minutes % 60;
-
-    if (rem_minutes == 0)
-    {
-        std::snprintf(out, out_len, "UTC%+d", posix_offset_min / 60);
-    }
-    else
-    {
-        std::snprintf(out,
-                      out_len,
-                      "UTC%+d:%02d",
-                      posix_offset_min < 0 ? -abs_hours : abs_hours,
-                      rem_minutes);
-    }
+    ::platform::ui::time::build_fixed_posix_tzdef(offset_min, out, out_len);
 }
 
 bool loadStoredTimezoneTzdef(const MeshtasticPhoneDeviceRuntimeHooks* device_runtime_hooks, char* out, size_t out_len)
@@ -281,6 +179,15 @@ void buildLinkedTimezoneTzdef(const MeshtasticPhoneDeviceRuntimeHooks* device_ru
 
     out[0] = '\0';
     const int current_offset_min = device_runtime_hooks ? device_runtime_hooks->getTimezoneOffsetMinutes() : 0;
+    const auto* current_profile = device_runtime_hooks
+                                      ? ::platform::ui::time::timezone_profile_by_id(
+                                            device_runtime_hooks->getTimezoneProfileId())
+                                      : nullptr;
+    if (current_profile && current_profile->tzdef && current_profile->tzdef[0] != '\0')
+    {
+        copyBounded(out, out_len, current_profile->tzdef);
+        return;
+    }
     char stored[65] = {};
     if (loadStoredTimezoneTzdef(device_runtime_hooks, stored, sizeof(stored)))
     {
@@ -875,12 +782,23 @@ bool MeshtasticPhoneCore::handleAdmin(meshtastic_MeshPacket& packet)
                 int offset_min = 0;
                 if (parsePosixTzOffsetMinutes(tzdef, &offset_min))
                 {
+                    const auto* profile = ::platform::ui::time::timezone_profile_by_tzdef(tzdef);
                     if (device_runtime_hooks_)
                     {
-                        device_runtime_hooks_->setTimezoneOffsetMinutes(offset_min);
+                        if (profile)
+                        {
+                            device_runtime_hooks_->setTimezoneProfileId(profile->id);
+                        }
+                        else
+                        {
+                            device_runtime_hooks_->setTimezoneOffsetMinutes(offset_min);
+                        }
                     }
                     saveStoredTimezoneTzdef(device_runtime_hooks_, tzdef);
-                    logDual("[BLE][mtcore] set_config device tzdef=%s offset_min=%d\n", tzdef, offset_min);
+                    logDual("[BLE][mtcore] set_config device tzdef=%s offset_min=%d profile=%d\n",
+                            tzdef,
+                            offset_min,
+                            profile ? profile->id : -1);
                 }
                 else
                 {

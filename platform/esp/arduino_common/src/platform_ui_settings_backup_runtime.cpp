@@ -54,6 +54,8 @@ constexpr ExtraKey kExtraKeys[] = {
     {"settings", "display_locale", "disp_locale", ValueType::String},
     {"settings", "enabled_imes", "enabled_imes", ValueType::String},
     {"settings", "timezone_offset", "timezone_offset", ValueType::Int},
+    {"settings", "timezone_profile", "timezone_prof", ValueType::Int},
+    {"settings", "timezone_tzdef", "timezone_tzdef", ValueType::Blob},
     {"settings", "chat_message_alerts", "chat_msg_alert", ValueType::Int},
     {"settings", "chat_contact_alerts", "chat_ct_alert", ValueType::Int},
     {"settings", "adv_debug", "adv_debug", ValueType::Bool},

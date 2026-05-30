@@ -63,6 +63,7 @@ struct HostCallbacks
     time_t (*utc_now_fn)() = nullptr;
     int (*timezone_offset_min_fn)() = nullptr;
     void (*set_timezone_offset_min_fn)(int offset_min) = nullptr;
+    time_t (*apply_timezone_offset_fn)(time_t utc_seconds) = nullptr;
     uint32_t (*active_lora_frequency_hz_fn)() = nullptr;
     bool (*format_frequency_fn)(uint32_t freq_hz, char* out, size_t out_len) = nullptr;
     platform::ui::device::BatteryInfo (*battery_info_fn)() = nullptr;

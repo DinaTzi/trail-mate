@@ -133,6 +133,14 @@ class MeshtasticPhoneDeviceRuntimeHooks
     {
         (void)offset_min;
     }
+    virtual int getTimezoneProfileId() const
+    {
+        return 0;
+    }
+    virtual void setTimezoneProfileId(int profile_id)
+    {
+        (void)profile_id;
+    }
     virtual bool getGpsFix(MeshtasticGpsFix* out) const
     {
         if (!out)

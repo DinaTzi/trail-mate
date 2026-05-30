@@ -88,6 +88,8 @@ class AppPhoneFacade final : public phone::IPhoneAppFacade,
     void saveTimezoneTzdef(const char* tzdef) override;
     int getTimezoneOffsetMinutes() const override;
     void setTimezoneOffsetMinutes(int offset_min) override;
+    int getTimezoneProfileId() const override;
+    void setTimezoneProfileId(int profile_id) override;
     bool getGpsFix(phone::meshtastic::MeshtasticGpsFix* out) const override;
 
     phone::meshcore::MeshCorePhoneBatteryInfo getBatteryInfo() const override;

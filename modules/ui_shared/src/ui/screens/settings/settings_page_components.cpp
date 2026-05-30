@@ -25,6 +25,7 @@
 #include "platform/ui/settings_store.h"
 #include "platform/ui/team_ui_store_runtime.h"
 #include "platform/ui/time_runtime.h"
+#include "platform/ui/timezone_profile.h"
 #include "platform/ui/tracker_runtime.h"
 #include "platform/ui/wifi_runtime.h"
 #include "ui/app_runtime.h"
@@ -133,6 +134,9 @@ static char kTxPowerLabels[64][12] = {};
 static settings::ui::SettingOption kLocaleOptions[16] = {};
 static size_t kLocaleOptionCount = 0;
 static char kLocaleOptionLabels[16][48] = {};
+static settings::ui::SettingOption kTimeZoneOptions[32] = {};
+static size_t kTimeZoneOptionCount = 0;
+static char kCustomTimeZoneLabel[32] = {};
 static settings::ui::SettingOption kWifiNetworkOptions[kMaxWifiNetworks] = {};
 static size_t kWifiNetworkOptionCount = 0;
 static char kWifiNetworkOptionLabels[kMaxWifiNetworks][64] = {};
@@ -157,6 +161,39 @@ static bool apply_settings_bool_patch(const char* key, bool value)
     ::ui::copyText(patch.key, key);
     ::ui::copyText(patch.value, value ? "1" : "0");
     return settings_model().apply(patch).ok;
+}
+
+static void refresh_timezone_options()
+{
+    size_t profile_count = 0;
+    const auto* profiles = ::platform::ui::time::timezone_profiles(&profile_count);
+    kTimeZoneOptionCount = 0;
+    const size_t limit = sizeof(kTimeZoneOptions) / sizeof(kTimeZoneOptions[0]);
+    for (size_t i = 0; profiles && i < profile_count && kTimeZoneOptionCount < limit; ++i)
+    {
+        kTimeZoneOptions[kTimeZoneOptionCount++] = {profiles[i].label, profiles[i].id};
+    }
+    kCustomTimeZoneLabel[0] = '\0';
+}
+
+static void append_custom_timezone_option_if_needed(int profile_id, int offset_min)
+{
+    if (!::platform::ui::time::timezone_profile_id_is_fixed(profile_id))
+    {
+        return;
+    }
+    if (kTimeZoneOptionCount >= sizeof(kTimeZoneOptions) / sizeof(kTimeZoneOptions[0]))
+    {
+        return;
+    }
+
+    char tzdef[24] = {};
+    ::platform::ui::time::build_fixed_posix_tzdef(offset_min, tzdef, sizeof(tzdef));
+    std::snprintf(kCustomTimeZoneLabel,
+                  sizeof(kCustomTimeZoneLabel),
+                  "Fixed %s",
+                  tzdef[0] != '\0' ? tzdef : "UTC");
+    kTimeZoneOptions[kTimeZoneOptionCount++] = {kCustomTimeZoneLabel, profile_id};
 }
 
 static void update_item_value(settings::ui::ItemWidget& widget);
@@ -1105,6 +1142,8 @@ static void settings_load()
     g_settings.screen_brightness = clamp_screen_brightness(
         prefs_get_int("screen_brightness", static_cast<int>(device_runtime::screen_brightness())));
     g_settings.timezone_offset_min = ::platform::ui::time::timezone_offset_min();
+    g_settings.timezone_profile_id = ::platform::ui::time::timezone_profile_id();
+    append_custom_timezone_option_if_needed(g_settings.timezone_profile_id, g_settings.timezone_offset_min);
     g_settings.speaker_volume = prefs_get_int("speaker_volume",
                                               static_cast<int>(get_message_tone_volume_default()));
     if (g_settings.speaker_volume < 0)
@@ -2089,9 +2128,11 @@ static void on_option_clicked(lv_event_t* e)
         gps_runtime::set_external_nmea_config(app_ctx.getConfig().external_nmea_output_hz,
                                               app_ctx.getConfig().external_nmea_sentence_mask);
     }
-    if (payload->item->pref_key && strcmp(payload->item->pref_key, "timezone_offset") == 0)
+    if (payload->item->pref_key && strcmp(payload->item->pref_key, "timezone_profile") == 0)
     {
-        ::platform::ui::time::set_timezone_offset_min(payload->value);
+        ::platform::ui::time::set_timezone_profile_id(payload->value);
+        g_settings.timezone_profile_id = ::platform::ui::time::timezone_profile_id();
+        g_settings.timezone_offset_min = ::platform::ui::time::timezone_offset_min();
         (void)previous_value;
         restart_now = true;
     }
@@ -2935,33 +2976,6 @@ static const settings::ui::SettingOption kSpeakerVolumeOptions[] = {
     {"100%", 100},
 };
 
-static const settings::ui::SettingOption kTimeZoneOptions[] = {
-    {"UTC", 0},
-    {"Beijing (UTC+8)", 480},
-    {"Taipei (UTC+8)", 480},
-    {"Hong Kong (UTC+8)", 480},
-    {"Tokyo (UTC+9)", 540},
-    {"Seoul (UTC+9)", 540},
-    {"Singapore (UTC+8)", 480},
-    {"Bangkok (UTC+7)", 420},
-    {"Kolkata (UTC+5:30)", 330},
-    {"Dubai (UTC+4)", 240},
-    {"London (UTC+0 / DST)", 0},
-    {"Berlin (UTC+1 / DST)", 60},
-    {"Paris (UTC+1 / DST)", 60},
-    {"Rome (UTC+1 / DST)", 60},
-    {"Moscow (UTC+3)", 180},
-    {"New York (UTC-5 / DST)", -300},
-    {"Chicago (UTC-6 / DST)", -360},
-    {"Denver (UTC-7 / DST)", -420},
-    {"Los Angeles (UTC-8 / DST)", -480},
-    {"Phoenix (UTC-7)", -420},
-    {"Sao Paulo (UTC-3)", -180},
-    {"Sydney (UTC+10 / DST)", 600},
-    {"Melbourne (UTC+10 / DST)", 600},
-    {"Auckland (UTC+12 / DST)", 720},
-};
-
 static settings::ui::SettingItem kGpsItems[] = {
     {"GPS Enabled", settings::ui::SettingType::Toggle, nullptr, 0, nullptr, &g_settings.gps_enabled, nullptr, 0, false, "gps_enabled"},
     {"Receiver Baud", settings::ui::SettingType::Enum, kGpsInitBaudOptions, 7, &g_settings.gps_init_baud, nullptr, nullptr, 0, false, "gps_init_baud"},
@@ -3049,7 +3063,7 @@ static settings::ui::SettingItem kScreenItems[] = {
      sizeof(kSpeakerVolumeOptions) / sizeof(kSpeakerVolumeOptions[0]), &g_settings.speaker_volume, nullptr, nullptr, 0, false, "speaker_volume"},
     {"Vibration", settings::ui::SettingType::Toggle, nullptr, 0, nullptr, &g_settings.vibration_enabled, nullptr, 0, false, "vibration_enabled"},
     {"Bluetooth", settings::ui::SettingType::Toggle, nullptr, 0, nullptr, &g_settings.ble_enabled, nullptr, 0, false, "ble_enabled"},
-    {"Time Zone", settings::ui::SettingType::Enum, kTimeZoneOptions, sizeof(kTimeZoneOptions) / sizeof(kTimeZoneOptions[0]), &g_settings.timezone_offset_min, nullptr, nullptr, 0, false, "timezone_offset"},
+    {"Time Zone", settings::ui::SettingType::Enum, kTimeZoneOptions, 0, &g_settings.timezone_profile_id, nullptr, nullptr, 0, false, "timezone_profile"},
     {"Gauge Design (mAh)", settings::ui::SettingType::Text, nullptr, 0, nullptr, nullptr,
      g_settings.gauge_design_mah, sizeof(g_settings.gauge_design_mah), false, "gauge_design_mah"},
     {"Gauge Full (mAh)", settings::ui::SettingType::Text, nullptr, 0, nullptr, nullptr,
@@ -3838,6 +3852,8 @@ void create(lv_obj_t* parent)
 #if defined(ESP_PLATFORM)
     ESP_LOGI(kLogTag, "create begin");
 #endif
+    refresh_timezone_options();
+    kScreenItems[7].option_count = kTimeZoneOptionCount;
     settings_load();
 
     // Avoid auto-adding widgets to the current default group during creation.

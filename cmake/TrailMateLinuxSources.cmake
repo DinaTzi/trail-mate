@@ -254,6 +254,7 @@ set(TRAIL_MATE_LINUX_COMMON_SOURCES
     # modules/core_sys
     "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/src/app/app_facade_access.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/src/sys/clock.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/src/platform/ui/timezone_profile.cpp"
     # modules/core_device
     "${TRAIL_MATE_REPO_ROOT}/modules/core_device/src/device/capability_types.cpp"
     # modules/core_mesh

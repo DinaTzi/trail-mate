@@ -431,6 +431,16 @@ void AppPhoneFacade::setTimezoneOffsetMinutes(int offset_min)
     platform::shared::ble_bridge::setTimezoneOffsetMinutes(offset_min);
 }
 
+int AppPhoneFacade::getTimezoneProfileId() const
+{
+    return platform::shared::ble_bridge::getTimezoneProfileId();
+}
+
+void AppPhoneFacade::setTimezoneProfileId(int profile_id)
+{
+    platform::shared::ble_bridge::setTimezoneProfileId(profile_id);
+}
+
 bool AppPhoneFacade::getGpsFix(phone::meshtastic::MeshtasticGpsFix* out) const
 {
     return platform::shared::ble_bridge::setMeshtasticGpsFixUnavailable(out);
