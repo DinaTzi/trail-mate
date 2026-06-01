@@ -46,6 +46,7 @@ enum class ProtocolFailure : uint8_t
     None = 0,
     Unsupported,
     MissingPeerKey,
+    MissingChannelKey,
     CryptoFailed,
     EncodeFailed,
     DecodeFailed,

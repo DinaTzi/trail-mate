@@ -4,7 +4,9 @@
 #include "chat/infra/meshcore/mc_region_presets.h"
 #include "chat/infra/meshcore/meshcore_payload_helpers.h"
 #include "chat/infra/meshcore/meshcore_protocol_helpers.h"
+#include "mesh/protocol/meshcore/mc_identity_flow.h"
 
+#include <array>
 #include <cstring>
 
 namespace mesh
@@ -31,6 +33,9 @@ constexpr size_t kCipherBlockSize = 16;
 constexpr size_t kMeshCoreMaxFrameSize = 255;
 constexpr size_t kMeshCoreMaxPayloadSize = 184;
 constexpr size_t kMeshCorePubKeySize = 32;
+constexpr size_t kAdvertSignatureSize = 64;
+constexpr size_t kAdvertMinPayloadSize =
+    kMeshCorePubKeySize + sizeof(uint32_t) + kAdvertSignatureSize;
 
 bool isDirectSharedSecret(ByteView secret)
 {
@@ -228,16 +233,16 @@ ProtocolResult MeshCoreProtocolStrategy::buildDirectMessage(
         return ProtocolResult::success();
     }
 
-    ByteView group_key = context.channel_key.empty()
-                             ? ByteView{group_key16_, sizeof(group_key16_)}
-                             : context.channel_key;
-    if (!has_group_key_ && context.channel_key.empty())
+    ByteView group_key = context.channel_key;
+    if (group_key.empty())
     {
-        return ProtocolResult::fail(ProtocolFailure::MissingPeerKey);
+        group_key = has_group_key_
+                        ? ByteView{group_key16_, sizeof(group_key16_)}
+                        : ByteView{chat::meshcore::publicGroupPsk(), chat::kMeshCoreChannelKeyLen};
     }
     if (!mapSecretToKeys(group_key, key16, key32))
     {
-        return ProtocolResult::fail(ProtocolFailure::CryptoFailed);
+        return ProtocolResult::fail(ProtocolFailure::MissingChannelKey);
     }
 
     constexpr size_t kGroupPlainPrefix = 2 + sizeof(context.local_node.value) +
@@ -318,6 +323,61 @@ ProtocolResult MeshCoreProtocolStrategy::parseRadioPacket(const RadioRxPacket& p
         out.peer = out.peer_key.node_id;
         std::memcpy(out.peer_key.public_key, parsed.payload, kMeshCorePubKeySize);
         out.peer_key.updated_at_ms = packet.received_at_ms;
+
+        if (parsed.payload_len < kAdvertMinPayloadSize)
+        {
+            return ProtocolResult::success();
+        }
+
+        const uint8_t* pubkey = parsed.payload;
+        const uint8_t* timestamp_bytes = parsed.payload + kMeshCorePubKeySize;
+        const uint8_t* signature = timestamp_bytes + sizeof(uint32_t);
+        const uint8_t* app_data = parsed.payload + kAdvertMinPayloadSize;
+        const size_t app_data_len = parsed.payload_len - kAdvertMinPayloadSize;
+
+        std::array<uint8_t, kMeshCorePubKeySize + sizeof(uint32_t) + kMeshCoreMaxPayloadSize>
+            signed_message{};
+        size_t signed_len = 0;
+        std::memcpy(signed_message.data() + signed_len, pubkey, kMeshCorePubKeySize);
+        signed_len += kMeshCorePubKeySize;
+        std::memcpy(signed_message.data() + signed_len, timestamp_bytes, sizeof(uint32_t));
+        signed_len += sizeof(uint32_t);
+        if (app_data_len > 0)
+        {
+            std::memcpy(signed_message.data() + signed_len, app_data, app_data_len);
+            signed_len += app_data_len;
+        }
+
+        McIdentityFlow identity;
+        const ProtocolResult verified =
+            identity.verify(ByteView{pubkey, kMeshCorePubKeySize},
+                            ByteView{signature, kAdvertSignatureSize},
+                            ByteView{signed_message.data(), signed_len});
+        if (!verified.ok)
+        {
+            return ProtocolResult::fail(ProtocolFailure::CryptoFailed);
+        }
+
+        chat::meshcore::DecodedAdvertAppData advert{};
+        if (!chat::meshcore::decodeAdvertAppData(app_data, app_data_len, &advert))
+        {
+            return ProtocolResult::fail(ProtocolFailure::DecodeFailed);
+        }
+
+        uint32_t advert_ts = 0;
+        std::memcpy(&advert_ts, timestamp_bytes, sizeof(advert_ts));
+        out.kind = MeshProtocolEventKind::PeerAdvertReceived;
+        out.advert.has_name = advert.has_name;
+        if (advert.has_name)
+        {
+            std::memcpy(out.advert.name, advert.name, sizeof(out.advert.name));
+        }
+        out.advert.has_location = advert.has_location;
+        out.advert.latitude_i6 = advert.latitude_i6;
+        out.advert.longitude_i6 = advert.longitude_i6;
+        out.advert.node_type = advert.node_type;
+        out.advert.timestamp = advert_ts;
+        out.advert.hops = static_cast<uint8_t>(parsed.path_len);
         return ProtocolResult::success();
     }
 
@@ -365,17 +425,37 @@ ProtocolResult MeshCoreProtocolStrategy::parseRadioPacket(const RadioRxPacket& p
 
     if (parsed.payload_type == kPayloadTypeGrpData)
     {
-        if (!has_group_key_ || parsed.payload_len <= (1 + kCipherMacSize))
+        if (parsed.payload_len <= (1 + kCipherMacSize))
         {
-            return ProtocolResult::fail(ProtocolFailure::MissingPeerKey);
+            return ProtocolResult::fail(ProtocolFailure::DecodeFailed);
         }
         const uint8_t channel_hash = parsed.payload[0];
-        if (group_channel_hash_ != 0 && channel_hash != group_channel_hash_)
+        uint8_t rx_key16[16] = {};
+        uint8_t rx_key32[32] = {};
+        const uint8_t* decrypt_key16 = group_key16_;
+        const uint8_t* decrypt_key32 = group_key32_;
+        uint8_t expected_hash = group_channel_hash_;
+        if (!has_group_key_)
         {
-            return ProtocolResult::fail(ProtocolFailure::InvalidInput);
+            if (!mapSecretToKeys(ByteView{chat::meshcore::publicGroupPsk(),
+                                          chat::kMeshCoreChannelKeyLen},
+                                 rx_key16,
+                                 rx_key32))
+            {
+                return ProtocolResult::fail(ProtocolFailure::MissingChannelKey);
+            }
+            decrypt_key16 = rx_key16;
+            decrypt_key32 = rx_key32;
+            expected_hash = chat::meshcore::computeChannelHash(rx_key16);
         }
-        if (!chat::meshcore::macThenDecrypt(group_key16_,
-                                            group_key32_,
+        if (expected_hash != 0 && channel_hash != expected_hash)
+        {
+            return ProtocolResult::fail(has_group_key_
+                                            ? ProtocolFailure::InvalidInput
+                                            : ProtocolFailure::MissingChannelKey);
+        }
+        if (!chat::meshcore::macThenDecrypt(decrypt_key16,
+                                            decrypt_key32,
                                             parsed.payload + 1,
                                             parsed.payload_len - 1,
                                             plain,

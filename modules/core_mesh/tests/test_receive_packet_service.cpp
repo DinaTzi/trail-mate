@@ -55,6 +55,16 @@ int main()
     assert(learned.peer_store.get(mesh::NodeId{0x2201}, key).ok);
     assert(key.updated_at_ms == 500);
 
+    Harness advert;
+    advert.clock.now_ms = 600;
+    advert.protocol.next_event.kind = mesh::MeshProtocolEventKind::PeerAdvertReceived;
+    advert.protocol.next_event.peer = mesh::NodeId{0x2301};
+    advert.protocol.next_event.peer_key = mesh::tests::makePeerKey(0x2301, false);
+    advert.receive.onRadioPacket(packet);
+    assert(advert.events.count(mesh::MeshEventKind::PeerKeyLearned) == 1);
+    assert(advert.events.count(mesh::MeshEventKind::PeerDiscovered) == 1);
+    assert(advert.peer_store.get(mesh::NodeId{0x2301}, key).ok);
+
     Harness protocol_error;
     protocol_error.protocol.parse_result =
         mesh::ProtocolResult::fail(mesh::ProtocolFailure::DecodeFailed);

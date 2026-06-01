@@ -16,6 +16,7 @@ enum class MeshEventKind : uint8_t
     PeerDiscovered,
     PeerKeyLearned,
     PeerKeyMissing,
+    ChannelKeyMissing,
     RadioError,
     ProtocolError,
 };

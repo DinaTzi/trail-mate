@@ -11,6 +11,8 @@ SendFailureKind mapLegacyChatSendFailure(LegacyChatSendFailure failure)
         return SendFailureKind::None;
     case LegacyChatSendFailure::PeerKeyMissing:
         return SendFailureKind::PeerKeyMissing;
+    case LegacyChatSendFailure::ChannelKeyMissing:
+        return SendFailureKind::ChannelKeyMissing;
     case LegacyChatSendFailure::LocalIdentityMissing:
         return SendFailureKind::LocalIdentityMissing;
     case LegacyChatSendFailure::RadioSendFailed:

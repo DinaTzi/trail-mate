@@ -40,10 +40,13 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     // IMeshAdapter interface implementation
     bool sendText(ChannelId channel, const std::string& text,
                   MessageId* out_msg_id, NodeId peer = 0) override;
-    bool sendDirectTextDetailed(ChannelId channel, const std::string& text,
-                                NodeId peer, uint8_t txt_type,
-                                uint32_t* out_ack, uint32_t* out_timeout,
-                                bool* out_sent_flood);
+    MeshSendResult sendTextDetailed(ChannelId channel, const std::string& text,
+                                    MessageId forced_msg_id = 0,
+                                    NodeId peer = 0) override;
+    MeshActionResult sendDirectTextDetailed(ChannelId channel, const std::string& text,
+                                            NodeId peer, uint8_t txt_type,
+                                            uint32_t* out_ack, uint32_t* out_timeout,
+                                            bool* out_sent_flood);
 
     bool pollIncomingText(MeshIncomingText* out) override;
 
@@ -56,6 +59,7 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     bool pollIncomingData(MeshIncomingData* out) override;
     bool requestNodeInfo(NodeId dest, bool want_response) override;
     bool triggerDiscoveryAction(MeshDiscoveryAction action) override;
+    MeshActionResult triggerDiscoveryActionDetailed(MeshDiscoveryAction action) override;
     bool startKeyVerification(NodeId dest) override;
     bool submitKeyVerificationNumber(NodeId dest, uint64_t nonce, uint32_t number) override;
     bool isPkiReady() const override;
@@ -328,7 +332,9 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
 
     TxGateReason checkTxGate(uint32_t now_ms) const;
     static const char* txGateReasonName(TxGateReason reason);
+    static MeshOperationFailure txGateFailure(TxGateReason reason);
     bool canTransmitNow(uint32_t now_ms) const;
+    MeshActionResult transmitFrameNowDetailed(const uint8_t* data, size_t len, uint32_t now_ms);
     bool transmitFrameNow(const uint8_t* data, size_t len, uint32_t now_ms);
     bool enqueueScheduled(const uint8_t* data, size_t len, uint32_t delay_ms);
     bool resolveGroupSecret(ChannelId channel, uint8_t out_key16[16],
@@ -375,7 +381,11 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     bool consumePendingAppAck(uint32_t signature, uint32_t now_ms);
     void pushEvent(Event&& ev);
     bool sendNodeInfoFrame(NodeId dest, bool is_query, bool request_reply);
+    MeshActionResult sendDiscoverRequestLocalDetailed();
     bool sendDiscoverRequestLocal();
+    MeshActionResult sendIdentityAdvertDetailed(bool broadcast);
+    MeshActionResult sendIdentityAdvertDetailed(bool broadcast, bool include_location,
+                                                int32_t lat_i6, int32_t lon_i6);
     bool sendIdentityAdvert(bool broadcast);
     bool sendIdentityAdvert(bool broadcast, bool include_location,
                             int32_t lat_i6, int32_t lon_i6);

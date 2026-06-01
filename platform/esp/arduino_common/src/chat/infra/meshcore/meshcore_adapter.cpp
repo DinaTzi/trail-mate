@@ -83,10 +83,6 @@ constexpr float kFloodSendTimeoutFactor = 16.0f;
 constexpr float kDirectSendPerhopFactor = 6.0f;
 constexpr uint32_t kDirectSendPerhopExtraMs = 250;
 
-constexpr uint8_t kPublicGroupPsk[16] = {
-    0x8b, 0x33, 0x87, 0xe9, 0xc5, 0xcd, 0xea, 0x6a,
-    0xc9, 0xe5, 0xed, 0xba, 0xa1, 0x15, 0xcd, 0x72};
-
 constexpr uint8_t kTxtTypeSigned = 0x02;
 constexpr uint8_t kDirectAppMagic0 = 0xDA;
 constexpr uint8_t kDirectAppMagic1 = 0x7A;
@@ -214,6 +210,7 @@ using chat::meshcore::isAnonReqCipherShape;
 using chat::meshcore::isPeerCipherShape;
 using chat::meshcore::isPeerPayloadType;
 using chat::meshcore::mapAdvertTypeToRole;
+using chat::meshcore::publicGroupPsk;
 using chat::meshcore::selectChannelKey;
 using chat::meshcore::shouldUsePublicChannelFallback;
 using chat::meshcore::xorCrypt;
@@ -774,7 +771,7 @@ bool MeshCoreAdapter::resolveGroupSecret(ChannelId channel, uint8_t out_key16[16
     }
     else if (shouldUsePublicChannelFallback(config_))
     {
-        selected = kPublicGroupPsk;
+        selected = publicGroupPsk();
     }
 
     if (!selected)
@@ -818,7 +815,7 @@ ChannelId MeshCoreAdapter::resolveChannelFromHash(uint8_t channel_hash, bool* ou
     }
 
     if (shouldUsePublicChannelFallback(config_) &&
-        computeChannelHash(kPublicGroupPsk) == channel_hash)
+        computeChannelHash(publicGroupPsk()) == channel_hash)
     {
         if (out_match)
         {
@@ -1627,16 +1624,41 @@ const char* MeshCoreAdapter::txGateReasonName(TxGateReason reason)
     }
 }
 
+MeshOperationFailure MeshCoreAdapter::txGateFailure(TxGateReason reason)
+{
+    switch (reason)
+    {
+    case TxGateReason::NotInitialized:
+        return MeshOperationFailure::NotReady;
+    case TxGateReason::TxDisabled:
+        return MeshOperationFailure::TxDisabled;
+    case TxGateReason::RadioOffline:
+        return MeshOperationFailure::RadioOffline;
+    case TxGateReason::DutyCycleLimited:
+        return MeshOperationFailure::DutyCycleLimited;
+    case TxGateReason::Ok:
+    default:
+        return MeshOperationFailure::None;
+    }
+}
+
 bool MeshCoreAdapter::canTransmitNow(uint32_t now_ms) const
 {
     return checkTxGate(now_ms) == TxGateReason::Ok;
 }
 
-bool MeshCoreAdapter::transmitFrameNow(const uint8_t* data, size_t len, uint32_t now_ms)
+MeshActionResult MeshCoreAdapter::transmitFrameNowDetailed(const uint8_t* data, size_t len,
+                                                          uint32_t now_ms)
 {
-    if (!data || len == 0 || len > kMeshcoreMaxFrameSize || !canTransmitNow(now_ms))
+    if (!data || len == 0 || len > kMeshcoreMaxFrameSize)
     {
-        return false;
+        return MeshActionResult::fail(MeshOperationFailure::InvalidInput);
+    }
+
+    const TxGateReason tx_gate = checkTxGate(now_ms);
+    if (tx_gate != TxGateReason::Ok)
+    {
+        return MeshActionResult::fail(txGateFailure(tx_gate));
     }
 
     const float air_ms_f = estimateLoRaAirtimeMs(len,
@@ -1668,9 +1690,17 @@ bool MeshCoreAdapter::transmitFrameNow(const uint8_t* data, size_t len, uint32_t
         {
             MESHCORE_LOG("[MESHCORE] RX restart fail state=%d\n", rx_state);
         }
-        return true;
+        return MeshActionResult::success();
     }
-    return false;
+    return MeshActionResult::fail(state == RADIOLIB_ERR_SPI_WRITE_FAILED
+                                      ? MeshOperationFailure::Busy
+                                      : MeshOperationFailure::RadioTxFailed,
+                                  state);
+}
+
+bool MeshCoreAdapter::transmitFrameNow(const uint8_t* data, size_t len, uint32_t now_ms)
+{
+    return transmitFrameNowDetailed(data, len, now_ms).ok;
 }
 
 bool MeshCoreAdapter::enqueueScheduled(const uint8_t* data, size_t len, uint32_t delay_ms)
@@ -1987,20 +2017,25 @@ bool MeshCoreAdapter::requestNodeInfo(NodeId dest, bool want_response)
 
 bool MeshCoreAdapter::triggerDiscoveryAction(MeshDiscoveryAction action)
 {
+    return triggerDiscoveryActionDetailed(action).ok;
+}
+
+MeshActionResult MeshCoreAdapter::triggerDiscoveryActionDetailed(MeshDiscoveryAction action)
+{
     switch (action)
     {
     case MeshDiscoveryAction::ScanLocal:
-        return sendDiscoverRequestLocal();
+        return sendDiscoverRequestLocalDetailed();
     case MeshDiscoveryAction::SendIdLocal:
-        return sendIdentityAdvert(false);
+        return sendIdentityAdvertDetailed(false);
     case MeshDiscoveryAction::SendIdBroadcast:
-        return sendIdentityAdvert(true);
+        return sendIdentityAdvertDetailed(true);
     default:
-        return false;
+        return MeshActionResult::fail(MeshOperationFailure::Unsupported);
     }
 }
 
-bool MeshCoreAdapter::sendDiscoverRequestLocal()
+MeshActionResult MeshCoreAdapter::sendDiscoverRequestLocalDetailed()
 {
     const uint32_t now_ms = millis();
     const TxGateReason tx_gate = checkTxGate(now_ms);
@@ -2008,7 +2043,7 @@ bool MeshCoreAdapter::sendDiscoverRequestLocal()
     {
         MESHCORE_LOG("[MESHCORE] TX DISCOVER_REQ blocked reason=%s\n",
                      txGateReasonName(tx_gate));
-        return false;
+        return MeshActionResult::fail(txGateFailure(tx_gate));
     }
 
     const uint32_t tag = static_cast<uint32_t>(esp_random());
@@ -2026,30 +2061,46 @@ bool MeshCoreAdapter::sendDiscoverRequestLocal()
                                payload, sizeof(payload),
                                frame, sizeof(frame), &frame_len))
     {
-        return false;
+        return MeshActionResult::fail(MeshOperationFailure::EncodeFailed);
     }
 
-    const bool ok = transmitFrameNow(frame, frame_len, now_ms);
+    MeshActionResult result = transmitFrameNowDetailed(frame, frame_len, now_ms);
     MESHCORE_LOG("[MESHCORE] TX DISCOVER_REQ mode=local tag=%08lX filter=%02X prefix=0 len=%u ok=%u\n",
                  static_cast<unsigned long>(tag),
                  static_cast<unsigned>(payload[1]),
                  static_cast<unsigned>(frame_len),
-                 ok ? 1U : 0U);
-    return ok;
+                 result.ok ? 1U : 0U);
+    return result;
+}
+
+bool MeshCoreAdapter::sendDiscoverRequestLocal()
+{
+    return sendDiscoverRequestLocalDetailed().ok;
 }
 
 bool MeshCoreAdapter::sendIdentityAdvert(bool broadcast)
 {
-    return sendIdentityAdvert(broadcast, false, 0, 0);
+    return sendIdentityAdvertDetailed(broadcast, false, 0, 0).ok;
 }
 
 bool MeshCoreAdapter::sendIdentityAdvert(bool broadcast, bool include_location,
                                          int32_t lat_i6, int32_t lon_i6)
 {
+    return sendIdentityAdvertDetailed(broadcast, include_location, lat_i6, lon_i6).ok;
+}
+
+MeshActionResult MeshCoreAdapter::sendIdentityAdvertDetailed(bool broadcast)
+{
+    return sendIdentityAdvertDetailed(broadcast, false, 0, 0);
+}
+
+MeshActionResult MeshCoreAdapter::sendIdentityAdvertDetailed(bool broadcast, bool include_location,
+                                                            int32_t lat_i6, int32_t lon_i6)
+{
     if (!identity_.isReady())
     {
         MESHCORE_LOG("[MESHCORE] TX ADVERT dropped (identity unavailable)\n");
-        return false;
+        return MeshActionResult::fail(MeshOperationFailure::LocalIdentityMissing);
     }
 
     const uint32_t now_ms = millis();
@@ -2059,7 +2110,7 @@ bool MeshCoreAdapter::sendIdentityAdvert(bool broadcast, bool include_location,
         MESHCORE_LOG("[MESHCORE] TX ADVERT blocked reason=%s mode=%s\n",
                      txGateReasonName(tx_gate),
                      broadcast ? "broadcast" : "local");
-        return false;
+        return MeshActionResult::fail(txGateFailure(tx_gate));
     }
 
     char name[32] = {};
@@ -2112,7 +2163,7 @@ bool MeshCoreAdapter::sendIdentityAdvert(bool broadcast, bool include_location,
     uint8_t signature[MeshCoreIdentity::kSignatureSize] = {};
     if (!identity_.sign(signed_message.data(), signed_len, signature))
     {
-        return false;
+        return MeshActionResult::fail(MeshOperationFailure::CryptoFailed);
     }
 
     uint8_t payload[kMeshcoreMaxPayloadSize] = {};
@@ -2137,21 +2188,24 @@ bool MeshCoreAdapter::sendIdentityAdvert(bool broadcast, bool include_location,
                                payload, payload_len,
                                frame, sizeof(frame), &frame_len))
     {
-        return false;
+        return MeshActionResult::fail(MeshOperationFailure::EncodeFailed);
     }
 
-    bool ok = transmitFrameNow(frame, frame_len, now_ms);
-    if (!ok)
+    MeshActionResult result = transmitFrameNowDetailed(frame, frame_len, now_ms);
+    if (!result.ok && result.failure == MeshOperationFailure::Busy)
     {
-        ok = enqueueScheduled(frame, frame_len, 50);
+        if (enqueueScheduled(frame, frame_len, 50))
+        {
+            result = MeshActionResult::success();
+        }
     }
     MESHCORE_LOG("[MESHCORE] TX ADVERT mode=%s node_type=%u name_len=%u len=%u ok=%u\n",
                  broadcast ? "broadcast" : "local",
                  static_cast<unsigned>(node_type),
                  static_cast<unsigned>(name_len),
                  static_cast<unsigned>(frame_len),
-                 ok ? 1U : 0U);
-    return ok;
+                 result.ok ? 1U : 0U);
+    return result;
 }
 
 bool MeshCoreAdapter::exportAdvertFrame(const uint8_t* pubkey, size_t len,
@@ -2638,10 +2692,22 @@ bool MeshCoreAdapter::handleKeyVerifyControl(const MeshIncomingData& incoming)
 bool MeshCoreAdapter::sendText(ChannelId channel, const std::string& text,
                                MessageId* out_msg_id, NodeId peer)
 {
+    const MeshSendResult result = sendTextDetailed(channel, text, 0, peer);
+    if (out_msg_id)
+    {
+        *out_msg_id = result.msg_id;
+    }
+    return result.ok;
+}
+
+MeshSendResult MeshCoreAdapter::sendTextDetailed(ChannelId channel, const std::string& text,
+                                                 MessageId forced_msg_id,
+                                                 NodeId peer)
+{
     if (text.empty())
     {
         MESHCORE_LOG("[MESHCORE] TX text dropped (empty)\n");
-        return false;
+        return MeshSendResult::fail(MeshOperationFailure::InvalidInput);
     }
 
     const uint32_t now_ms = millis();
@@ -2657,12 +2723,19 @@ bool MeshCoreAdapter::sendText(ChannelId channel, const std::string& text,
                      config_.tx_enabled ? 1U : 0U,
                      initialized_ ? 1U : 0U,
                      board_.isRadioOnline() ? 1U : 0U);
-        return false;
+        return MeshSendResult::fail(txGateFailure(tx_gate));
     }
 
     if (peer != 0)
     {
-        return sendDirectTextDetailed(channel, text, peer, kTxtTypePlain, nullptr, nullptr, nullptr);
+        const MeshActionResult sent =
+            sendDirectTextDetailed(channel, text, peer, kTxtTypePlain, nullptr, nullptr, nullptr);
+        if (!sent.ok)
+        {
+            return MeshSendResult::fail(sent.failure, 0, sent.detail);
+        }
+        const MessageId msg_id = (forced_msg_id != 0) ? forced_msg_id : next_msg_id_++;
+        return MeshSendResult::success(msg_id);
     }
 
     uint8_t channel_key16[16];
@@ -2671,7 +2744,7 @@ bool MeshCoreAdapter::sendText(ChannelId channel, const std::string& text,
     if (!resolveGroupSecret(channel, channel_key16, channel_key32, &channel_hash))
     {
         MESHCORE_LOG("[MESHCORE] TX text dropped (no channel secret)\n");
-        return false;
+        return MeshSendResult::fail(MeshOperationFailure::ChannelKeyMissing);
     }
 
     std::string decorated = text;
@@ -2714,7 +2787,7 @@ bool MeshCoreAdapter::sendText(ChannelId channel, const std::string& text,
         MESHCORE_LOG("[MESHCORE] TX text dropped (encrypt fail) ch=%u plain_len=%u\n",
                      static_cast<unsigned>(channel),
                      static_cast<unsigned>(plain_len));
-        return false;
+        return MeshSendResult::fail(MeshOperationFailure::CryptoFailed);
     }
 
     uint8_t buffer[256];
@@ -2725,31 +2798,29 @@ bool MeshCoreAdapter::sendText(ChannelId channel, const std::string& text,
     memcpy(&buffer[index], encrypted, encrypted_len);
     index += encrypted_len;
 
-    bool ok = transmitFrameNow(buffer, index, now_ms);
+    const MeshActionResult tx = transmitFrameNowDetailed(buffer, index, now_ms);
     MESHCORE_LOG("[MESHCORE] TX raw len=%u ok=%u hex=%s\n",
                  static_cast<unsigned>(index),
-                 ok ? 1U : 0U,
+                 tx.ok ? 1U : 0U,
                  toHex(buffer, index).c_str());
 
-    if (ok)
+    if (!tx.ok)
     {
-        if (out_msg_id)
-        {
-            *out_msg_id = next_msg_id_++;
-        }
+        return MeshSendResult::fail(tx.failure, 0, tx.detail);
     }
 
-    return ok;
+    const MessageId msg_id = (forced_msg_id != 0) ? forced_msg_id : next_msg_id_++;
+    return MeshSendResult::success(msg_id);
 }
 
-bool MeshCoreAdapter::sendDirectTextDetailed(ChannelId channel, const std::string& text,
-                                             NodeId peer, uint8_t txt_type,
-                                             uint32_t* out_ack, uint32_t* out_timeout,
-                                             bool* out_sent_flood)
+MeshActionResult MeshCoreAdapter::sendDirectTextDetailed(ChannelId channel, const std::string& text,
+                                                         NodeId peer, uint8_t txt_type,
+                                                         uint32_t* out_ack, uint32_t* out_timeout,
+                                                         bool* out_sent_flood)
 {
     if (text.empty() || peer == 0)
     {
-        return false;
+        return MeshActionResult::fail(MeshOperationFailure::InvalidInput);
     }
 
     const uint32_t now_ms = millis();
@@ -2757,7 +2828,7 @@ bool MeshCoreAdapter::sendDirectTextDetailed(ChannelId channel, const std::strin
     const TxGateReason tx_gate = checkTxGate(now_ms);
     if (tx_gate != TxGateReason::Ok)
     {
-        return false;
+        return MeshActionResult::fail(txGateFailure(tx_gate));
     }
 
     const uint8_t peer_hash = static_cast<uint8_t>(peer & 0xFFU);
@@ -2769,7 +2840,7 @@ bool MeshCoreAdapter::sendDirectTextDetailed(ChannelId channel, const std::strin
         if (!peer_route || !peer_route->has_pubkey)
         {
             sendDiscoverRequestLocal();
-            return false;
+            return MeshActionResult::fail(MeshOperationFailure::PeerKeyMissing);
         }
     }
 
@@ -2792,7 +2863,7 @@ bool MeshCoreAdapter::sendDirectTextDetailed(ChannelId channel, const std::strin
         if (tx_channel == channel ||
             !deriveDirectSecret(channel, peer_hash, peer_key16, peer_key32))
         {
-            return false;
+            return MeshActionResult::fail(MeshOperationFailure::PeerKeyMissing);
         }
     }
 
@@ -2834,7 +2905,7 @@ bool MeshCoreAdapter::sendDirectTextDetailed(ChannelId channel, const std::strin
                                   plain, plain_len,
                                   payload, sizeof(payload), &payload_len))
     {
-        return false;
+        return MeshActionResult::fail(MeshOperationFailure::EncodeFailed);
     }
 
     uint8_t frame[kMeshcoreMaxFrameSize];
@@ -2845,13 +2916,15 @@ bool MeshCoreAdapter::sendDirectTextDetailed(ChannelId channel, const std::strin
                                payload, payload_len,
                                frame, sizeof(frame), &frame_len))
     {
-        return false;
+        return MeshActionResult::fail(MeshOperationFailure::EncodeFailed);
     }
 
-    bool ok = transmitFrameNow(frame, frame_len, now_ms);
-    if (!ok)
+    MeshActionResult tx = transmitFrameNowDetailed(frame, frame_len, now_ms);
+    bool ok = tx.ok;
+    if (!ok && enqueueScheduled(frame, frame_len, 50))
     {
-        ok = enqueueScheduled(frame, frame_len, 50);
+        ok = true;
+        tx = MeshActionResult::success();
     }
 
     if (ok && ack_value != 0)
@@ -2876,7 +2949,7 @@ bool MeshCoreAdapter::sendDirectTextDetailed(ChannelId channel, const std::strin
     {
         *out_sent_flood = (route_type == kRouteTypeFlood);
     }
-    return ok;
+    return ok ? MeshActionResult::success() : tx;
 }
 
 bool MeshCoreAdapter::pollIncomingText(MeshIncomingText* out)
@@ -3118,7 +3191,7 @@ void MeshCoreAdapter::applyConfig(const MeshConfig& config)
     const uint8_t primary_hash = has_primary_key ? computeChannelHash(config_.primary_key) : 0xFF;
     const uint8_t secondary_hash = has_secondary_key ? computeChannelHash(config_.secondary_key) : 0xFF;
     const bool has_public = shouldUsePublicChannelFallback(config_);
-    const uint8_t public_hash = has_public ? computeChannelHash(kPublicGroupPsk) : 0xFF;
+    const uint8_t public_hash = has_public ? computeChannelHash(publicGroupPsk()) : 0xFF;
     MESHCORE_LOG("[MESHCORE] apply cfg preset=%u freq=%.3f bw=%.3f sf=%u cr=%u(4/%u) txp=%d tx_en=%u repeat=%u flood_max=%u multi_acks=%u slot=%u ch='%s' hash[p=%02X s=%02X pub=%02X] identity[ready=%u self=%02X]\n",
                  static_cast<unsigned>(config_.meshcore_region_preset),
                  static_cast<double>(config_.meshcore_freq_mhz),
@@ -3473,7 +3546,7 @@ void MeshCoreAdapter::handleRawPacketInternal(const uint8_t* data, size_t size, 
             0);
     };
 
-    auto handleZeroHopDiscoverControl = [&]() -> bool
+    auto handleDiscoverControl = [&]() -> bool
     {
         if (parsed.payload_len == 0)
         {
@@ -3573,30 +3646,60 @@ void MeshCoreAdapter::handleRawPacketInternal(const uint8_t* data, size_t size, 
             const float snr = static_cast<float>(resp.snr_qdb) / 4.0f;
             const float rssi = std::isfinite(last_rx_rssi_) ? last_rx_rssi_ : NAN;
             const uint32_t ts = now_message_timestamp();
+            const bool full_key = resp.pubkey_len == kMeshcorePubKeySize;
 
             rememberPeerNodeId(resp.pubkey[0], node, now_ms);
-            if (resp.pubkey_len == kMeshcorePubKeySize)
+            if (full_key)
             {
                 rememberPeerPubKey(resp.pubkey, now_ms, false);
             }
-            publishMeshcoreNodeInfo(node,
-                                    "",
-                                    "",
-                                    mapAdvertTypeToRole(resp.node_type),
-                                    hops,
-                                    snr,
-                                    rssi,
-                                    ts);
+            sys::EventBus::publish(
+                new sys::NodeInfoUpdateEvent(node,
+                                             "",
+                                             "",
+                                             snr,
+                                             rssi,
+                                             ts,
+                                             static_cast<uint8_t>(chat::contacts::NodeProtocolType::MeshCore),
+                                             mapAdvertTypeToRole(resp.node_type),
+                                             hops,
+                                             0,
+                                             0xFF,
+                                             false,
+                                             nullptr,
+                                             false,
+                                             false,
+                                             full_key,
+                                             false),
+                0);
 
-            MESHCORE_LOG("[MESHCORE] RX DISCOVER_RESP tag=%08lX type=%u snr_qdb=%d hash=%02X key_len=%u\n",
+            Event ev{};
+            ev.type = Event::Type::ControlData;
+            ev.peer_hash = resp.pubkey[0];
+            ev.peer_node = node;
+            ev.flags = hops;
+            ev.tag = resp.tag;
+            ev.payload.assign(parsed.payload, parsed.payload + parsed.payload_len);
+            pushEvent(std::move(ev));
+
+            MESHCORE_LOG("[MESHCORE] RX DISCOVER_RESP route=%u path=%u tag=%08lX type=%u snr_qdb=%d hash=%02X key_len=%u full_key=%u node=%08lX\n",
+                         static_cast<unsigned>(parsed.route_type),
+                         static_cast<unsigned>(parsed.path_len),
                          static_cast<unsigned long>(resp.tag),
                          static_cast<unsigned>(resp.node_type),
                          static_cast<int>(resp.snr_qdb),
                          static_cast<unsigned>(resp.pubkey[0]),
-                         static_cast<unsigned>(resp.pubkey_len));
+                         static_cast<unsigned>(resp.pubkey_len),
+                         full_key ? 1U : 0U,
+                         static_cast<unsigned long>(node));
             return true;
         }
 
+        MESHCORE_LOG("[MESHCORE] RX DISCOVER_CTRL unknown route=%u path=%u len=%u first=%02X\n",
+                     static_cast<unsigned>(parsed.route_type),
+                     static_cast<unsigned>(parsed.path_len),
+                     static_cast<unsigned>(parsed.payload_len),
+                     parsed.payload_len > 0 ? static_cast<unsigned>(parsed.payload[0]) : 0U);
         return false;
     };
 
@@ -3655,31 +3758,34 @@ void MeshCoreAdapter::handleRawPacketInternal(const uint8_t* data, size_t size, 
         return;
     }
 
-    // Upstream behavior: this subset of control payloads is only valid as zero-hop direct.
-    // Consume discover control on zero-hop and never route this high-bit subset.
-    if (is_direct_route &&
+    // Upstream discover control is a zero-hop control exchange. Some compat
+    // peers flood the same high-bit control subset, so consume either direct
+    // or flood zero-hop packets before generic routing/data paths.
+    if ((is_direct_route || is_flood_route) &&
         parsed.payload_type == kPayloadTypeControl &&
         parsed.payload_len > 0 &&
         (parsed.payload[0] & 0x80U) != 0)
     {
         if (parsed.path_len == 0)
         {
-            handleZeroHopDiscoverControl();
-            Event ev{};
-            ev.type = Event::Type::ControlData;
-            ev.peer_hash = parsed.payload_len > 0 ? parsed.payload[0] : 0;
-            ev.peer_node = 0;
-            ev.flags = static_cast<uint8_t>(parsed.path_len);
-            if (std::isfinite(last_rx_snr_))
+            if (!handleDiscoverControl())
             {
-                ev.snr_qdb = static_cast<int8_t>(std::lround(last_rx_snr_ * 4.0f));
+                Event ev{};
+                ev.type = Event::Type::ControlData;
+                ev.peer_hash = parsed.payload_len > 0 ? parsed.payload[0] : 0;
+                ev.peer_node = 0;
+                ev.flags = static_cast<uint8_t>(parsed.path_len);
+                if (std::isfinite(last_rx_snr_))
+                {
+                    ev.snr_qdb = static_cast<int8_t>(std::lround(last_rx_snr_ * 4.0f));
+                }
+                if (std::isfinite(last_rx_rssi_))
+                {
+                    ev.rssi_dbm = static_cast<int8_t>(std::lround(last_rx_rssi_));
+                }
+                ev.payload.assign(parsed.payload, parsed.payload + parsed.payload_len);
+                pushEvent(std::move(ev));
             }
-            if (std::isfinite(last_rx_rssi_))
-            {
-                ev.rssi_dbm = static_cast<int8_t>(std::lround(last_rx_rssi_));
-            }
-            ev.payload.assign(parsed.payload, parsed.payload + parsed.payload_len);
-            pushEvent(std::move(ev));
         }
         return;
     }
@@ -4380,7 +4486,7 @@ void MeshCoreAdapter::handleRawPacketInternal(const uint8_t* data, size_t size, 
         const uint8_t primary_hash = has_primary_key ? computeChannelHash(config_.primary_key) : 0xFF;
         const uint8_t secondary_hash = has_secondary_key ? computeChannelHash(config_.secondary_key) : 0xFF;
         const bool has_public = shouldUsePublicChannelFallback(config_);
-        const uint8_t public_hash = has_public ? computeChannelHash(kPublicGroupPsk) : 0xFF;
+        const uint8_t public_hash = has_public ? computeChannelHash(publicGroupPsk()) : 0xFF;
         MESHCORE_LOG("[MESHCORE] RX group %s drop unknown hash=%02X local[p=%02X s=%02X pub=%02X]\n",
                      kind,
                      static_cast<unsigned>(channel_hash),

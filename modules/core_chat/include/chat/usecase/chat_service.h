@@ -65,11 +65,16 @@ class ChatService
     MessageId sendText(ChannelId channel, const std::string& text, NodeId peer = 0);
     MessageId sendTextWithId(ChannelId channel, const std::string& text,
                              MessageId forced_msg_id, NodeId peer = 0);
+    MeshSendResult sendTextDetailed(ChannelId channel, const std::string& text,
+                                    NodeId peer = 0);
+    MeshSendResult sendTextWithIdDetailed(ChannelId channel, const std::string& text,
+                                          MessageId forced_msg_id, NodeId peer = 0);
 
     /**
      * @brief Trigger protocol discovery action (if supported by active adapter)
      */
     bool triggerDiscoveryAction(MeshDiscoveryAction action);
+    MeshActionResult triggerDiscoveryActionDetailed(MeshDiscoveryAction action);
 
     /**
      * @brief Switch to channel

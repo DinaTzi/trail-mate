@@ -123,6 +123,17 @@ int main()
     assert(protocol_peer_missing.failure == mesh::SendFailure::PeerKeyMissing);
     assert(protocol_missing_peer.events.count(mesh::MeshEventKind::PeerKeyMissing) == 1);
 
+    Harness protocol_missing_channel;
+    protocol_missing_channel.local_store.identity = mesh::tests::makeIdentity();
+    protocol_missing_channel.local_store.has_identity = true;
+    protocol_missing_channel.peer_store.keys.push_back(mesh::tests::makePeerKey(0xAA01));
+    protocol_missing_channel.protocol.build_result =
+        mesh::ProtocolResult::fail(mesh::ProtocolFailure::MissingChannelKey);
+    auto protocol_channel_missing = protocol_missing_channel.direct.sendDirect(command);
+    assert(!protocol_channel_missing.ok);
+    assert(protocol_channel_missing.failure == mesh::SendFailure::ChannelKeyMissing);
+    assert(protocol_missing_channel.events.count(mesh::MeshEventKind::ChannelKeyMissing) == 1);
+
     Harness crypto_fail;
     crypto_fail.local_store.identity = mesh::tests::makeIdentity();
     crypto_fail.local_store.has_identity = true;

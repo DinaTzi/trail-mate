@@ -72,6 +72,19 @@ class IMeshAdapter
     }
 
     /**
+     * @brief Send text and preserve the protocol-specific rejection reason.
+     */
+    virtual MeshSendResult sendTextDetailed(ChannelId channel, const std::string& text,
+                                            MessageId forced_msg_id = 0,
+                                            NodeId peer = 0)
+    {
+        MessageId msg_id = 0;
+        const bool ok = sendTextWithId(channel, text, forced_msg_id, &msg_id, peer);
+        return ok ? MeshSendResult::success(msg_id)
+                  : MeshSendResult::fail(MeshOperationFailure::Unknown, msg_id);
+    }
+
+    /**
      * @brief Poll for incoming text messages
      * @param out Output message (if available)
      * @return true if message available
@@ -174,6 +187,16 @@ class IMeshAdapter
     {
         (void)action;
         return false;
+    }
+
+    /**
+     * @brief Trigger discovery and preserve the rejection reason.
+     */
+    virtual MeshActionResult triggerDiscoveryActionDetailed(MeshDiscoveryAction action)
+    {
+        return triggerDiscoveryAction(action)
+                   ? MeshActionResult::success()
+                   : MeshActionResult::fail(MeshOperationFailure::Unsupported);
     }
 
     /**

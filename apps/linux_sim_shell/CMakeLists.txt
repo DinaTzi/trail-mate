@@ -39,6 +39,8 @@ target_link_libraries(trailmate_linux_sim_shell
 target_compile_features(trailmate_linux_sim_shell PUBLIC cxx_std_17)
 
 if(BUILD_TESTING)
+    enable_language(C)
+
     add_executable(trailmate_linux_sim_app_shell_smoke
         tests/linux_sim_app_shell_smoke.cpp)
     target_link_libraries(trailmate_linux_sim_app_shell_smoke
@@ -119,6 +121,83 @@ if(BUILD_TESTING)
         PRIVATE cxx_std_17)
     add_test(NAME trailmate_legacy_chat_delivery_event_bridge_alias_smoke
              COMMAND trailmate_legacy_chat_delivery_event_bridge_alias_smoke)
+
+    add_executable(trailmate_chat_presentation_source_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_chat_presentation_source.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/domain/chat_model.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/usecase/chat_service.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/store/ram_store.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/delivery/chat_delivery_read_model.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/delivery/chat_delivery_event_projector.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/delivery/legacy_chat_delivery_bridge.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/usecase/contact_service.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/src/sys/clock.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/presentation_sources/chat_presentation_source.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/presentation_sources/legacy_chat_action_sink.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/chat_presentation_adapters/src/chat_conversation_mapper.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/chat_presentation_adapters/src/chat_message_mapper.cpp")
+    target_include_directories(trailmate_chat_presentation_source_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_presentation/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/chat_presentation_adapters/include")
+    target_compile_features(trailmate_chat_presentation_source_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_chat_presentation_source_smoke
+             COMMAND trailmate_chat_presentation_source_smoke)
+
+    add_executable(trailmate_mesh_adapter_router_core_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/tests/test_mesh_adapter_router_core.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/mesh_adapter_router_core.cpp")
+    target_include_directories(trailmate_mesh_adapter_router_core_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_mesh_adapter_router_core_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_mesh_adapter_router_core_smoke
+             COMMAND trailmate_mesh_adapter_router_core_smoke)
+
+    add_executable(trailmate_meshcore_protocol_strategy_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/tests/test_meshcore_protocol_strategy.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/src/protocol/meshcore/meshcore_protocol_strategy.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/src/protocol/meshcore/mc_identity_flow.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/mc_region_presets.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/meshcore_identity_crypto.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/meshcore_payload_helpers.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/meshcore_protocol_helpers.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/fe.c"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/ge.c"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/key_exchange.c"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/keypair.c"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/sc.c"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/sha512.c"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/sign.c"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/verify.c")
+    target_include_directories(trailmate_meshcore_protocol_strategy_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_meshcore_protocol_strategy_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_meshcore_protocol_strategy_smoke
+             COMMAND trailmate_meshcore_protocol_strategy_smoke)
+
+    add_executable(trailmate_receive_packet_service_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/tests/test_receive_packet_service.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/src/usecase/mesh_dedup_service.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/src/usecase/peer_identity_service.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/src/usecase/receive_packet_service.cpp")
+    target_include_directories(trailmate_receive_packet_service_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/tests")
+    target_compile_features(trailmate_receive_packet_service_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_receive_packet_service_smoke
+             COMMAND trailmate_receive_packet_service_smoke)
+
 
     add_executable(trailmate_key_verification_runtime_adapters_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_key_verification_runtime/tests/test_key_verification_runtime_adapters.cpp"

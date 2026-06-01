@@ -1,5 +1,10 @@
 #include "mesh/protocol/meshcore/meshcore_protocol_strategy.h"
 
+#include "chat/infra/meshcore/meshcore_payload_helpers.h"
+#include "chat/infra/meshcore/meshcore_protocol_helpers.h"
+#include "mesh/protocol/meshcore/mc_identity_flow.h"
+
+#include <array>
 #include <cassert>
 #include <cstring>
 
@@ -85,6 +90,30 @@ int main()
         mesh::ByteView{reinterpret_cast<const uint8_t*>(text), sizeof(text) - 1},
         false};
     group_command.application_port = 321;
+
+    uint8_t invalid_group_key[3] = {1, 2, 3};
+    context.channel_key = mesh::ByteView{invalid_group_key, sizeof(invalid_group_key)};
+    auto invalid_group_key_result = strategy.buildDirectMessage(context, group_command, encoded);
+    assert(!invalid_group_key_result.ok);
+    assert(invalid_group_key_result.failure == mesh::ProtocolFailure::MissingChannelKey);
+
+    context.channel_key = mesh::ByteView{};
+    auto public_group_built = strategy.buildDirectMessage(context, group_command, encoded);
+    assert(public_group_built.ok);
+
+    packet = mesh::RadioRxPacket{};
+    std::memcpy(packet.bytes, encoded.bytes, encoded.size);
+    packet.size = encoded.size;
+
+    mesh::meshcore::MeshCoreProtocolStrategy public_receiver;
+    event = mesh::MeshProtocolEvent{};
+    auto public_group_parsed = public_receiver.parseRadioPacket(packet, event);
+    assert(public_group_parsed.ok);
+    assert(event.kind == mesh::MeshProtocolEventKind::MessageReceived);
+    assert(event.peer == context.local_node);
+    assert(event.payload.size == sizeof(text) - 1);
+    assert(std::memcmp(event.payload.data, text, sizeof(text) - 1) == 0);
+
     context.channel_key = mesh::ByteView{group_key, sizeof(group_key)};
 
     auto group_built = strategy.buildDirectMessage(context, group_command, encoded);
@@ -102,6 +131,109 @@ int main()
     assert(event.peer == context.local_node);
     assert(event.payload.size == sizeof(text) - 1);
     assert(std::memcmp(event.payload.data, text, sizeof(text) - 1) == 0);
+
+    mesh::meshcore::McIdentityFlow identity;
+    uint8_t seed[mesh::meshcore::kMeshCoreSeedSize] = {};
+    uint8_t public_key[mesh::meshcore::kMeshCorePublicKeySize] = {};
+    uint8_t private_key[mesh::meshcore::kMeshCorePrivateKeySize] = {};
+    bool created_key = false;
+    for (uint8_t attempt = 1; attempt < 32 && !created_key; ++attempt)
+    {
+        for (size_t index = 0; index < sizeof(seed); ++index)
+        {
+            seed[index] = static_cast<uint8_t>(attempt + index);
+        }
+        created_key = identity.createKeypair(mesh::ByteView{seed, sizeof(seed)},
+                                             public_key,
+                                             private_key)
+                          .ok;
+    }
+    assert(created_key);
+
+    constexpr uint8_t route_type_flood = 0x01;
+    constexpr uint8_t payload_type_advert = 0x04;
+    constexpr uint8_t advert_flag_has_location = 0x10;
+    constexpr uint8_t advert_flag_has_name = 0x80;
+    constexpr uint8_t advert_type_chat = 0x01;
+    const int32_t lat_i6 = 39906123;
+    const int32_t lon_i6 = 116391234;
+    const char advert_name[] = "Alpha";
+    uint8_t app_data[1 + sizeof(lat_i6) + sizeof(lon_i6) + sizeof(advert_name)] = {};
+    size_t app_len = 0;
+    app_data[app_len++] = static_cast<uint8_t>(advert_flag_has_location |
+                                               advert_flag_has_name |
+                                               advert_type_chat);
+    std::memcpy(app_data + app_len, &lat_i6, sizeof(lat_i6));
+    app_len += sizeof(lat_i6);
+    std::memcpy(app_data + app_len, &lon_i6, sizeof(lon_i6));
+    app_len += sizeof(lon_i6);
+    std::memcpy(app_data + app_len, advert_name, sizeof(advert_name));
+    app_len += sizeof(advert_name);
+
+    const uint32_t advert_ts = 123456U;
+    std::array<uint8_t, mesh::meshcore::kMeshCorePublicKeySize + sizeof(advert_ts) +
+                            sizeof(app_data)>
+        signed_message{};
+    size_t signed_len = 0;
+    std::memcpy(signed_message.data() + signed_len, public_key, sizeof(public_key));
+    signed_len += sizeof(public_key);
+    std::memcpy(signed_message.data() + signed_len, &advert_ts, sizeof(advert_ts));
+    signed_len += sizeof(advert_ts);
+    std::memcpy(signed_message.data() + signed_len, app_data, app_len);
+    signed_len += app_len;
+
+    uint8_t signature[mesh::meshcore::kMeshCoreSignatureSize] = {};
+    mesh::meshcore::MeshCoreKeyPairView keypair{
+        private_key,
+        sizeof(private_key),
+        public_key,
+        sizeof(public_key)};
+    assert(identity.sign(keypair,
+                         mesh::ByteView{signed_message.data(), signed_len},
+                         signature)
+               .ok);
+
+    uint8_t advert_payload[mesh::meshcore::kMeshCorePublicKeySize + sizeof(advert_ts) +
+                           mesh::meshcore::kMeshCoreSignatureSize + sizeof(app_data)] = {};
+    size_t advert_payload_len = 0;
+    std::memcpy(advert_payload + advert_payload_len, public_key, sizeof(public_key));
+    advert_payload_len += sizeof(public_key);
+    std::memcpy(advert_payload + advert_payload_len, &advert_ts, sizeof(advert_ts));
+    advert_payload_len += sizeof(advert_ts);
+    std::memcpy(advert_payload + advert_payload_len, signature, sizeof(signature));
+    advert_payload_len += sizeof(signature);
+    std::memcpy(advert_payload + advert_payload_len, app_data, app_len);
+    advert_payload_len += app_len;
+
+    uint8_t advert_frame[256] = {};
+    size_t advert_frame_len = 0;
+    assert(chat::meshcore::buildFrameNoTransport(route_type_flood,
+                                                 payload_type_advert,
+                                                 nullptr,
+                                                 0,
+                                                 advert_payload,
+                                                 advert_payload_len,
+                                                 advert_frame,
+                                                 sizeof(advert_frame),
+                                                 &advert_frame_len));
+
+    packet = mesh::RadioRxPacket{};
+    std::memcpy(packet.bytes, advert_frame, advert_frame_len);
+    packet.size = advert_frame_len;
+    packet.received_at_ms = 777;
+
+    event = mesh::MeshProtocolEvent{};
+    auto advert_parsed = receiver.parseRadioPacket(packet, event);
+    assert(advert_parsed.ok);
+    assert(event.kind == mesh::MeshProtocolEventKind::PeerAdvertReceived);
+    assert(event.peer_key.updated_at_ms == 777);
+    assert(event.advert.has_name);
+    assert(std::strcmp(event.advert.name, advert_name) == 0);
+    assert(event.advert.has_location);
+    assert(event.advert.latitude_i6 == lat_i6);
+    assert(event.advert.longitude_i6 == lon_i6);
+    assert(event.advert.node_type == advert_type_chat);
+    assert(event.advert.timestamp == advert_ts);
 
     return 0;
 }

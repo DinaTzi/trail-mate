@@ -47,6 +47,13 @@ int main()
     assert(record.failure ==
            chat::delivery::DeliveryFailureKind::PeerKeyMissing);
 
+    projector.onFailed(ref(7),
+                       chat::delivery::SendFailureKind::ChannelKeyMissing,
+                       350);
+    assert(read_model.find(ref(7), record));
+    assert(record.failure ==
+           chat::delivery::DeliveryFailureKind::ChannelKeyMissing);
+
     projector.onFailed(ref(3),
                        chat::delivery::SendFailureKind::LocalIdentityMissing,
                        400);

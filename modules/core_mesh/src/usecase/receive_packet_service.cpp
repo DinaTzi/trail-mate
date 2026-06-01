@@ -48,6 +48,11 @@ void ReceivePacketService::handleProtocolEvent(const MeshProtocolEvent& event)
         (void)identity_.rememberPeerKey(event.peer_key);
         events_.emit(MeshEvent{MeshEventKind::PeerKeyLearned, event.peer, 0});
         break;
+    case MeshProtocolEventKind::PeerAdvertReceived:
+        (void)identity_.rememberPeerKey(event.peer_key);
+        events_.emit(MeshEvent{MeshEventKind::PeerKeyLearned, event.peer, 0});
+        events_.emit(MeshEvent{MeshEventKind::PeerDiscovered, event.peer, 0});
+        break;
     case MeshProtocolEventKind::PeerDiscovered:
         events_.emit(MeshEvent{MeshEventKind::PeerDiscovered, event.peer, 0});
         break;
