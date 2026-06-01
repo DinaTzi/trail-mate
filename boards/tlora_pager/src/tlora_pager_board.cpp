@@ -804,7 +804,7 @@ bool TLoRaPagerBoard::isCardReady()
 {
     // Check if SD card is ready (requires SPI lock)
     bool ready = false;
-    if (LilyGoDispArduinoSPI::lock(pdTICKS_TO_MS(100)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(100)))
     {
         ready = ::platform::esp::arduino_common::storage::sd_card_ready();
         LilyGoDispArduinoSPI::unlock();

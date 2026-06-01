@@ -39,6 +39,7 @@ constexpr uint8_t kActiveVersion = 1;
 constexpr uint8_t kActiveFlagManual = 0x01;
 constexpr uint8_t kActiveFlagAuto = 0x02;
 constexpr const char* kActivePath = "/trackers/active.bin";
+constexpr TickType_t kSdTransactionLockWait = pdMS_TO_TICKS(250);
 
 double deg2rad(double deg)
 {
@@ -172,6 +173,11 @@ bool TrackRecorder::start()
     bool ok = false;
     do
     {
+        ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait);
+        if (!spi_guard.locked())
+        {
+            break;
+        }
         if (!ensureDir())
         {
             break;
@@ -200,6 +206,16 @@ void TrackRecorder::stop()
 {
     if (mutex_ && xSemaphoreTake(mutex_, pdMS_TO_TICKS(400)) != pdTRUE)
     {
+        return;
+    }
+
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait);
+    if (!spi_guard.locked())
+    {
+        if (mutex_)
+        {
+            xSemaphoreGive(mutex_);
+        }
         return;
     }
 
@@ -244,6 +260,16 @@ void TrackRecorder::setAutoRecording(bool enabled)
 {
     if (mutex_ && xSemaphoreTake(mutex_, pdMS_TO_TICKS(200)) != pdTRUE)
     {
+        return;
+    }
+
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait);
+    if (!spi_guard.locked())
+    {
+        if (mutex_)
+        {
+            xSemaphoreGive(mutex_);
+        }
         return;
     }
 
@@ -300,23 +326,43 @@ void TrackRecorder::setDistanceOnly(bool enabled)
 
 void TrackRecorder::setFormat(TrackFormat format)
 {
-    if (format_ == format)
-    {
-        return;
-    }
-
-    TrackFormat prev_format = format_;
-    format_ = format;
-
-    if (!recording_)
-    {
-        return;
-    }
-
     if (mutex_ && xSemaphoreTake(mutex_, pdMS_TO_TICKS(400)) != pdTRUE)
     {
         return;
     }
+
+    if (format_ == format)
+    {
+        if (mutex_)
+        {
+            xSemaphoreGive(mutex_);
+        }
+        return;
+    }
+
+    TrackFormat prev_format = format_;
+
+    if (!recording_)
+    {
+        format_ = format;
+        if (mutex_)
+        {
+            xSemaphoreGive(mutex_);
+        }
+        return;
+    }
+
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait);
+    if (!spi_guard.locked())
+    {
+        if (mutex_)
+        {
+            xSemaphoreGive(mutex_);
+        }
+        return;
+    }
+
+    format_ = format;
 
     if (current_path_.length() > 0)
     {
@@ -366,7 +412,7 @@ void TrackRecorder::appendPoint(const TrackPoint& pt)
     // SD and display share one board-level SPI bus on T-Deck/Pager. Acquire
     // shared bus ownership before touching SD so runtime call sites describe
     // the actual resource being arbitrated.
-    ::platform::esp::common::SharedSpiLockGuard spi_guard(pdMS_TO_TICKS(20));
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait);
     if (!spi_guard.locked())
     {
         if (mutex_)
@@ -498,6 +544,11 @@ bool TrackRecorder::restoreActiveSession()
     bool ok = false;
     do
     {
+        ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait);
+        if (!spi_guard.locked())
+        {
+            break;
+        }
         if (!sd_card_ready())
         {
             break;
@@ -652,14 +703,41 @@ void TrackRecorder::clearActiveStateLocked() const
 
 size_t TrackRecorder::listTracks(String* out_names, size_t max_names) const
 {
-    if (!sd_card_ready() || max_names == 0 || out_names == nullptr)
+    if (max_names == 0 || out_names == nullptr)
     {
+        return 0;
+    }
+
+    if (mutex_ && xSemaphoreTake(mutex_, pdMS_TO_TICKS(200)) != pdTRUE)
+    {
+        return 0;
+    }
+
+    auto release_mutex = [this]()
+    {
+        if (mutex_)
+        {
+            xSemaphoreGive(mutex_);
+        }
+    };
+
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait);
+    if (!spi_guard.locked())
+    {
+        release_mutex();
+        return 0;
+    }
+
+    if (!sd_card_ready())
+    {
+        release_mutex();
         return 0;
     }
 
     SdRuntimeDir dir;
     if (!dir.open(kTrackDir))
     {
+        release_mutex();
         return 0;
     }
 
@@ -674,6 +752,7 @@ size_t TrackRecorder::listTracks(String* out_names, size_t max_names) const
         }
     }
     dir.close();
+    release_mutex();
     return count;
 }
 
