@@ -692,6 +692,7 @@ lv_timer_t* s_timer = nullptr;
 int s_map_zoom = kCardputerZeroMapDefaultZoom;
 int s_map_pan_x = 0;
 int s_map_pan_y = 0;
+bool s_map_view_initialized = false;
 ::ui::map::MapOverlaySnapshot s_overlay_snapshot;
 
 void request_exit()
@@ -982,9 +983,13 @@ bool is_available()
 void enter(const shell::Host* host, lv_obj_t* parent)
 {
     s_host = host;
-    s_map_zoom = kCardputerZeroMapDefaultZoom;
-    s_map_pan_x = 0;
-    s_map_pan_y = 0;
+    if (!s_map_view_initialized)
+    {
+        s_map_zoom = kCardputerZeroMapDefaultZoom;
+        s_map_pan_x = 0;
+        s_map_pan_y = 0;
+        s_map_view_initialized = true;
+    }
     sync_workspace_viewport_from_legacy_renderer();
 
     lv_group_t* prev_group = lv_group_get_default();
