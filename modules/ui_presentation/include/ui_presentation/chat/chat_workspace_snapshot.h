@@ -19,6 +19,7 @@ struct ConversationRow
     ui::FixedText<64> subtitle;
 
     uint16_t unread_count = 0;
+    uint32_t last_timestamp = 0;
     bool selected = false;
     bool muted = false;
 
@@ -128,6 +129,7 @@ inline void resetConversationRow(ConversationRow& row)
     row.title.clear();
     row.subtitle.clear();
     row.unread_count = 0;
+    row.last_timestamp = 0;
     row.selected = false;
     row.muted = false;
     row.kind = ConversationKind::None;

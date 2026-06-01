@@ -35,6 +35,7 @@ int main()
     ui::chat::ChatWorkspaceSnapshot reset_probe;
     reset_probe.header.valid = true;
     reset_probe.conversation_count = 1;
+    reset_probe.conversations[0].last_timestamp = 1234;
     reset_probe.conversations[0].last_delivery =
         ui::chat::MessageDeliveryState::Delivered;
     reset_probe.message_count = 1;
@@ -48,6 +49,7 @@ int main()
     ui::chat::resetChatWorkspaceSnapshot(reset_probe);
     assert(!reset_probe.header.valid);
     assert(reset_probe.conversation_count == 0);
+    assert(reset_probe.conversations[0].last_timestamp == 0);
     assert(reset_probe.conversations[0].last_delivery ==
            ui::chat::MessageDeliveryState::Unknown);
     assert(reset_probe.message_count == 0);

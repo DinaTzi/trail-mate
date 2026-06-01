@@ -6,12 +6,14 @@
 #include "ui/ui_theme.h"
 #include "ui_presentation/chat/chat_workspace_snapshot.h"
 
+#include <cctype>
 #include <string>
 
 namespace
 {
 constexpr lv_coord_t kActionBarHeight = 36;
 constexpr lv_coord_t kActionButtonHeight = 26;
+constexpr size_t kMaxPrefixedSenderLen = 20;
 
 ::ui::chat::MessageDeliveryState delivery_from_message_status(
     chat::MessageStatus status)
@@ -63,6 +65,63 @@ std::string format_team_rich_payload_text(
         out += "Team";
     }
     return out;
+}
+
+bool sender_token_is_valid(const std::string& sender)
+{
+    if (sender.empty() || sender.size() > kMaxPrefixedSenderLen)
+    {
+        return false;
+    }
+    for (char c : sender)
+    {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (!(std::isalnum(uc) || c == '_' || c == '-' || c == '.'))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool split_prefixed_sender_text(const std::string& text,
+                                std::string* out_sender,
+                                std::string* out_body)
+{
+    if (!out_sender || !out_body || text.empty())
+    {
+        return false;
+    }
+
+    const size_t sep = text.find(':');
+    if (sep == std::string::npos || sep == 0 || sep > kMaxPrefixedSenderLen)
+    {
+        return false;
+    }
+
+    std::string sender = text.substr(0, sep);
+    while (!sender.empty() && sender.back() == ' ')
+    {
+        sender.pop_back();
+    }
+    if (!sender_token_is_valid(sender))
+    {
+        return false;
+    }
+
+    size_t body_start = sep + 1;
+    while (body_start < text.size() && text[body_start] == ' ')
+    {
+        ++body_start;
+    }
+    if (body_start >= text.size())
+    {
+        return false;
+    }
+
+    *out_sender = sender;
+    *out_body = text.substr(body_start);
+    return true;
 }
 } // namespace
 
@@ -182,13 +241,27 @@ void ChatConversationScreen::createMessageItem(const ::ui::chat::MessageRow& row
                           LV_FLEX_ALIGN_START);
 
     std::string display_text;
-    const std::string body_text =
+    std::string body_text =
         row.has_team_rich_payload
             ? format_team_rich_payload_text(row.team_rich_payload)
             : std::string(row.text.c_str());
-    if (!row.outgoing && !row.sender_label.empty())
+    std::string sender_label = row.sender_label.c_str();
+    if (!row.outgoing &&
+        conv_.protocol == chat::MeshProtocol::MeshCore &&
+        conv_.peer == 0 &&
+        row.sender_node_id == 0)
     {
-        display_text = row.sender_label.c_str();
+        std::string parsed_sender;
+        std::string parsed_body;
+        if (split_prefixed_sender_text(body_text, &parsed_sender, &parsed_body))
+        {
+            sender_label = parsed_sender;
+            body_text = parsed_body;
+        }
+    }
+    if (!row.outgoing && !sender_label.empty())
+    {
+        display_text = sender_label;
         display_text += ": ";
         display_text += body_text;
     }

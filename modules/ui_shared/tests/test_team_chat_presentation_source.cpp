@@ -106,6 +106,7 @@ int main()
            ui::chat::ChatProtocolKind::TrailMate);
     assert(std::strcmp(overview.conversations[0].title.c_str(), "Alpha") == 0);
     assert(overview.conversations[0].unread_count == 2);
+    assert(overview.conversations[0].last_timestamp == 102);
     assert(overview.message_count == 0);
 
     const ui::chat::ConversationId team_id = overview.conversations[0].id;

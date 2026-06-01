@@ -14,6 +14,13 @@ enum class UiActionFailure : uint8_t
     Unsupported,
     Busy,
     StorageError,
+    PeerKeyMissing,
+    ChannelKeyMissing,
+    TxDisabled,
+    RadioOffline,
+    DutyCycleLimited,
+    LocalIdentityMissing,
+    RadioTxFailed,
 };
 
 struct UiActionResult

@@ -112,7 +112,7 @@ chat::ConversationMeta legacyConversationMetaFromRow(
     meta.name = row.title.c_str();
     meta.preview = row.subtitle.c_str();
     meta.unread = static_cast<int>(row.unread_count);
-    meta.last_timestamp = 0;
+    meta.last_timestamp = row.last_timestamp;
     return meta;
 }
 
@@ -154,7 +154,7 @@ bool legacyTeamConversationMetaFromSnapshot(
         out.name = row.title.c_str();
         out.preview = row.subtitle.c_str();
         out.unread = static_cast<int>(row.unread_count);
-        out.last_timestamp = 0;
+        out.last_timestamp = row.last_timestamp;
         return true;
     }
 
@@ -752,7 +752,39 @@ void UiController::handleSendMessage(const std::string& text)
     if (!result.ok)
     {
         const char* message = "Send failed";
-        if (result.failure == ::ui::UiActionFailure::Unsupported)
+        if (result.failure == ::ui::UiActionFailure::ChannelKeyMissing)
+        {
+            message = "Channel key missing";
+        }
+        else if (result.failure == ::ui::UiActionFailure::PeerKeyMissing)
+        {
+            message = "Peer key missing";
+        }
+        else if (result.failure == ::ui::UiActionFailure::TxDisabled)
+        {
+            message = "TX disabled";
+        }
+        else if (result.failure == ::ui::UiActionFailure::RadioOffline)
+        {
+            message = "Radio offline";
+        }
+        else if (result.failure == ::ui::UiActionFailure::DutyCycleLimited)
+        {
+            message = "TX rate limited";
+        }
+        else if (result.failure == ::ui::UiActionFailure::RadioTxFailed)
+        {
+            message = "Radio TX failed";
+        }
+        else if (result.failure == ::ui::UiActionFailure::LocalIdentityMissing)
+        {
+            message = "Identity missing";
+        }
+        else if (result.failure == ::ui::UiActionFailure::Busy)
+        {
+            message = "Radio busy";
+        }
+        else if (result.failure == ::ui::UiActionFailure::Unsupported)
         {
             message = "Conversation unsupported";
         }
