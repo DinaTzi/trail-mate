@@ -39,7 +39,7 @@ const I18N = {
     "hero.releaseKicker": "Latest Release",
     "hero.proofKicker": "Screenshot Policy",
     "hero.proofText":
-      "Device pages only claim screenshots that belong to that device. Pager is complete today; other devices get their own lanes as captures arrive.",
+      "Device pages only claim screenshots that belong to that device. Pager SX1262 has the complete capture lane today; Pager LR1121 has its own release and flasher lane.",
     "overview.copy":
       "Trail Mate is a compact offline field stack: navigation, direct LoRa messaging, team coordination, RF diagnostics, utility tooling, and installable language packs shaped for embedded hardware with tight power and UI constraints.",
     "tag.maps": "Offline Maps",
@@ -64,7 +64,7 @@ const I18N = {
     "capabilities.protocolKicker": "Protocols",
     "capabilities.protocolTitle": "Mesh and radio compatibility",
     "capabilities.protocolText":
-      "Meshtastic, MeshCore, LoRa runtime work, RF diagnostics, and future protocol notes have a dedicated lane.",
+      "Meshtastic, MeshCore, LoRa runtime work, RF diagnostics, and protocol notes have a dedicated lane. The 0.1.28 fix pass documents MeshCore discovery, group send, and advert recovery.",
     "capabilities.installKicker": "Install",
     "capabilities.installTitle": "Release-first flashing",
     "capabilities.installText":
@@ -85,11 +85,11 @@ const I18N = {
     "features.navEyebrow": "Navigation",
     "features.navTitle": "Offline mapping is a first-class workflow.",
     "features.navLead":
-      "North-up rendering, SD card map tiles, terrain and satellite layers, sky plot, and fix diagnostics keep field navigation readable on constrained hardware.",
+      "North-up rendering, SD card map tiles, terrain and satellite layers, sky plot, fix diagnostics, and restored Pager map-view persistence keep field navigation readable on constrained hardware.",
     "features.commEyebrow": "Communication",
     "features.commTitle": "Messaging and team coordination stay practical under low bandwidth.",
     "features.commLead":
-      "Compose LoRa messages on-device, review contacts and activity, and keep small teams aligned without assuming a phone or cloud connection.",
+      "Compose LoRa messages on-device, review contacts and activity, and keep small teams aligned without assuming a phone or cloud connection. The 0.1.28 path tightens MeshCore discovery, public group send, advert naming, and delivery status.",
     "features.toolsEyebrow": "Field Utilities",
     "features.toolsTitle": "The firmware expands into a toolkit.",
     "features.toolsLead":
@@ -117,9 +117,11 @@ const I18N = {
     "install.eyebrow": "Install",
     "install.title": "Web Flasher",
     "install.note":
-      "Use Google Chrome or Microsoft Edge over HTTPS with a USB data cable. The browser installer currently targets the ESP32-S3 builds.",
-    "install.pagerCopy": "SX1262 build for the keyboard pager hardware.",
-    "install.pagerLr1121Copy": "LR1121 build for the Sub-GHz + 2.4 GHz keyboard pager hardware.",
+      "Use Google Chrome or Microsoft Edge over HTTPS with a USB data cable. Pick the card that matches the radio chip on your hardware.",
+    "install.pagerCopy":
+      "SX1262 radio build for the keyboard Pager. Do not use this card for LR1121 hardware.",
+    "install.pagerLr1121Copy":
+      "LR1121 radio build for the Sub-GHz + 2.4 GHz keyboard Pager. Do not flash this onto SX1262 hardware.",
     "install.tdeckCopy": "Keyboard + touch build tuned for the T-Deck layout.",
     "install.twatchCopy": "Touch-first watch build for compact field experiments.",
     "install.gatCopy":
@@ -129,11 +131,12 @@ const I18N = {
     "install.openRelease": "Open latest release",
     "install.step1": "1. Connect the device with a USB data cable.",
     "install.step2": "2. Put the board into download mode if your hardware requires it.",
-    "install.step3": "3. Choose the correct target and let the browser flash the merged image.",
+    "install.step3":
+      "3. Choose the exact SX1262 or LR1121 Pager target, then let the browser flash the merged image.",
     "docs.eyebrow": "Read More",
     "docs.title": "Long-form project material belongs in the wiki.",
     "docs.copy":
-      "The homepage is now a product surface and device library. The wiki carries architecture, supported hardware, flashing, configuration, protocol boundaries, troubleshooting, and development notes.",
+      "The homepage is now a product surface and device library. The wiki and repo docs carry architecture, supported hardware, flashing, configuration, protocol boundaries, troubleshooting, development notes, and the 0.1.28 issue #43-#51 fix audit.",
     "docs.wiki": "Wiki Home",
     "docs.hardware": "Supported Hardware",
     "footer.eyebrow": "Trail Mate Field Notes",
@@ -193,7 +196,7 @@ const I18N = {
     "hero.releaseKicker": "最新发布",
     "hero.proofKicker": "截图规则",
     "hero.proofText":
-      "设备页只展示属于该设备的截图。当前 Pager 截图集较完整，其他设备先保留独立入口，后续补充各自截图。",
+      "设备页只展示属于该设备的截图。Pager SX1262 当前有完整截图入口；Pager LR1121 有独立发布和网页刷机入口。",
     "overview.copy":
       "Trail Mate 是一个紧凑的离线现场工具栈：导航、LoRa 直连消息、团队协作、射频诊断、实用工具，以及面向小内存硬件的可安装语言包。",
     "tag.maps": "离线地图",
@@ -261,9 +264,9 @@ const I18N = {
     "languages.loadingText": "当前 Pages 构建发布的语言包会显示在这里。",
     "install.eyebrow": "安装",
     "install.title": "网页刷机",
-    "install.note": "请使用 Google Chrome 或 Microsoft Edge，通过 HTTPS 和 USB 数据线刷写。目前网页刷机目标是 ESP32-S3 构建。",
-    "install.pagerCopy": "面向键盘 Pager 硬件的 SX1262 构建。",
-    "install.pagerLr1121Copy": "面向 Sub-GHz + 2.4 GHz 键盘 Pager 硬件的 LR1121 构建。",
+    "install.note": "请使用 Google Chrome 或 Microsoft Edge，通过 HTTPS 和 USB 数据线刷写。请选择与硬件 radio 芯片一致的卡片。",
+    "install.pagerCopy": "面向键盘 Pager 的 SX1262 radio 构建。LR1121 硬件不要使用这个卡片。",
+    "install.pagerLr1121Copy": "面向 Sub-GHz + 2.4 GHz 键盘 Pager 的 LR1121 radio 构建。不要刷到 SX1262 硬件上。",
     "install.tdeckCopy": "面向 T-Deck 键盘 + 触屏布局调校的构建。",
     "install.twatchCopy": "面向紧凑触屏手表实验的构建。",
     "install.gatCopy": "nRF52 目标暂未接入浏览器刷机，请使用发布包手动刷写。",
@@ -272,7 +275,7 @@ const I18N = {
     "install.openRelease": "打开最新发布",
     "install.step1": "1. 使用 USB 数据线连接设备。",
     "install.step2": "2. 如果硬件需要，请先进入下载模式。",
-    "install.step3": "3. 选择正确目标，让浏览器刷写合并镜像。",
+    "install.step3": "3. 选择精确的 SX1262 或 LR1121 Pager 目标，让浏览器刷写合并镜像。",
     "docs.eyebrow": "继续阅读",
     "docs.title": "长篇项目资料放在维基中。",
     "docs.copy":
@@ -329,24 +332,26 @@ const DEVICES = [
     id: "tlora-pager-sx1262",
     chip: "ESP32-S3 + SX1262",
     title: {
-      en: "LilyGo T-LoRa Pager",
-      zh: "LilyGo T-LoRa Pager",
+      en: "LilyGo T-LoRa Pager SX1262",
+      zh: "LilyGo T-LoRa Pager SX1262",
     },
     status: {
-      en: "Complete screenshot set",
+      en: "0.1.28 repair lane",
       zh: "完整截图集",
     },
     summary: {
-      en: "Keyboard pager target with the most complete captured UI surface today.",
-      zh: "当前截图素材最完整的键盘 Pager 目标。",
+      en: "SX1262 keyboard Pager target with the most complete captured UI surface today, plus the 0.1.28 MeshCore, map persistence, and tracker SD repair pass.",
+      zh: "当前截图素材最完整的 SX1262 键盘 Pager 目标。",
     },
     interactions: {
       en: [
-        "Use the thumbnail strip to switch between the captured Pager workflows.",
-        "The gallery keeps every screenshot in the same 480:222 screen frame so image sizes stay calm.",
-        "Navigation, chat, team mode, and utility screens are separated as device-owned captures.",
+        "Use this product lane and Web Flasher card only for the SX1262 Pager; LR1121 hardware has a separate lane.",
+        "MeshCore fixes stay in protocol helpers and the ESP adapter: discover frame shape, RX guard, ACK mapping, public group fallback, and advert parsing.",
+        "Pager chat and contacts keep protocol labels visible, use bounded rows, and avoid rendering MeshCore incoming messages as Me.",
+        "Map view state and tracker SD operations are repaired through runtime/storage ownership instead of UI-only state.",
       ],
       zh: [
+        "这个产品入口和网页刷机卡片只用于 SX1262 Pager；LR1121 硬件有独立入口。",
         "点击缩略图可以切换 Pager 已捕获的工作流。",
         "图库统一使用 480:222 屏幕框，避免截图大小忽大忽小。",
         "导航、聊天、团队模式和工具页都作为该设备自己的截图展示。",
