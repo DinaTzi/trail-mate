@@ -10,6 +10,7 @@
 #include "chat/infra/meshcore/meshcore_protocol_helpers.h"
 #include "chat/time_utils.h"
 #include "mesh/protocol/meshcore/meshcore_protocol_strategy.h"
+#include "platform/esp/arduino_common/app_tasks.h"
 #include "sys/event_bus.h"
 #include <AES.h>
 #include <Arduino.h>
@@ -1682,6 +1683,7 @@ MeshActionResult MeshCoreAdapter::transmitFrameNowDetailed(const uint8_t* data, 
     int state = RADIOLIB_ERR_UNSUPPORTED;
 #if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280) || \
     defined(ARDUINO_LILYGO_LORA_LR1121)
+    app::AppTasks::requestRadioReceiveRestart();
     state = board_.transmitRadio(data, len);
 #endif
     if (state == RADIOLIB_ERR_NONE)
@@ -1698,17 +1700,28 @@ MeshActionResult MeshCoreAdapter::transmitFrameNowDetailed(const uint8_t* data, 
         int rx_state = board_.startRadioReceive();
         if (rx_state != RADIOLIB_ERR_NONE)
         {
+            app::AppTasks::requestRadioReceiveRestart();
             MESHCORE_LOG("[MESHCORE] RX restart fail state=%d\n", rx_state);
         }
-        else if (parsePacket(data, len, &parsed))
+        else
         {
-            MESHCORE_LOG("[MESHCORE] RX restart ok after_tx route=%u type=%u len=%u\n",
-                         static_cast<unsigned>(parsed.route_type),
-                         static_cast<unsigned>(parsed.payload_type),
-                         static_cast<unsigned>(len));
+            app::AppTasks::setRadioReceiveActive(true);
+            if (parsePacket(data, len, &parsed))
+            {
+                MESHCORE_LOG("[MESHCORE] RX restart ok after_tx route=%u type=%u len=%u\n",
+                             static_cast<unsigned>(parsed.route_type),
+                             static_cast<unsigned>(parsed.payload_type),
+                             static_cast<unsigned>(len));
+            }
+            else
+            {
+                MESHCORE_LOG("[MESHCORE] RX restart ok after_tx len=%u\n",
+                             static_cast<unsigned>(len));
+            }
         }
         return MeshActionResult::success();
     }
+    app::AppTasks::requestRadioReceiveRestart();
     return MeshActionResult::fail(state == RADIOLIB_ERR_SPI_WRITE_FAILED
                                       ? MeshOperationFailure::Busy
                                       : MeshOperationFailure::RadioTxFailed,
