@@ -39,3 +39,4 @@ Phase 8.3 target profile baselines:
 - `esp32_lvgl_targets.md`
 - `nrf52_node_targets.md`
 - `linux_targets.md`
+- `cardputerzero-adaptation.md`

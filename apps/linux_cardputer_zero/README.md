@@ -9,6 +9,12 @@ selects the `cardputer_compact` UX pack, and builds through
 `builds/linux_cmake`. That gives the device a real product boundary before the
 framebuffer, evdev, launch, and package owners are filled in.
 
+The shared LVGL main-menu profile for this target is already Cardputer Zero
+specific and Pager-derived: `make_cardputer_zero_profile()` starts from
+`make_pager_profile()` and then shrinks geometry for the 320 x 170 display.
+The remaining UI work is page-by-page Cardputer Zero closure from that visual
+baseline, not a Linux-simulator or custom Linux-panel redesign.
+
 Known hardware facts in this repo:
 
 - display: 320 x 170 logical pixels
@@ -33,3 +39,6 @@ Known Cardputer Zero Linux session facts in this shell:
   method strategy
 
 The simulator remains a separate development shell under `apps/linux_sim_shell`.
+
+See `docs/targets/cardputerzero-adaptation.md` for the current validation
+state and the required real screenshot closure.

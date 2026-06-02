@@ -118,14 +118,14 @@ Historical role:
 - Carried local CMake/SCons/script workflow history for Linux device work.
 
 Final replacement owner:
-- `apps/linux_sim_shell` for the current Cardputer Zero fallback route.
+- `apps/linux_cardputer_zero` for the Cardputer Zero product app shell.
 - `builds/linux_cmake`
 - `platform/linux`
 - `boards/cardputerzero`
 
 Removal reason:
-- Batch 3 recorded Cardputer Zero as an active-with-fallback target through
-  final target metadata instead of a legacy Linux root.
+- Cardputer Zero is now recorded through the dedicated final app shell and
+  target metadata instead of a legacy Linux root.
 - Root legacy source is no longer an acceptable final architecture state.
 
 Source disposition:
@@ -133,8 +133,9 @@ Source disposition:
 - No source archive retained under `docs/archive`.
 
 Known follow-up:
-- Decide whether Cardputer Zero receives a dedicated final app shell or remains
-  on the documented Linux simulator-shell fallback route.
+- Complete Cardputer Zero hardware closure in `apps/linux_cardputer_zero`:
+  framebuffer, evdev, per-page screenshots, notifyd session, Fcitx5 session,
+  launch, packaging, and SX1262 runtime validation.
 
 ## legacy/app_implementations/linux_sim
 

@@ -14,6 +14,10 @@ Linux device renderer. The first build slice uses the shared ASCII/runtime
 adoption path so target identity and UX selection are build-closed before the
 framebuffer and evdev owner are promoted into this shell.
 
+The shared LVGL main-menu profile is not simulator-owned. Cardputer Zero selects
+`make_cardputer_zero_profile()`, which is derived from the Pager profile and
+then constrained for the 320 x 170 keyboard device.
+
 ## Board Facts
 
 - board id: `cardputerzero`
@@ -78,5 +82,6 @@ trail_mate_linux_cardputer_zero_start(target_profile)
 ## Current Status
 
 Device app shell baseline. This establishes the product target, board facts, UX
-selection, and CMake wiring. Real framebuffer, evdev, and device packaging are
-the next hardware-closure slices.
+selection, CMake wiring, Linux session contracts, page manifest alignment, and
+the Pager-derived main-menu profile guard. Real framebuffer, evdev, per-page
+screenshots, and device packaging are the next hardware-closure slices.
