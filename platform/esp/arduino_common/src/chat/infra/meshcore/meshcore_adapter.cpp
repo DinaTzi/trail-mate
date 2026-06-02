@@ -65,6 +65,7 @@ constexpr uint32_t kPeerPathTtlMs = 5UL * 60UL * 1000UL;
 constexpr uint32_t kRoutePenaltyBlackoutMs = 30UL * 1000UL;
 constexpr uint32_t kAckDelayMs = 120;
 constexpr uint32_t kAckSpacingMs = 300;
+constexpr uint32_t kDiscoverRxGuardMs = 5000;
 constexpr size_t kCipherBlockSize = 16;
 constexpr size_t kCipherMacSize = 2;
 constexpr size_t kCipherKeySize = 16;
@@ -733,10 +734,16 @@ bool MeshCoreAdapter::sendStoredAdvert(const uint8_t* pubkey, size_t len)
         return false;
     }
 
+    if (isDiscoverRxGuardActive(now_ms))
+    {
+        const uint32_t delay_ms = discover_rx_guard_until_ms_ - now_ms;
+        return enqueueScheduled(frame, frame_len, delay_ms, true);
+    }
+
     bool ok = transmitFrameNow(frame, frame_len, now_ms);
     if (!ok)
     {
-        ok = enqueueScheduled(frame, frame_len, 50);
+        ok = enqueueScheduled(frame, frame_len, 50, true);
     }
     return ok;
 }
@@ -1693,6 +1700,13 @@ MeshActionResult MeshCoreAdapter::transmitFrameNowDetailed(const uint8_t* data, 
         {
             MESHCORE_LOG("[MESHCORE] RX restart fail state=%d\n", rx_state);
         }
+        else if (parsePacket(data, len, &parsed))
+        {
+            MESHCORE_LOG("[MESHCORE] RX restart ok after_tx route=%u type=%u len=%u\n",
+                         static_cast<unsigned>(parsed.route_type),
+                         static_cast<unsigned>(parsed.payload_type),
+                         static_cast<unsigned>(len));
+        }
         return MeshActionResult::success();
     }
     return MeshActionResult::fail(state == RADIOLIB_ERR_SPI_WRITE_FAILED
@@ -1706,7 +1720,8 @@ bool MeshCoreAdapter::transmitFrameNow(const uint8_t* data, size_t len, uint32_t
     return transmitFrameNowDetailed(data, len, now_ms).ok;
 }
 
-bool MeshCoreAdapter::enqueueScheduled(const uint8_t* data, size_t len, uint32_t delay_ms)
+bool MeshCoreAdapter::enqueueScheduled(const uint8_t* data, size_t len, uint32_t delay_ms,
+                                       bool defer_during_discover)
 {
     if (!data || len == 0 || len > kMeshcoreMaxFrameSize)
     {
@@ -1719,8 +1734,20 @@ bool MeshCoreAdapter::enqueueScheduled(const uint8_t* data, size_t len, uint32_t
     ScheduledFrame frame;
     frame.bytes.assign(data, data + len);
     frame.due_ms = millis() + delay_ms;
+    frame.defer_during_discover = defer_during_discover;
     scheduled_tx_.push_back(std::move(frame));
     return true;
+}
+
+void MeshCoreAdapter::armDiscoverRxGuard(uint32_t now_ms)
+{
+    discover_rx_guard_until_ms_ = now_ms + kDiscoverRxGuardMs;
+}
+
+bool MeshCoreAdapter::isDiscoverRxGuardActive(uint32_t now_ms) const
+{
+    return discover_rx_guard_until_ms_ != 0 &&
+           static_cast<int32_t>(now_ms - discover_rx_guard_until_ms_) < 0;
 }
 
 void MeshCoreAdapter::pruneSeen(uint32_t now_ms)
@@ -2098,11 +2125,18 @@ MeshActionResult MeshCoreAdapter::sendDiscoverRequestLocalDetailed()
     }
 
     MeshActionResult result = transmitFrameNowDetailed(frame, frame_len, now_ms);
-    MESHCORE_LOG("[MESHCORE] TX DISCOVER_REQ mode=local tag=%08lX filter=%02X prefix=0 len=%u ok=%u\n",
+    if (result.ok)
+    {
+        armDiscoverRxGuard(millis());
+    }
+    MESHCORE_LOG("[MESHCORE] TX DISCOVER_REQ mode=local tag=%08lX filter=%02X prefix=0 len=%u ok=%u guard=%lums detail=%d hex=%s\n",
                  static_cast<unsigned long>(tag),
                  static_cast<unsigned>(payload[1]),
                  static_cast<unsigned>(frame_len),
-                 result.ok ? 1U : 0U);
+                 result.ok ? 1U : 0U,
+                 result.ok ? static_cast<unsigned long>(kDiscoverRxGuardMs) : 0UL,
+                 result.detail,
+                 toHex(frame, frame_len, frame_len).c_str());
     return result;
 }
 
@@ -2224,10 +2258,23 @@ MeshActionResult MeshCoreAdapter::sendIdentityAdvertDetailed(bool broadcast, boo
         return MeshActionResult::fail(MeshOperationFailure::EncodeFailed);
     }
 
+    if (isDiscoverRxGuardActive(now_ms))
+    {
+        const uint32_t delay_ms = discover_rx_guard_until_ms_ - now_ms;
+        if (enqueueScheduled(frame, frame_len, delay_ms, true))
+        {
+            MESHCORE_LOG("[MESHCORE] TX ADVERT deferred reason=discover_rx_guard mode=%s remain=%lums len=%u\n",
+                         broadcast ? "broadcast" : "local",
+                         static_cast<unsigned long>(delay_ms),
+                         static_cast<unsigned>(frame_len));
+            return MeshActionResult::success();
+        }
+    }
+
     MeshActionResult result = transmitFrameNowDetailed(frame, frame_len, now_ms);
     if (!result.ok && result.failure == MeshOperationFailure::Busy)
     {
-        if (enqueueScheduled(frame, frame_len, 50))
+        if (enqueueScheduled(frame, frame_len, 50, true))
         {
             result = MeshActionResult::success();
         }
@@ -3656,7 +3703,7 @@ void MeshCoreAdapter::handleRawPacketInternal(const uint8_t* data, size_t size, 
             {
                 t_ms = 1;
             }
-            const uint32_t delay_ms = static_cast<uint32_t>(random(0, 5)) * t_ms * 4U;
+            const uint32_t delay_ms = static_cast<uint32_t>(random(1, 5)) * t_ms * 4U;
             if (config_.tx_enabled)
             {
                 enqueueScheduled(frame, frame_len, delay_ms);
@@ -4910,6 +4957,15 @@ void MeshCoreAdapter::processSendQueue()
         ScheduledFrame& frame = scheduled_tx_[i];
         if (static_cast<int32_t>(now_ms - frame.due_ms) < 0)
         {
+            ++i;
+            continue;
+        }
+        if (frame.defer_during_discover && isDiscoverRxGuardActive(now_ms))
+        {
+            frame.due_ms = now_ms + 100;
+            MESHCORE_LOG("[MESHCORE] TX scheduled deferred reason=discover_rx_guard remain=%lums len=%u\n",
+                         static_cast<unsigned long>(discover_rx_guard_until_ms_ - now_ms),
+                         static_cast<unsigned>(frame.bytes.size()));
             ++i;
             continue;
         }

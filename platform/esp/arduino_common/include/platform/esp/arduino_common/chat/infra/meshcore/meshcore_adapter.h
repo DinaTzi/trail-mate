@@ -216,6 +216,7 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     {
         std::vector<uint8_t> bytes;
         uint32_t due_ms = 0;
+        bool defer_during_discover = false;
     };
 
     struct SeenEntry
@@ -308,6 +309,7 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     MeshCoreIdentity identity_;
     uint32_t last_auto_discover_ms_ = 0;
     uint8_t last_auto_discover_hash_ = 0;
+    uint32_t discover_rx_guard_until_ms_ = 0;
 
     // Implementation state
     bool initialized_;
@@ -337,7 +339,10 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     bool canTransmitNow(uint32_t now_ms) const;
     MeshActionResult transmitFrameNowDetailed(const uint8_t* data, size_t len, uint32_t now_ms);
     bool transmitFrameNow(const uint8_t* data, size_t len, uint32_t now_ms);
-    bool enqueueScheduled(const uint8_t* data, size_t len, uint32_t delay_ms);
+    bool enqueueScheduled(const uint8_t* data, size_t len, uint32_t delay_ms,
+                          bool defer_during_discover = false);
+    void armDiscoverRxGuard(uint32_t now_ms);
+    bool isDiscoverRxGuardActive(uint32_t now_ms) const;
     bool resolveGroupSecret(ChannelId channel, uint8_t out_key16[16],
                             uint8_t out_key32[32], uint8_t* out_hash) const;
     ChannelId resolveChannelFromHash(uint8_t channel_hash, bool* out_match) const;
