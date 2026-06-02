@@ -38,4 +38,25 @@ if(BUILD_TESTING)
         PRIVATE trailmate_linux_cardputer_zero_shell)
     add_test(NAME trailmate_linux_cardputer_zero_app_shell_smoke
              COMMAND trailmate_linux_cardputer_zero_app_shell_smoke)
+
+    add_executable(trailmate_linux_cardputer_zero_page_manifest_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_presentation/tests/test_page_manifest.cpp")
+    target_link_libraries(trailmate_linux_cardputer_zero_page_manifest_smoke
+        PRIVATE trailmate_linux_cardputer_zero_shell)
+    add_test(NAME trailmate_linux_cardputer_zero_page_manifest_smoke
+             COMMAND trailmate_linux_cardputer_zero_page_manifest_smoke)
+
+    add_executable(trailmate_linux_cardputer_zero_menu_profile_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_cardputer_zero_menu_profile.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/menu/menu_profile.cpp")
+    target_include_directories(trailmate_linux_cardputer_zero_menu_profile_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/stubs"
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include")
+    target_compile_definitions(trailmate_linux_cardputer_zero_menu_profile_smoke
+        PRIVATE TRAIL_MATE_CARDPUTER_ZERO_LINUX=1)
+    target_compile_features(trailmate_linux_cardputer_zero_menu_profile_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_linux_cardputer_zero_menu_profile_smoke
+             COMMAND trailmate_linux_cardputer_zero_menu_profile_smoke)
 endif()
