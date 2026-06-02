@@ -111,13 +111,7 @@ constexpr size_t kNodeInfoLongNameFieldSize = 32;
 constexpr uint8_t kAdvertTypeNone = 0x00;
 constexpr uint8_t kAdvertTypeChat = 0x01;
 constexpr uint8_t kAdvertTypeRepeater = 0x02;
-constexpr uint8_t kAdvertTypeRoom = 0x03;
-constexpr uint8_t kAdvertTypeSensor = 0x04;
-constexpr uint8_t kDiscoverTypeFilterAll =
-    static_cast<uint8_t>((1U << kAdvertTypeChat) |
-                         (1U << kAdvertTypeRepeater) |
-                         (1U << kAdvertTypeRoom) |
-                         (1U << kAdvertTypeSensor));
+constexpr uint8_t kDiscoverTypeFilterAll = 0xFF;
 constexpr uint8_t kAdvertFlagHasLocation = 0x10;
 constexpr uint8_t kAdvertFlagHasFeature1 = 0x20;
 constexpr uint8_t kAdvertFlagHasFeature2 = 0x40;
@@ -2088,12 +2082,10 @@ MeshActionResult MeshCoreAdapter::sendDiscoverRequestLocalDetailed()
     }
 
     const uint32_t tag = static_cast<uint32_t>(esp_random());
-    uint8_t payload[10] = {};
+    uint8_t payload[6] = {};
     payload[0] = kControlSubtypeDiscoverReq; // prefix_only = 0
     payload[1] = kDiscoverTypeFilterAll;
     memcpy(payload + 2, &tag, sizeof(tag));
-    uint32_t since = 0;
-    memcpy(payload + 6, &since, sizeof(since));
 
     uint8_t frame[kMeshcoreMaxFrameSize] = {};
     size_t frame_len = 0;
