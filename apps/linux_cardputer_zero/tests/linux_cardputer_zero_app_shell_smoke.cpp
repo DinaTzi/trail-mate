@@ -38,6 +38,49 @@ int main()
     assert(facts.lora_dio2_as_rf_switch);
     assert(facts.lora_dio3_tcxo_voltage);
 
+    const auto& notifications = shell.notificationPort().contract();
+    assert(std::strcmp(notifications.bus_name, "org.freedesktop.Notifications") == 0);
+    assert(std::strcmp(notifications.object_path, "/org/freedesktop/Notifications") == 0);
+    assert(std::strcmp(notifications.notify_signature, "susssasa{sv}i") == 0);
+    assert(std::strcmp(notifications.capability_body, "body") == 0);
+    assert(std::strcmp(notifications.capability_actions, "actions") == 0);
+    assert(std::strcmp(notifications.capability_persistence, "persistence") == 0);
+    assert(std::strcmp(notifications.shell_ipc_socket_suffix,
+                       "cardputer-zero/notifyd.sock") == 0);
+    assert(!notifications.shell_ipc_creates_notifications);
+
+    trailmate::apps::linux_cardputer_zero::NotificationRequest notification_request;
+    notification_request.summary = "Mesh";
+    notification_request.body = "Message received";
+    notification_request.urgency =
+        trailmate::apps::linux_cardputer_zero::NotificationUrgency::Critical;
+    const auto notify_call = shell.notificationPort().makeNotifyCall(notification_request);
+    assert(notify_call.contract == &notifications);
+    assert(std::strcmp(notify_call.summary, "Mesh") == 0);
+    assert(std::strcmp(notify_call.body, "Message received") == 0);
+    assert(notify_call.urgency_hint == 2);
+
+    const auto& input_method = shell.inputMethodPort().contract();
+    assert(std::strcmp(input_method.framework_name, "fcitx5") == 0);
+    assert(std::strcmp(input_method.ui_addon_name, "cardputerzero-ui") == 0);
+    assert(std::strcmp(input_method.panel_socket_suffix,
+                       "cardputer-zero/ime-panel.sock") == 0);
+    assert(std::strcmp(input_method.panel_update_message, "panel.update") == 0);
+    assert(std::strcmp(input_method.panel_hide_message, "panel.hide") == 0);
+    assert(std::strcmp(input_method.state_update_message, "state.update") == 0);
+    assert(std::strcmp(input_method.xmodifiers, "@im=fcitx") == 0);
+    assert(std::strcmp(input_method.sdl_im_module, "fcitx") == 0);
+    assert(input_method.screen_width == 320);
+    assert(input_method.screen_height == 170);
+    assert(input_method.max_exported_candidates == 3);
+    assert(!input_method.app_owns_input_method_engine);
+    assert(!input_method.app_owns_candidate_display);
+    assert(!input_method.app_owns_text_commit);
+    assert(!input_method.panel_socket_commits_text);
+    assert(!input_method.panel_requests_keyboard_focus);
+    assert(!input_method.missing_panel_blocks_text_input);
+    assert(!input_method.uses_embedded_touch_ime);
+
     const auto* profile = shell.targetProfile();
     assert(profile != nullptr);
     assert(profile->platform == product_composition::TargetPlatform::Linux);

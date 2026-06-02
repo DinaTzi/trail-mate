@@ -1,6 +1,8 @@
 #pragma once
 
 #include "boards/cardputerzero/board_facts.h"
+#include "cardputer_zero_input_method_port.h"
+#include "cardputer_zero_notification_port.h"
 
 #include "product_composition/target_profile.h"
 
@@ -28,10 +30,14 @@ class LinuxCardputerZeroAppShell
     const product_composition::TargetProfile* targetProfile() const;
     const char* activeUxPackId() const;
     const boards::cardputerzero::CardputerZeroBoardFacts& boardFacts() const;
+    const CardputerZeroNotificationPort& notificationPort() const;
+    const CardputerZeroInputMethodPort& inputMethodPort() const;
     bool validate() const;
 
   private:
     LinuxCardputerZeroAppShellConfig config_{};
+    CardputerZeroNotificationPort notification_port_{};
+    CardputerZeroInputMethodPort input_method_port_{};
 };
 
 } // namespace linux_cardputer_zero

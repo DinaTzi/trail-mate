@@ -9,6 +9,11 @@ Compact 320 x 170 landscape keyboard device.
 Keyboard-first input. Pointer, touch, and trackball are absent in the current
 Cardputer Zero board facts.
 
+On the Linux device route, text composition is owned by the user-session Fcitx5
+stack. Trail Mate's compact UX accepts committed text from the normal Linux
+input frontend path; the Cardputer Zero IME panel socket is display-only and is
+not a Trail Mate text submission API.
+
 ## Feature Set
 
 Compact chat/status workflow with compact map and practical GPS/team actions.
@@ -44,7 +49,7 @@ uses ASCII renderer until framebuffer ownership is validated.
 
 ## Deferred Decisions
 
-Real-device keyboard sampling, framebuffer handoff, launch, and packaging remain
-deferred.
+Real-device keyboard sampling, framebuffer handoff, notification daemon session
+validation, Fcitx5 session validation, launch, and packaging remain deferred.
 
 Board describes. Target chooses. UX Pack presents. Renderer draws.

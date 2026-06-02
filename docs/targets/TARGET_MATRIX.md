@@ -19,7 +19,7 @@ routes.
 | `twatch` | `twatch` | `builds/esp_idf` | `apps/esp32_lvgl` | ESP-IDF | LVGL | `watch_compact` | `compatibility` | `watch_compact_ui` | `watch_compact_manifest` | `watch_compact` | `PendingHardwareValidation` | current repo evidence is board and variant data, not migrated IDF defaults | `apps/esp32_lvgl + builds/esp_idf + boards/twatch` |
 | `uconsole` | `uconsole` | `builds/linux_cmake` | `apps/linux_uconsole_gtk` | Linux | GTK | `uconsole_desktop` | `uconsole_desktop` | `uconsole_desktop_ui` | `uconsole_desktop_manifest` | `uconsole_desktop` | `Active` | none for UX pack selection | `apps/linux_uconsole_gtk + builds/linux_cmake + boards/uconsole` |
 | `linux_sim` | `linux_sim` | `builds/linux_cmake` | `apps/linux_sim_shell` | Linux | ASCII | `simulator_full` | `simulator_full` | `simulator_full_ui` | `simulator_full_manifest` | `simulator_full` | `Active` | none for simulator UX pack selection | `apps/linux_sim_shell + builds/linux_cmake` |
-| `cardputerzero` | `cardputerzero` | `builds/linux_cmake` | `apps/linux_cardputer_zero` | Linux | ASCII | `cardputer_compact` | `cardputer_compact` | `cardputer_compact_ui` | `cardputer_compact_manifest` | `cardputer_compact` | `PendingHardwareValidation` | framebuffer, evdev, launch, and packaging still need real device validation | `apps/linux_cardputer_zero + builds/linux_cmake + boards/cardputerzero` |
+| `cardputerzero` | `cardputerzero` | `builds/linux_cmake` | `apps/linux_cardputer_zero` | Linux | ASCII | `cardputer_compact` | `cardputer_compact` | `cardputer_compact_ui` | `cardputer_compact_manifest` | `cardputer_compact` | `PendingHardwareValidation` | framebuffer, evdev, notifyd session, Fcitx5 session, launch, and packaging still need real device validation | `apps/linux_cardputer_zero + builds/linux_cmake + boards/cardputerzero` |
 | `gat562_mesh_evb_pro` | `gat562_mesh_evb_pro` | `builds/pio_nrf52` | `apps/nrf52_node` | PlatformIO | Headless | `node_headless` | `tiny_node_status` | `node_headless_ui` | `node_headless_manifest` | `headless_node` | `Headless` | current executable UX pack is `tiny_node_status`; board hardware still records a 128 x 64 display | `apps/nrf52_node + builds/pio_nrf52 + boards/gat562_mesh_evb_pro` |
 
 ## Pending Evidence
@@ -29,7 +29,7 @@ routes.
 | `tlora_pager` | ESP-IDF target defaults and hardware validation for the requested IDF route | `builds/esp_idf + boards/tlora_pager` |
 | `tdeck` | ESP-IDF target defaults and hardware validation for the requested IDF route | `builds/esp_idf + boards/tdeck` |
 | `twatch` | ESP-IDF target defaults and hardware validation for the requested IDF route | `builds/esp_idf + boards/twatch` |
-| `cardputerzero` | real Cardputer Zero framebuffer, evdev, launch, and packaging validation | `apps/linux_cardputer_zero + boards/cardputerzero` |
+| `cardputerzero` | real Cardputer Zero framebuffer, evdev, notifyd session, Fcitx5 session, launch, and packaging validation | `apps/linux_cardputer_zero + boards/cardputerzero` |
 
 ## Batch 2 Status Tokens
 

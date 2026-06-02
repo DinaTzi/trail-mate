@@ -23,6 +23,20 @@ framebuffer and evdev owner are promoted into this shell.
 - LoRa: SX1262 on `/dev/spidev0.1`, 500000 Hz, Reset=26, IRQ/DIO1=23,
   Busy=22, DIO2 RF switch enabled, DIO3 TCXO enabled
 
+## Linux Session Component Facts
+
+- notifications: standard `org.freedesktop.Notifications` D-Bus provider
+  supplied by the Cardputer Zero user session
+- notification shell IPC: `$XDG_RUNTIME_DIR/cardputer-zero/notifyd.sock`,
+  status/control only, never a notification creation path
+- input method: Fcitx5 text input through the normal Linux frontend path
+- IME display bridge: `cardputerzero-ui` Fcitx5 UI addon exports panel state to
+  `$XDG_RUNTIME_DIR/cardputer-zero/ime-panel.sock`
+- IME panel: `cardputer-zero-ime-panel` renders candidate/preedit state as a
+  Wayland layer-shell projection and does not submit text
+- expected session environment: `XMODIFIERS=@im=fcitx`,
+  `SDL_IM_MODULE=fcitx`
+
 ## Build Entrypoint
 
 - `builds/linux_cmake`
@@ -37,6 +51,9 @@ May:
 - own future framebuffer, evdev, packaging, and launch details for this device
 - own future Trail Mate Linux SX1262 packet-radio wiring for the documented
   Cardputer Zero LoRa endpoint
+- route application notifications through the standard freedesktop notification
+  contract
+- respect the Cardputer Zero Fcitx5 user-session boundary for text input
 
 Must not:
 
@@ -45,6 +62,12 @@ Must not:
 - define protocol, chat, map, or storage semantics
 - absorb shared Linux runtime code that belongs in `platform/linux/common`
 - hide missing real-device hardware integration behind simulator naming
+- use Cardputer Zero notifyd shell IPC to create notifications
+- embed or fork the Cardputer Zero notifyd store, toast, or notification-center
+  implementation
+- turn the IME panel socket into a text submission path
+- embed the Cardputer Zero Fcitx5 addon, panel renderer, input method engine,
+  dictionary, or candidate selection policy inside Trail Mate
 
 ## Thin App Shell Entrypoint Declaration
 

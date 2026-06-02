@@ -47,6 +47,16 @@ LinuxCardputerZeroAppShell::boardFacts() const
     return boards::cardputerzero::kBoardFacts;
 }
 
+const CardputerZeroNotificationPort& LinuxCardputerZeroAppShell::notificationPort() const
+{
+    return notification_port_;
+}
+
+const CardputerZeroInputMethodPort& LinuxCardputerZeroAppShell::inputMethodPort() const
+{
+    return input_method_port_;
+}
+
 bool LinuxCardputerZeroAppShell::validate() const
 {
     const auto& facts = boardFacts();
@@ -76,7 +86,9 @@ bool LinuxCardputerZeroAppShell::validate() const
            product_composition::findTargetUxBinding(targetId()) != nullptr &&
            config_.ux_pack_id != nullptr &&
            std::strcmp(config_.ux_pack_id, activeUxPackId()) == 0 &&
-           ui_lvgl_ux::findUxPackById(activeUxPackId()) != nullptr;
+           ui_lvgl_ux::findUxPackById(activeUxPackId()) != nullptr &&
+           notificationPort().validate() &&
+           inputMethodPort().validate();
 }
 
 } // namespace linux_cardputer_zero

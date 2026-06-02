@@ -12,6 +12,8 @@ include("${TRAIL_MATE_REPO_ROOT}/cmake/TrailMateUxPacks.cmake")
 trailmate_add_ui_lvgl_ux_packs(trailmate_ui_lvgl_ux_packs)
 
 add_library(trailmate_linux_cardputer_zero_shell
+    src/cardputer_zero_input_method_port.cpp
+    src/cardputer_zero_notification_port.cpp
     src/linux_cardputer_zero_app_shell.cpp
     "${TRAIL_MATE_REPO_ROOT}/modules/product_composition/src/target_profile.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/product_composition/src/target_ux_binding.cpp")
