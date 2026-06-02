@@ -263,6 +263,7 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
         uint32_t signature = 0;
         NodeId dest = 0;
         uint32_t portnum = 0;
+        MessageId chat_msg_id = 0;
         uint32_t created_ms = 0;
         uint32_t expire_ms = 0;
     };
@@ -378,6 +379,7 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     void handleRawPacketInternal(const uint8_t* data, size_t size, bool allow_duplicate);
     void prunePendingAppAcks(uint32_t now_ms);
     void trackPendingAppAck(uint32_t signature, NodeId dest, uint32_t portnum, uint32_t now_ms);
+    void bindPendingAppAckToChatMessage(uint32_t signature, MessageId msg_id);
     bool consumePendingAppAck(uint32_t signature, uint32_t now_ms);
     void pushEvent(Event&& ev);
     bool sendNodeInfoFrame(NodeId dest, bool is_query, bool request_reply);

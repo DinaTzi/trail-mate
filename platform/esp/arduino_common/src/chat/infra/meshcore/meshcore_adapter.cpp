@@ -263,6 +263,15 @@ bool buildPathPlain(const uint8_t* out_path, size_t out_path_len,
     return true;
 }
 
+void formatMeshCoreFallbackShortName(uint8_t peer_hash, char* out, size_t out_len)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+    std::snprintf(out, out_len, "%02X", static_cast<unsigned>(peer_hash));
+}
+
 } // namespace
 
 MeshCoreAdapter::MeshCoreAdapter(LoraBoard& board)
@@ -1770,6 +1779,10 @@ void MeshCoreAdapter::prunePendingAppAcks(uint32_t now_ms)
                      static_cast<unsigned>(front.portnum),
                      static_cast<unsigned long>(now_ms - front.created_ms));
         penalizePeerRoute(peer_hash, now_ms);
+        if (front.chat_msg_id != 0)
+        {
+            sys::EventBus::publish(new sys::ChatSendResultEvent(front.chat_msg_id, false), 0);
+        }
         pending_app_acks_.pop_front();
     }
 }
@@ -1788,6 +1801,7 @@ void MeshCoreAdapter::trackPendingAppAck(uint32_t signature, NodeId dest, uint32
         {
             entry.dest = dest;
             entry.portnum = portnum;
+            entry.chat_msg_id = 0;
             entry.created_ms = now_ms;
             entry.expire_ms = now_ms + kAppAckTimeoutMs;
             return;
@@ -1796,6 +1810,11 @@ void MeshCoreAdapter::trackPendingAppAck(uint32_t signature, NodeId dest, uint32
 
     if (pending_app_acks_.size() >= kMaxPendingAppAcks)
     {
+        const PendingAppAck& evicted = pending_app_acks_.front();
+        if (evicted.chat_msg_id != 0)
+        {
+            sys::EventBus::publish(new sys::ChatSendResultEvent(evicted.chat_msg_id, false), 0);
+        }
         pending_app_acks_.pop_front();
     }
 
@@ -1803,9 +1822,27 @@ void MeshCoreAdapter::trackPendingAppAck(uint32_t signature, NodeId dest, uint32
     entry.signature = signature;
     entry.dest = dest;
     entry.portnum = portnum;
+    entry.chat_msg_id = 0;
     entry.created_ms = now_ms;
     entry.expire_ms = now_ms + kAppAckTimeoutMs;
     pending_app_acks_.push_back(entry);
+}
+
+void MeshCoreAdapter::bindPendingAppAckToChatMessage(uint32_t signature, MessageId msg_id)
+{
+    if (signature == 0 || msg_id == 0)
+    {
+        return;
+    }
+
+    for (PendingAppAck& entry : pending_app_acks_)
+    {
+        if (entry.signature == signature)
+        {
+            entry.chat_msg_id = msg_id;
+            return;
+        }
+    }
 }
 
 bool MeshCoreAdapter::consumePendingAppAck(uint32_t signature, uint32_t now_ms)
@@ -1833,6 +1870,10 @@ bool MeshCoreAdapter::consumePendingAppAck(uint32_t signature, uint32_t now_ms)
         ev.tag = signature;
         ev.trip_ms = now_ms - it->created_ms;
         pushEvent(std::move(ev));
+        if (it->chat_msg_id != 0)
+        {
+            sys::EventBus::publish(new sys::ChatSendResultEvent(it->chat_msg_id, true), 0);
+        }
         pending_app_acks_.erase(it);
         return true;
     }
@@ -2728,13 +2769,22 @@ MeshSendResult MeshCoreAdapter::sendTextDetailed(ChannelId channel, const std::s
 
     if (peer != 0)
     {
+        uint32_t ack_value = 0;
         const MeshActionResult sent =
-            sendDirectTextDetailed(channel, text, peer, kTxtTypePlain, nullptr, nullptr, nullptr);
+            sendDirectTextDetailed(channel, text, peer, kTxtTypePlain, &ack_value, nullptr, nullptr);
         if (!sent.ok)
         {
             return MeshSendResult::fail(sent.failure, 0, sent.detail);
         }
         const MessageId msg_id = (forced_msg_id != 0) ? forced_msg_id : next_msg_id_++;
+        if (ack_value != 0)
+        {
+            bindPendingAppAckToChatMessage(ack_value, msg_id);
+        }
+        else
+        {
+            sys::EventBus::publish(new sys::ChatSendResultEvent(msg_id, true), 0);
+        }
         return MeshSendResult::success(msg_id);
     }
 
@@ -2810,6 +2860,7 @@ MeshSendResult MeshCoreAdapter::sendTextDetailed(ChannelId channel, const std::s
     }
 
     const MessageId msg_id = (forced_msg_id != 0) ? forced_msg_id : next_msg_id_++;
+    sys::EventBus::publish(new sys::ChatSendResultEvent(msg_id, true), 0);
     return MeshSendResult::success(msg_id);
 }
 
@@ -3653,10 +3704,13 @@ void MeshCoreAdapter::handleRawPacketInternal(const uint8_t* data, size_t size, 
             {
                 rememberPeerPubKey(resp.pubkey, now_ms, false);
             }
+            char fallback_short_name[8] = {};
+            formatMeshCoreFallbackShortName(resp.pubkey[0], fallback_short_name,
+                                            sizeof(fallback_short_name));
             sys::EventBus::publish(
                 new sys::NodeInfoUpdateEvent(node,
-                                             "",
-                                             "",
+                                             fallback_short_name,
+                                             fallback_short_name,
                                              snr,
                                              rssi,
                                              ts,
