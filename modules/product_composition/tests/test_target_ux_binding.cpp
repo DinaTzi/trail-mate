@@ -8,7 +8,7 @@ int main()
     std::size_t count = 0;
     const auto* bindings = product_composition::allTargetUxBindings(&count);
     assert(bindings != nullptr);
-    assert(count == 9);
+    assert(count == 10);
 
     const auto* tab5 = product_composition::findTargetUxBinding("tab5");
     assert(tab5 != nullptr);
@@ -23,10 +23,19 @@ int main()
     assert(uconsole->fallback_ux_pack_id == nullptr);
     assert(uconsole->final_ux_pack_available);
 
+    const auto* linux_sim = product_composition::findTargetUxBinding("linux_sim");
+    assert(linux_sim != nullptr);
+    assert(std::strcmp(linux_sim->desired_ux_pack_id, "simulator_full") == 0);
+    assert(std::strcmp(linux_sim->active_ux_pack_id, "simulator_full") == 0);
+    assert(linux_sim->fallback_ux_pack_id == nullptr);
+    assert(linux_sim->final_ux_pack_available);
+
     const auto* cardputer = product_composition::findTargetUxBinding("cardputerzero");
     assert(cardputer != nullptr);
     assert(std::strcmp(cardputer->desired_ux_pack_id, "cardputer_compact") == 0);
-    assert(std::strcmp(cardputer->active_ux_pack_id, "simulator_full") == 0);
+    assert(std::strcmp(cardputer->active_ux_pack_id, "cardputer_compact") == 0);
+    assert(cardputer->fallback_ux_pack_id == nullptr);
+    assert(cardputer->final_ux_pack_available);
 
     const auto* gat562 = product_composition::findTargetUxBinding("gat562_mesh_evb_pro");
     assert(gat562 != nullptr);

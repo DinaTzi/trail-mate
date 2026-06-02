@@ -89,7 +89,7 @@ Candidate future packs:
 deck_full
 pager_compact
 watch_quick
-cardputer_wide
+cardputer_compact
 tab5_touch
 tiny_node_status
 ```
@@ -98,6 +98,7 @@ Current executable baseline packs:
 
 ```text
 compatibility
+cardputer_compact
 uconsole_desktop
 tiny_node_status
 simulator_full
@@ -256,7 +257,7 @@ service, or board pin maps directly.
 | `deck_full` | keyboard/touch deck | full chat, full map, team actions, settings |
 | `pager_compact` | LoRa pager | compact navigation, quick messages, current GPS, status views |
 | `watch_quick` | watch-sized touch device | glanceable status, quick actions, compact team location |
-| `cardputer_wide` | keyboard landscape device | dense chat and status, compact map |
+| `cardputer_compact` | 320 x 170 keyboard landscape device | compact chat and status, compact map |
 | `tab5_touch` | larger touch display | full map, richer team, dashboard-first UX |
 | `tiny_node_status` | small node/status display | telemetry, radio/GPS/battery, no full workflows |
 

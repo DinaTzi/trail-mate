@@ -8,7 +8,7 @@ int main()
     std::size_t count = 0;
     const auto* all = product_composition::allTargetProfiles(&count);
     assert(all != nullptr);
-    assert(count == 9);
+    assert(count == 10);
 
     const auto* profiles = product_composition::esp32LvglTargetProfiles(&count);
     assert(profiles != nullptr);
@@ -61,9 +61,20 @@ int main()
     assert(uconsole->renderer == product_composition::TargetRenderer::Gtk);
     assert(uconsole->platform == product_composition::TargetPlatform::Linux);
 
+    const auto* linux_sim = product_composition::findTargetProfile("linux_sim");
+    assert(linux_sim != nullptr);
+    assert(linux_sim->renderer == product_composition::TargetRenderer::Ascii);
+    assert(linux_sim->platform == product_composition::TargetPlatform::Linux);
+    assert(std::strcmp(linux_sim->app_shell, "apps/linux_sim_shell") == 0);
+    assert(linux_sim->status == product_composition::TargetSupportStatus::Active);
+
     const auto* cardputer = product_composition::findTargetProfile("cardputerzero");
     assert(cardputer != nullptr);
     assert(cardputer->renderer == product_composition::TargetRenderer::Ascii);
+    assert(cardputer->platform == product_composition::TargetPlatform::Linux);
+    assert(std::strcmp(cardputer->app_shell, "apps/linux_cardputer_zero") == 0);
+    assert(cardputer->status ==
+           product_composition::TargetSupportStatus::PendingHardwareValidation);
 
     const auto* gat562 = product_composition::findTargetProfile("gat562_mesh_evb_pro");
     assert(gat562 != nullptr);

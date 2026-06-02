@@ -14,10 +14,14 @@ The directories here define the target structure we are converging toward.
 
 For Linux bring-up:
 
+- `apps/linux_cardputer_zero` is the Cardputer Zero portable Linux device app
+  shell. It owns the `cardputerzero` product target boundary and selects the
+  `cardputer_compact` UX pack while framebuffer, evdev, launch, and packaging
+  validation remain pending.
 - `apps/linux_sim_shell` is the final simulator and developer-tooling app shell.
 - `apps/linux_uconsole_gtk` is the final GTK/uConsole app shell.
 - `removed root linux_sim` and
   `removed root linux_uconsole` are transitional historical roots
   that may be reached only through declared compatibility adapters.
-- `removed root linux_rpi` remains a historical bring-up root
-  until a final Linux device app shell owns the product path.
+- `removed root linux_rpi` remains a historical bring-up root and must not be
+  treated as the Cardputer Zero product app shell.

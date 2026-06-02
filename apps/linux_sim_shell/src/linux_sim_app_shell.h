@@ -14,7 +14,6 @@ namespace linux_sim_shell
 struct LinuxSimAppShellConfig
 {
     const char* target_id = "linux_sim";
-    const char* product_target_id = "cardputerzero";
     const char* ux_pack_id = "simulator_full";
     const char* historical_source =
         linuxSimHistoricalSourceDescriptor().historical_root_name;

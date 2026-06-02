@@ -16,7 +16,7 @@ UX Pack presents.
 | --- | --- | --- | --- | --- | --- | --- |
 | `uconsole` | `uconsole_aio2` placeholder | Linux | `builds/linux_cmake` | `apps/linux_uconsole_gtk` | `uconsole_desktop` | transitional |
 | `linux_sim` | simulator device profile | Linux | `builds/linux_cmake` | `apps/linux_sim_shell` | `simulator_full` | transitional |
-| `linux_rpi_cardputer_zero` | Cardputer Zero / Pi OS device profile | Linux | `builds/linux_cmake` | future Linux device app shell | `cardputer_wide` | transitional |
+| `cardputerzero` | Cardputer Zero portable Linux device profile | Linux | `builds/linux_cmake` | `apps/linux_cardputer_zero` | `cardputer_compact` | pending hardware validation |
 | `linux_unoq` | UNO Q device profile | Linux | `builds/linux_cmake` | future Linux UNO Q app shell | `uconsole_desktop` placeholder | planned |
 | `linux_headless` | host/headless profile | Linux | `builds/linux_cmake` | future Linux headless app shell | `headless_status` | planned |
 
@@ -32,6 +32,10 @@ Current transitional paths:
 Linux CMake wrappers should invoke selected Linux app shells. They must not
 absorb GTK, simulator, framebuffer, device-shell, or runtime behavior into
 `builds/linux_cmake`.
+
+`cardputerzero` is no longer described as a future Raspberry Pi simulator path.
+Its current owner is `apps/linux_cardputer_zero`; the remaining work is real
+Cardputer Zero framebuffer, evdev, launch, and package validation.
 
 ## Non-Goals
 

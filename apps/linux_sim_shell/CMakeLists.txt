@@ -741,6 +741,7 @@ if(BUILD_TESTING)
         lvgl_descriptor_menu_model
         lvgl_descriptor_renderer_probe
         compatibility_menu_binding
+        cardputer_compact_ux_pack
         compatibility_ux_pack
         uconsole_desktop_ux_pack
         tiny_node_status_ux_pack

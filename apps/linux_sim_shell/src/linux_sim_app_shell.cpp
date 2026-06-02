@@ -24,7 +24,7 @@ const LinuxSimAppShellConfig& LinuxSimAppShell::config() const
 
 const char* LinuxSimAppShell::targetId() const
 {
-    return config_.product_target_id;
+    return config_.target_id;
 }
 
 const product_composition::TargetProfile* LinuxSimAppShell::targetProfile() const
@@ -42,7 +42,6 @@ bool LinuxSimAppShell::validate() const
 {
     const auto& historical_source = linuxSimHistoricalSourceDescriptor();
     return config_.target_id != nullptr &&
-           config_.product_target_id != nullptr &&
            targetProfile() != nullptr &&
            product_composition::findTargetUxBinding(targetId()) != nullptr &&
            config_.ux_pack_id != nullptr &&

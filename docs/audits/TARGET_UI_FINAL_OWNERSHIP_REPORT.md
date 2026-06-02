@@ -91,7 +91,6 @@ not hidden inside the shell.
 The following gaps are real and intentionally recorded instead of guessed:
 
 - final executable UX packs for `tab5_touch`, `tdisplayp4_touch`,
-  `pager_compact`, `deck_full`, `watch_compact`, `cardputer_compact`, and
-  `node_headless`;
+  `pager_compact`, `deck_full`, `watch_compact`, and `node_headless`;
 - ESP-IDF target defaults for `tlora_pager`, `tdeck`, and `twatch`;
-- dedicated Cardputer Zero app shell decision.
+- Cardputer Zero framebuffer, evdev, launch, and packaging validation.

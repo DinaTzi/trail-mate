@@ -391,6 +391,7 @@ set(TRAIL_MATE_LINUX_UI_SHELL_SOURCES
     "${TRAIL_MATE_UI_LVGL_UX_PACKS_SRC_ROOT}/runtime/lvgl_menu_runtime_adapter.cpp"
     "${TRAIL_MATE_UI_LVGL_UX_PACKS_SRC_ROOT}/runtime/lvgl_screen_host_adapter.cpp"
     "${TRAIL_MATE_UI_LVGL_UX_PACKS_SRC_ROOT}/runtime/lvgl_screen_graph_bridge.cpp"
+    "${TRAIL_MATE_UI_LVGL_UX_PACKS_SRC_ROOT}/packs/cardputer_compact_ux_pack.cpp"
     "${TRAIL_MATE_UI_LVGL_UX_PACKS_SRC_ROOT}/packs/compatibility_ux_pack.cpp"
     "${TRAIL_MATE_UI_LVGL_UX_PACKS_SRC_ROOT}/packs/uconsole_desktop_ux_pack.cpp"
     "${TRAIL_MATE_UI_LVGL_UX_PACKS_SRC_ROOT}/packs/tiny_node_status_ux_pack.cpp"
