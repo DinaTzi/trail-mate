@@ -4,9 +4,9 @@
 #include "chat/infra/store/ram_store.h"
 #include "chat/ports/i_mesh_adapter.h"
 #include "chat/usecase/chat_service.h"
+#include "sys/clock.h"
 #include "ui/presentation_sources/chat_presentation_source.h"
 #include "ui/presentation_sources/legacy_chat_action_sink.h"
-#include "sys/clock.h"
 
 #include <cassert>
 #include <cstdlib>

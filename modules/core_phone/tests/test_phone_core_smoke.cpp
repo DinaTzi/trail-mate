@@ -1,5 +1,5 @@
-#include "fake_phone_runtime_context.h"
 #include "chat/infra/meshtastic/mt_protocol_helpers.h"
+#include "fake_phone_runtime_context.h"
 #include "phone/meshcore/meshcore_phone_core.h"
 #include "phone/meshtastic/meshtastic_phone_session.h"
 

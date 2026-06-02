@@ -1658,7 +1658,7 @@ bool MeshCoreAdapter::canTransmitNow(uint32_t now_ms) const
 }
 
 MeshActionResult MeshCoreAdapter::transmitFrameNowDetailed(const uint8_t* data, size_t len,
-                                                          uint32_t now_ms)
+                                                           uint32_t now_ms)
 {
     if (!data || len == 0 || len > kMeshcoreMaxFrameSize)
     {
@@ -2162,7 +2162,7 @@ MeshActionResult MeshCoreAdapter::sendIdentityAdvertDetailed(bool broadcast)
 }
 
 MeshActionResult MeshCoreAdapter::sendIdentityAdvertDetailed(bool broadcast, bool include_location,
-                                                            int32_t lat_i6, int32_t lon_i6)
+                                                             int32_t lat_i6, int32_t lon_i6)
 {
     if (!identity_.isReady())
     {
