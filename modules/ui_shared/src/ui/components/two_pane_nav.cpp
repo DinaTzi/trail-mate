@@ -775,21 +775,7 @@ void on_ui_refreshed(Binding* binding)
 {
     if (!binding_alive(binding) || !binding->group) return;
     lv_group_set_editing(binding->group, false);
-    prepare_touch_routing(binding);
-
-    if (binding->column == FocusColumn::List)
-    {
-        rebind_by_column(binding);
-        return;
-    }
-
-    lv_obj_t* focused = lv_group_get_focused(binding->group);
-    if (is_visible(focused))
-    {
-        return;
-    }
-
-    bind_filter_column(binding);
+    rebind_by_column(binding);
 }
 
 void focus_filter(Binding* binding)

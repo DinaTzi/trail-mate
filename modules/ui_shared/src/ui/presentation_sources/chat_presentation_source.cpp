@@ -26,7 +26,7 @@ void copyNodeLabel(ui::FixedText<32>& out, ::chat::NodeId node_id)
 {
     if (node_id == 0)
     {
-        ui::copyText(out, "Me");
+        ui::copyText(out, "Unknown");
         return;
     }
 
@@ -82,6 +82,8 @@ ui::chat::MessageFailureKind mapDeliveryFailure(
         return ui::chat::MessageFailureKind::None;
     case ::chat::delivery::DeliveryFailureKind::PeerKeyMissing:
         return ui::chat::MessageFailureKind::PeerKeyMissing;
+    case ::chat::delivery::DeliveryFailureKind::ChannelKeyMissing:
+        return ui::chat::MessageFailureKind::ChannelKeyMissing;
     case ::chat::delivery::DeliveryFailureKind::LocalIdentityMissing:
         return ui::chat::MessageFailureKind::LocalIdentityMissing;
     case ::chat::delivery::DeliveryFailureKind::RadioSendFailed:
@@ -141,6 +143,7 @@ bool ChatPresentationSource::buildChatWorkspaceSnapshot(
         row.kind = row.id.kind;
         row.protocol = row.id.protocol;
         row.unread_count = meta.unread < 0 ? 0U : static_cast<uint16_t>(meta.unread);
+        row.last_timestamp = meta.last_timestamp;
         row.selected = row.id == request.selected;
         copyString(row.title, meta.name);
         copyString(row.subtitle, meta.preview);

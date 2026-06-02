@@ -9,6 +9,7 @@ enum class LegacyChatSendFailure : uint8_t
 {
     None,
     PeerKeyMissing,
+    ChannelKeyMissing,
     LocalIdentityMissing,
     RadioSendFailed,
     AckTimeout,

@@ -29,6 +29,7 @@ bool MeshAdapterRouterCore::installBackend(MeshProtocol protocol, std::unique_pt
     }
 
     backendSlot(protocol, meshtastic_backend_, meshcore_backend_) = std::move(backend);
+    active_protocol_ = protocol;
     return true;
 }
 
@@ -76,6 +77,17 @@ bool MeshAdapterRouterCore::sendTextWithId(ChannelId channel, const std::string&
 {
     IMeshAdapter* backend = activeBackend();
     return backend && backend->sendTextWithId(channel, text, forced_msg_id, out_msg_id, peer);
+}
+
+MeshSendResult MeshAdapterRouterCore::sendTextDetailed(ChannelId channel, const std::string& text,
+                                                       MessageId forced_msg_id, NodeId peer)
+{
+    IMeshAdapter* backend = activeBackend();
+    if (!backend)
+    {
+        return MeshSendResult::fail(MeshOperationFailure::NotReady);
+    }
+    return backend->sendTextDetailed(channel, text, forced_msg_id, peer);
 }
 
 bool MeshAdapterRouterCore::pollIncomingText(MeshIncomingText* out)
@@ -141,6 +153,16 @@ bool MeshAdapterRouterCore::triggerDiscoveryAction(MeshDiscoveryAction action)
 {
     IMeshAdapter* backend = activeBackend();
     return backend && backend->triggerDiscoveryAction(action);
+}
+
+MeshActionResult MeshAdapterRouterCore::triggerDiscoveryActionDetailed(MeshDiscoveryAction action)
+{
+    IMeshAdapter* backend = activeBackend();
+    if (!backend)
+    {
+        return MeshActionResult::fail(MeshOperationFailure::NotReady);
+    }
+    return backend->triggerDiscoveryActionDetailed(action);
 }
 
 void MeshAdapterRouterCore::applyConfig(const MeshConfig& config)

@@ -4,10 +4,12 @@
 #include "chat/infra/store/ram_store.h"
 #include "chat/ports/i_mesh_adapter.h"
 #include "chat/usecase/chat_service.h"
+#include "sys/clock.h"
 #include "ui/presentation_sources/chat_presentation_source.h"
 #include "ui/presentation_sources/legacy_chat_action_sink.h"
 
 #include <cassert>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <string>
@@ -32,6 +34,20 @@ class FakeMeshAdapter final : public ::chat::IMeshAdapter
             *out_msg_id = next_id++;
         }
         return send_ok;
+    }
+
+    ::chat::MeshSendResult sendTextDetailed(::chat::ChannelId channel,
+                                            const std::string& text,
+                                            ::chat::MessageId forced_msg_id = 0,
+                                            ::chat::NodeId peer = 0) override
+    {
+        ::chat::MessageId msg_id = forced_msg_id;
+        const bool ok = sendText(channel, text, &msg_id, peer);
+        if (ok)
+        {
+            return ::chat::MeshSendResult::success(msg_id);
+        }
+        return ::chat::MeshSendResult::fail(send_failure, fail_returns_msg_id ? msg_id : 0);
     }
 
     bool pollIncomingText(::chat::MeshIncomingText* out) override
@@ -62,6 +78,8 @@ class FakeMeshAdapter final : public ::chat::IMeshAdapter
 
     int send_count = 0;
     bool send_ok = true;
+    bool fail_returns_msg_id = true;
+    ::chat::MeshOperationFailure send_failure = ::chat::MeshOperationFailure::Unknown;
     ::chat::MessageId next_id = 100;
     ::chat::ChannelId last_channel = ::chat::ChannelId::PRIMARY;
     std::string last_text;
@@ -97,6 +115,15 @@ ui::chat::ConversationId broadcastConversation()
     return id;
 }
 
+ui::chat::ConversationId meshCoreBroadcastConversation()
+{
+    ui::chat::ConversationId id;
+    id.kind = ui::chat::ConversationKind::Channel;
+    id.protocol = ui::chat::ChatProtocolKind::MeshCore;
+    id.primary = static_cast<uint32_t>(::chat::ChannelId::PRIMARY);
+    return id;
+}
+
 ui::chat::ConversationId systemConversation()
 {
     ui::chat::ConversationId id;
@@ -110,6 +137,11 @@ ui::chat::ConversationId systemConversation()
 
 int main()
 {
+    sys::set_epoch_seconds_provider([]() -> uint32_t
+                                    { return 1700000000U; });
+    sys::set_millis_provider([]() -> uint32_t
+                             { return 5000U; });
+
     ::chat::ChatModel model;
     FakeMeshAdapter mesh;
     ::chat::RamStore store;
@@ -146,10 +178,14 @@ int main()
     assert(snapshot.conversation_count == 1);
     assert(snapshot.conversations[0].id == ada);
     assert(snapshot.conversations[0].selected);
+    assert(snapshot.conversations[0].last_timestamp != 0);
     assert(std::strcmp(snapshot.conversations[0].title.c_str(), "04D2") == 0);
     assert(snapshot.message_count == 1);
     assert(snapshot.messages[0].conversation == ada);
     assert(snapshot.messages[0].outgoing);
+    assert(std::strcmp(snapshot.messages[0].time_label.c_str(), "") != 0);
+    assert(std::strtoul(snapshot.messages[0].time_label.c_str(), nullptr, 10) ==
+           snapshot.conversations[0].last_timestamp);
     assert(snapshot.messages[0].delivery ==
            ui::chat::MessageDeliveryState::Delivered);
     assert(snapshot.messages[0].failure == ui::chat::MessageFailureKind::None);
@@ -158,10 +194,23 @@ int main()
     assert(snapshot.composer_enabled);
 
     mesh.send_ok = false;
+    mesh.send_failure = ::chat::MeshOperationFailure::PeerKeyMissing;
     const ui::chat::SendMessageView failed_send{ada, "fail", 4};
     const auto rejected_send = sink.sendMessage(failed_send);
     assert(!rejected_send.ok);
-    assert(rejected_send.failure == ui::UiActionFailure::Rejected);
+    assert(rejected_send.failure == ui::UiActionFailure::PeerKeyMissing);
+
+    mesh.fail_returns_msg_id = false;
+    mesh.send_failure = ::chat::MeshOperationFailure::ChannelKeyMissing;
+    const auto channel_key_send = sink.sendMessage(failed_send);
+    assert(!channel_key_send.ok);
+    assert(channel_key_send.failure == ui::UiActionFailure::ChannelKeyMissing);
+
+    mesh.send_failure = ::chat::MeshOperationFailure::RadioOffline;
+    const auto radio_offline_send = sink.sendMessage(failed_send);
+    assert(!radio_offline_send.ok);
+    assert(radio_offline_send.failure == ui::UiActionFailure::RadioOffline);
+    mesh.fail_returns_msg_id = true;
     assert(delivery_read_model.upsert(::chat::delivery::toFailedDeliveryRecord(
         ::chat::delivery::ChatDeliveryRef{0, 101, 0},
         ::chat::delivery::SendFailureKind::PeerKeyMissing)));
@@ -170,6 +219,14 @@ int main()
     assert(snapshot.messages[1].delivery == ui::chat::MessageDeliveryState::Failed);
     assert(snapshot.messages[1].failure ==
            ui::chat::MessageFailureKind::PeerKeyMissing);
+
+    assert(delivery_read_model.upsert(::chat::delivery::toFailedDeliveryRecord(
+        ::chat::delivery::ChatDeliveryRef{0, 101, 0},
+        ::chat::delivery::SendFailureKind::ChannelKeyMissing)));
+    assert(source.buildChatWorkspaceSnapshot(request, snapshot));
+    assert(snapshot.message_count == 2);
+    assert(snapshot.messages[1].failure ==
+           ui::chat::MessageFailureKind::ChannelKeyMissing);
 
     assert(sink.markRead(ada).ok);
 
@@ -191,6 +248,26 @@ int main()
     assert(!snapshot.messages[0].outgoing);
     assert(snapshot.messages[0].sender_node_id == 0x648144D4);
     assert(std::strcmp(snapshot.messages[0].sender_label.c_str(), "44D4") == 0);
+
+    service.setActiveProtocol(::chat::MeshProtocol::MeshCore);
+    ::chat::MeshIncomingText unknown_meshcore_incoming{};
+    unknown_meshcore_incoming.channel = ::chat::ChannelId::PRIMARY;
+    unknown_meshcore_incoming.from = 0;
+    unknown_meshcore_incoming.to = 0xFFFFFFFFUL;
+    unknown_meshcore_incoming.msg_id = 901;
+    unknown_meshcore_incoming.text = "mc sender unknown";
+    mesh.incoming.push_back(unknown_meshcore_incoming);
+    service.processIncoming();
+
+    const ui::chat::ConversationId meshcore_broadcast = meshCoreBroadcastConversation();
+    request.selected = meshcore_broadcast;
+    assert(source.buildChatWorkspaceSnapshot(request, snapshot));
+    assert(snapshot.header.valid);
+    assert(snapshot.message_count == 1);
+    assert(snapshot.messages[0].conversation == meshcore_broadcast);
+    assert(!snapshot.messages[0].outgoing);
+    assert(snapshot.messages[0].sender_node_id == 0);
+    assert(std::strcmp(snapshot.messages[0].sender_label.c_str(), "Unknown") == 0);
 
     const ui::chat::ConversationId team = teamConversation();
     assert(!sink.selectConversation(team).ok);
@@ -216,5 +293,7 @@ int main()
     assert(!system_send.ok);
     assert(system_send.failure == ui::UiActionFailure::Unsupported);
 
+    sys::set_epoch_seconds_provider(nullptr);
+    sys::set_millis_provider(nullptr);
     return 0;
 }

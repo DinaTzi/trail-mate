@@ -2,6 +2,7 @@
 
 #include "chat/ble/meshtastic_phone_config_bridge.h"
 #include "chat/infra/meshcore/meshcore_ble_backend.h"
+#include "chat/infra/meshtastic/mt_radio_config.h"
 #include "chat/ports/i_mesh_adapter.h"
 #include "chat/ports/i_node_store.h"
 #include "chat/usecase/chat_service.h"
@@ -458,7 +459,9 @@ bool AppPhoneFacade::getCustomVars(std::string* out) const
     const auto mesh_cfg = getMeshCorePhoneConfig();
     const auto mt_cfg = getMeshtasticPhoneConfig();
     appendCustomVar(*out, "node_name", mesh_cfg.node_name);
-    appendCustomVar(*out, "channel_name", mesh_cfg.mesh.meshcore_channel_name);
+    appendCustomVar(*out, "channel_name", chat::meshtastic::primaryChannelName(mt_cfg.mesh));
+    appendCustomVar(*out, "meshtastic_channel_name", chat::meshtastic::primaryChannelName(mt_cfg.mesh));
+    appendCustomVar(*out, "meshcore_channel_name", mesh_cfg.mesh.meshcore_channel_name);
     appendCustomVar(*out, "multi_acks", mesh_cfg.mesh.meshcore_multi_acks ? "1" : "0");
     appendCustomVar(*out, "gps", mt_cfg.gps_enabled ? "1" : "0");
 
@@ -499,7 +502,19 @@ bool AppPhoneFacade::setCustomVar(const char* key, const char* value)
             mt_changed = true;
         }
     }
-    else if (std::strcmp(key, "channel_name") == 0)
+    else if (std::strcmp(key, "channel_name") == 0 ||
+             std::strcmp(key, "meshtastic_channel_name") == 0)
+    {
+        char next[sizeof(mt_cfg.mesh.primary_channel_name)] = {};
+        copyBounded(next, sizeof(next), value);
+        if (std::strcmp(mt_cfg.mesh.primary_channel_name, next) != 0)
+        {
+            copyBounded(mt_cfg.mesh.primary_channel_name, sizeof(mt_cfg.mesh.primary_channel_name), next);
+            changed = true;
+            mt_changed = true;
+        }
+    }
+    else if (std::strcmp(key, "meshcore_channel_name") == 0)
     {
         char next[sizeof(mesh_cfg.mesh.meshcore_channel_name)] = {};
         copyBounded(next, sizeof(next), value);

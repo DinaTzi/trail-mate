@@ -8,6 +8,8 @@ int main()
 
     assert(mapLegacyChatSendFailure(LegacyChatSendFailure::PeerKeyMissing) ==
            SendFailureKind::PeerKeyMissing);
+    assert(mapLegacyChatSendFailure(LegacyChatSendFailure::ChannelKeyMissing) ==
+           SendFailureKind::ChannelKeyMissing);
     assert(mapLegacyChatSendFailure(LegacyChatSendFailure::LocalIdentityMissing) ==
            SendFailureKind::LocalIdentityMissing);
     assert(mapLegacyChatSendFailure(LegacyChatSendFailure::RadioSendFailed) ==

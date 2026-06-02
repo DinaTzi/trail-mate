@@ -6,6 +6,7 @@
 #include "ui/screens/gps/gps_modal.h"
 #include "ui/screens/gps/gps_page_lifetime.h"
 #include "ui/screens/gps/gps_page_map.h"
+#include "ui/screens/gps/gps_page_runtime.h"
 #include "ui/screens/gps/gps_page_styles.h"
 #include "ui/screens/gps/gps_state.h"
 #include "ui/support/lvgl_fs_utils.h"
@@ -351,6 +352,7 @@ void apply_tracker_view_defaults()
     reset_title_status_cache();
     update_title_and_status();
     update_resolution_display();
+    gps::ui::runtime::remember_gps_view_state();
     update_map_tiles(false);
 
     if (state.map)

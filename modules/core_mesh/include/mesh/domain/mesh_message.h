@@ -15,8 +15,21 @@ enum class MeshProtocolEventKind : uint8_t
     MessageReceived,
     PeerDiscovered,
     PeerKeyLearned,
+    PeerAdvertReceived,
     AckReceived,
     Duplicate,
+};
+
+struct MeshAdvertProfile
+{
+    bool has_name = false;
+    char name[32]{};
+    bool has_location = false;
+    int32_t latitude_i6 = 0;
+    int32_t longitude_i6 = 0;
+    uint8_t node_type = 0;
+    uint32_t timestamp = 0;
+    uint8_t hops = 0xFF;
 };
 
 struct MeshProtocolEvent
@@ -24,6 +37,7 @@ struct MeshProtocolEvent
     MeshProtocolEventKind kind = MeshProtocolEventKind::None;
     NodeId peer{};
     PeerPublicKey peer_key{};
+    MeshAdvertProfile advert{};
     ByteView payload{};
     uint32_t packet_id = 0;
     uint8_t payload_bytes[256]{};

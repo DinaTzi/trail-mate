@@ -46,42 +46,58 @@ MessageId ChatService::sendText(ChannelId channel, const std::string& text, Node
 MessageId ChatService::sendTextWithId(ChannelId channel, const std::string& text,
                                       MessageId forced_msg_id, NodeId peer)
 {
+    const MeshSendResult result = sendTextWithIdDetailed(channel, text, forced_msg_id, peer);
+    return result.ok ? result.msg_id : 0;
+}
+
+MeshSendResult ChatService::sendTextDetailed(ChannelId channel, const std::string& text,
+                                             NodeId peer)
+{
+    return sendTextWithIdDetailed(channel, text, 0, peer);
+}
+
+MeshSendResult ChatService::sendTextWithIdDetailed(ChannelId channel, const std::string& text,
+                                                   MessageId forced_msg_id, NodeId peer)
+{
     if (text.empty())
     {
-        return 0;
+        return MeshSendResult::fail(MeshOperationFailure::InvalidInput);
     }
 
-    MessageId msg_id = 0;
-    bool queued = adapter_.sendTextWithId(channel, text, forced_msg_id, &msg_id, peer);
+    MeshSendResult result = adapter_.sendTextDetailed(channel, text, forced_msg_id, peer);
+    if (!result.ok && result.msg_id == 0)
+    {
+        return result;
+    }
 
     ChatMessage msg;
     msg.protocol = active_protocol_;
     msg.channel = channel;
     msg.from = 0;
     msg.peer = normalize_conversation_peer(peer);
-    msg.msg_id = msg_id;
+    msg.msg_id = result.msg_id;
     msg.timestamp = now_message_timestamp();
     msg.text = text;
-    msg.status = queued ? MessageStatus::Queued : MessageStatus::Failed;
+    msg.status = result.ok ? MessageStatus::Queued : MessageStatus::Failed;
 
     if (model_enabled_)
     {
         model_.onSendQueued(msg);
-        if (!queued && msg_id != 0)
+        if (!result.ok && result.msg_id != 0)
         {
-            model_.onSendResult(msg_id, false);
+            model_.onSendResult(result.msg_id, false);
         }
     }
 
     store_.append(msg);
 
-    if (queued && msg_id != 0)
+    if (result.ok && result.msg_id != 0)
     {
         MeshIncomingText outgoing{};
         outgoing.channel = channel;
         outgoing.from = adapter_.getNodeId();
         outgoing.to = (peer != 0) ? peer : 0xFFFFFFFFUL;
-        outgoing.msg_id = msg_id;
+        outgoing.msg_id = result.msg_id;
         outgoing.timestamp = msg.timestamp;
         outgoing.text = text;
         outgoing.hop_limit = 0;
@@ -96,12 +112,17 @@ MessageId ChatService::sendTextWithId(ChannelId channel, const std::string& text
         }
     }
 
-    return msg.msg_id;
+    return result;
 }
 
 bool ChatService::triggerDiscoveryAction(MeshDiscoveryAction action)
 {
-    return adapter_.triggerDiscoveryAction(action);
+    return triggerDiscoveryActionDetailed(action).ok;
+}
+
+MeshActionResult ChatService::triggerDiscoveryActionDetailed(MeshDiscoveryAction action)
+{
+    return adapter_.triggerDiscoveryActionDetailed(action);
 }
 
 void ChatService::switchChannel(ChannelId channel)

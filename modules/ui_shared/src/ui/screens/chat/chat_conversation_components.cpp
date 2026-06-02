@@ -577,7 +577,7 @@ void ChatConversationScreen::createMessageItem(const ::ui::chat::MessageRow& row
         }
         else if (!row.sender_label.empty())
         {
-            sender = row.sender_label.c_str();
+            sender = inferred_sender.empty() ? row.sender_label.c_str() : inferred_sender;
         }
         else if (row.sender_node_id == 0)
         {

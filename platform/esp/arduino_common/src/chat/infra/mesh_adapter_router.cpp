@@ -89,6 +89,17 @@ bool MeshAdapterRouter::sendTextWithId(ChannelId channel, const std::string& tex
     return lock.locked() && core_.sendTextWithId(channel, text, forced_msg_id, out_msg_id, peer);
 }
 
+MeshSendResult MeshAdapterRouter::sendTextDetailed(ChannelId channel, const std::string& text,
+                                                   MessageId forced_msg_id, NodeId peer)
+{
+    LockGuard lock(mutex_);
+    if (!lock.locked())
+    {
+        return MeshSendResult::fail(MeshOperationFailure::Busy);
+    }
+    return core_.sendTextDetailed(channel, text, forced_msg_id, peer);
+}
+
 bool MeshAdapterRouter::pollIncomingText(MeshIncomingText* out)
 {
     LockGuard lock(mutex_);
@@ -152,6 +163,16 @@ bool MeshAdapterRouter::triggerDiscoveryAction(MeshDiscoveryAction action)
 {
     LockGuard lock(mutex_);
     return lock.locked() && core_.triggerDiscoveryAction(action);
+}
+
+MeshActionResult MeshAdapterRouter::triggerDiscoveryActionDetailed(MeshDiscoveryAction action)
+{
+    LockGuard lock(mutex_);
+    if (!lock.locked())
+    {
+        return MeshActionResult::fail(MeshOperationFailure::Busy);
+    }
+    return core_.triggerDiscoveryActionDetailed(action);
 }
 
 void MeshAdapterRouter::applyConfig(const MeshConfig& config)

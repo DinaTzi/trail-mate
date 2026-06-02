@@ -214,6 +214,7 @@ bool TeamChatPresentationSource::buildChatWorkspaceSnapshot(
         (void)projector.project(entries.back(), display);
         ui::copyText(conversation.subtitle,
                      display.summary.c_str());
+        conversation.last_timestamp = entries.back().ts;
         conversation.last_delivery = entries.back().incoming
                                          ? ui::chat::MessageDeliveryState::Received
                                          : ui::chat::MessageDeliveryState::Sent;

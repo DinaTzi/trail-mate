@@ -54,6 +54,10 @@ constexpr uint8_t kAdvertFlagHasFeature1 = 0x20;
 constexpr uint8_t kAdvertFlagHasFeature2 = 0x40;
 constexpr uint8_t kAdvertFlagHasName = 0x80;
 
+constexpr uint8_t kPublicGroupPsk[16] = {
+    0x8b, 0x33, 0x87, 0xe9, 0xc5, 0xcd, 0xea, 0x6a,
+    0xc9, 0xe5, 0xed, 0xba, 0xa1, 0x15, 0xcd, 0x72};
+
 using chat::meshcore::buildHeader;
 using chat::meshcore::encryptThenMac;
 using chat::meshcore::isZeroKey;
@@ -92,6 +96,11 @@ bool shouldUsePublicChannelFallback(const chat::MeshConfig& cfg)
         }
     }
     return true;
+}
+
+const uint8_t* publicGroupPsk()
+{
+    return kPublicGroupPsk;
 }
 
 void xorCrypt(uint8_t* data, size_t len, const uint8_t* key, size_t key_len)
@@ -166,12 +175,16 @@ bool buildFrameNoTransport(uint8_t route_type, uint8_t payload_type,
                            uint8_t* out_frame, size_t out_cap, size_t* out_len)
 {
     if (!out_frame || !out_len || !payload || payload_len == 0 ||
-        out_cap > kMeshcoreMaxFrameSize || path_len > kMeshcoreMaxPathSize ||
+        out_cap == 0 || path_len > kMeshcoreMaxPathSize ||
         (path_len > 0 && !path))
     {
         return false;
     }
     if (route_type == kRouteTypeTransportFlood)
+    {
+        return false;
+    }
+    if ((2 + path_len + payload_len) > kMeshcoreMaxFrameSize)
     {
         return false;
     }

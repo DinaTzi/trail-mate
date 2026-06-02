@@ -28,6 +28,35 @@ namespace layout
 static constexpr int kButtonSpacing = 3;
 static constexpr int kPanelGap = 3; // Gap between filter and list columns
 
+const char* node_protocol_short_label(chat::contacts::NodeProtocolType protocol)
+{
+    switch (protocol)
+    {
+    case chat::contacts::NodeProtocolType::LXMF:
+        return "LX";
+    case chat::contacts::NodeProtocolType::RNode:
+        return "RN";
+    case chat::contacts::NodeProtocolType::MeshCore:
+        return "MC";
+    case chat::contacts::NodeProtocolType::Meshtastic:
+        return "MT";
+    default:
+        return "";
+    }
+}
+
+bool should_prefix_node_protocol(ContactsMode mode,
+                                 chat::contacts::NodeProtocolType protocol)
+{
+    if (protocol == chat::contacts::NodeProtocolType::Unknown)
+    {
+        return false;
+    }
+    return mode == ContactsMode::Contacts ||
+           mode == ContactsMode::Nearby ||
+           mode == ContactsMode::Ignored;
+}
+
 lv_obj_t* create_root(lv_obj_t* parent)
 {
     const auto& profile = ::ui::page_profile::current();
@@ -198,7 +227,7 @@ void ensure_list_subcontainers()
 
 lv_obj_t* create_list_item(lv_obj_t* parent,
                            const chat::contacts::NodeInfo& node,
-                           ContactsMode /*mode*/,
+                           ContactsMode mode,
                            const char* status_text)
 {
     const auto& profile = ::ui::page_profile::current();
@@ -228,6 +257,14 @@ lv_obj_t* create_list_item(lv_obj_t* parent,
     else
     {
         display_name = node.short_name;
+    }
+    if (should_prefix_node_protocol(mode, node.protocol))
+    {
+        const char* proto = node_protocol_short_label(node.protocol);
+        if (proto[0] != '\0')
+        {
+            display_name = "[" + std::string(proto) + "] " + display_name;
+        }
     }
 
     if (::ui::components::info_card::use_tdeck_layout())

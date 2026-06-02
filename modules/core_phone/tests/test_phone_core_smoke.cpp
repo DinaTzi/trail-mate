@@ -1,3 +1,4 @@
+#include "chat/infra/meshtastic/mt_protocol_helpers.h"
 #include "fake_phone_runtime_context.h"
 #include "phone/meshcore/meshcore_phone_core.h"
 #include "phone/meshtastic/meshtastic_phone_session.h"
@@ -47,24 +48,12 @@ void copyBounded(char* dst, size_t dst_len, const char* src)
     dst[i] = '\0';
 }
 
-bool encodeAdminSetChannelToRadio(uint8_t* out, size_t out_len, size_t& written, uint32_t packet_id)
+bool encodeAdminToRadio(const meshtastic_AdminMessage& admin,
+                        uint8_t* out,
+                        size_t out_len,
+                        size_t& written,
+                        uint32_t packet_id)
 {
-    meshtastic_AdminMessage admin = meshtastic_AdminMessage_init_zero;
-    admin.which_payload_variant = meshtastic_AdminMessage_set_channel_tag;
-    admin.set_channel.index = 1;
-    admin.set_channel.has_settings = true;
-    admin.set_channel.role = meshtastic_Channel_Role_SECONDARY;
-    admin.set_channel.settings.channel_num = 1;
-    admin.set_channel.settings.id = 0xAABBCCDD;
-    admin.set_channel.settings.psk.size = 32;
-    for (uint8_t index = 0; index < admin.set_channel.settings.psk.size; ++index)
-    {
-        admin.set_channel.settings.psk.bytes[index] = static_cast<uint8_t>(index + 1);
-    }
-    admin.set_channel.settings.uplink_enabled = true;
-    admin.set_channel.settings.downlink_enabled = true;
-    copyBounded(admin.set_channel.settings.name, sizeof(admin.set_channel.settings.name), "vic");
-
     meshtastic_MeshPacket packet = meshtastic_MeshPacket_init_zero;
     packet.id = packet_id;
     packet.to = 0x12345678;
@@ -93,6 +82,76 @@ bool encodeAdminSetChannelToRadio(uint8_t* out, size_t out_len, size_t& written,
     }
     written = to_radio_stream.bytes_written;
     return true;
+}
+
+bool encodeAdminSetChannelToRadio(uint8_t* out, size_t out_len, size_t& written, uint32_t packet_id)
+{
+    meshtastic_AdminMessage admin = meshtastic_AdminMessage_init_zero;
+    admin.which_payload_variant = meshtastic_AdminMessage_set_channel_tag;
+    admin.set_channel.index = 1;
+    admin.set_channel.has_settings = true;
+    admin.set_channel.role = meshtastic_Channel_Role_SECONDARY;
+    admin.set_channel.settings.channel_num = 1;
+    admin.set_channel.settings.id = 0xAABBCCDD;
+    admin.set_channel.settings.psk.size = 32;
+    for (uint8_t index = 0; index < admin.set_channel.settings.psk.size; ++index)
+    {
+        admin.set_channel.settings.psk.bytes[index] = static_cast<uint8_t>(index + 1);
+    }
+    admin.set_channel.settings.uplink_enabled = true;
+    admin.set_channel.settings.downlink_enabled = true;
+    copyBounded(admin.set_channel.settings.name, sizeof(admin.set_channel.settings.name), "vic");
+
+    return encodeAdminToRadio(admin, out, out_len, written, packet_id);
+}
+
+bool encodeAdminSetPrimaryCustomChannelToRadio(uint8_t* out,
+                                               size_t out_len,
+                                               size_t& written,
+                                               uint32_t packet_id)
+{
+    meshtastic_AdminMessage admin = meshtastic_AdminMessage_init_zero;
+    admin.which_payload_variant = meshtastic_AdminMessage_set_channel_tag;
+    admin.set_channel.index = 0;
+    admin.set_channel.has_settings = true;
+    admin.set_channel.role = meshtastic_Channel_Role_PRIMARY;
+    admin.set_channel.settings.channel_num = 0;
+    admin.set_channel.settings.id = 0x10203040;
+    admin.set_channel.settings.psk.size = 1;
+    admin.set_channel.settings.psk.bytes[0] = 1;
+    admin.set_channel.settings.uplink_enabled = true;
+    admin.set_channel.settings.downlink_enabled = true;
+    copyBounded(admin.set_channel.settings.name, sizeof(admin.set_channel.settings.name), "Custom");
+
+    return encodeAdminToRadio(admin, out, out_len, written, packet_id);
+}
+
+bool encodeAdminSetManualLoraConfigToRadio(uint8_t* out,
+                                           size_t out_len,
+                                           size_t& written,
+                                           uint32_t packet_id)
+{
+    meshtastic_AdminMessage admin = meshtastic_AdminMessage_init_zero;
+    admin.which_payload_variant = meshtastic_AdminMessage_set_config_tag;
+    admin.set_config.which_payload_variant = meshtastic_Config_lora_tag;
+    auto& lora = admin.set_config.payload_variant.lora;
+    lora.use_preset = false;
+    lora.modem_preset = meshtastic_Config_LoRaConfig_ModemPreset_LONG_FAST;
+    lora.bandwidth = 62;
+    lora.spread_factor = 11;
+    lora.coding_rate = 8;
+    lora.frequency_offset = 0.125f;
+    lora.region = meshtastic_Config_LoRaConfig_RegionCode_US;
+    lora.hop_limit = 5;
+    lora.tx_enabled = true;
+    lora.tx_power = 20;
+    lora.channel_num = 7;
+    lora.override_duty_cycle = true;
+    lora.override_frequency = 906.875f;
+    lora.ignore_mqtt = true;
+    lora.config_ok_to_mqtt = true;
+
+    return encodeAdminToRadio(admin, out, out_len, written, packet_id);
 }
 
 bool encodeWantConfigToRadio(uint8_t* out, size_t out_len, size_t& written, uint32_t nonce)
@@ -185,6 +244,115 @@ int main()
                        saved_admin_config.mesh.secondary_key,
                        32) == 0);
     assert(!admin_session.popToPhone(&second_frame));
+
+    phone::tests::FakePhoneRuntimeContext custom_runtime;
+    FakeMeshtasticTransport custom_transport;
+    phone::meshtastic::MeshtasticPhoneSession custom_session(
+        custom_runtime, custom_transport, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+    constexpr uint32_t kPrimaryCustomPacketId = 0xCAFE4400;
+    uint8_t primary_channel_to_radio[meshtastic_ToRadio_size] = {};
+    size_t primary_channel_to_radio_len = 0;
+    assert(encodeAdminSetPrimaryCustomChannelToRadio(primary_channel_to_radio,
+                                                     sizeof(primary_channel_to_radio),
+                                                     primary_channel_to_radio_len,
+                                                     kPrimaryCustomPacketId));
+    assert(custom_session.handleToRadio(primary_channel_to_radio, primary_channel_to_radio_len));
+    assert(custom_runtime.save_config_count == 1);
+    assert(custom_runtime.apply_mesh_config_count == 1);
+    const auto saved_custom_config = custom_runtime.getMeshtasticPhoneConfig();
+    assert(saved_custom_config.primary_enabled);
+    assert(std::strcmp(saved_custom_config.mesh.primary_channel_name, "Custom") == 0);
+    assert(saved_custom_config.mesh.primary_channel_id == 0x10203040);
+    assert(saved_custom_config.mesh.primary_key_len == 16);
+    uint8_t expected_short_psk[16] = {};
+    size_t expected_short_psk_len = 0;
+    chat::meshtastic::expandShortPsk(1, expected_short_psk, &expected_short_psk_len);
+    assert(expected_short_psk_len == 16);
+    assert(std::memcmp(saved_custom_config.mesh.primary_key, expected_short_psk, 16) == 0);
+
+    phone::meshtastic::MeshtasticBleFrame custom_queue_frame{};
+    assert(custom_session.popToPhone(&custom_queue_frame));
+    meshtastic_FromRadio custom_from = meshtastic_FromRadio_init_zero;
+    assert(decodeFromRadio(custom_queue_frame, custom_from));
+    assert(custom_from.which_payload_variant == meshtastic_FromRadio_queueStatus_tag);
+    assert(custom_from.queueStatus.mesh_packet_id == kPrimaryCustomPacketId);
+    assert(custom_from.queueStatus.res == 0);
+
+    phone::meshtastic::MeshtasticBleFrame custom_response_frame{};
+    assert(custom_session.popToPhone(&custom_response_frame));
+    custom_from = meshtastic_FromRadio_init_zero;
+    assert(decodeFromRadio(custom_response_frame, custom_from));
+    assert(custom_from.which_payload_variant == meshtastic_FromRadio_packet_tag);
+    meshtastic_AdminMessage custom_response = meshtastic_AdminMessage_init_zero;
+    pb_istream_t custom_response_stream =
+        pb_istream_from_buffer(custom_from.packet.decoded.payload.bytes,
+                               custom_from.packet.decoded.payload.size);
+    assert(pb_decode(&custom_response_stream, meshtastic_AdminMessage_fields, &custom_response));
+    assert(custom_response.which_payload_variant == meshtastic_AdminMessage_get_channel_response_tag);
+    assert(custom_response.get_channel_response.index == 0);
+    assert(custom_response.get_channel_response.role == meshtastic_Channel_Role_PRIMARY);
+    assert(std::strcmp(custom_response.get_channel_response.settings.name, "Custom") == 0);
+    assert(custom_response.get_channel_response.settings.id == 0x10203040);
+    assert(custom_response.get_channel_response.settings.psk.size == 16);
+    assert(std::memcmp(custom_response.get_channel_response.settings.psk.bytes,
+                       expected_short_psk,
+                       16) == 0);
+    assert(!custom_session.popToPhone(&custom_response_frame));
+
+    constexpr uint32_t kManualLoraPacketId = 0xCAFE4401;
+    uint8_t manual_lora_to_radio[meshtastic_ToRadio_size] = {};
+    size_t manual_lora_to_radio_len = 0;
+    assert(encodeAdminSetManualLoraConfigToRadio(manual_lora_to_radio,
+                                                 sizeof(manual_lora_to_radio),
+                                                 manual_lora_to_radio_len,
+                                                 kManualLoraPacketId));
+    assert(custom_session.handleToRadio(manual_lora_to_radio, manual_lora_to_radio_len));
+    assert(custom_runtime.save_config_count == 2);
+    assert(custom_runtime.apply_mesh_config_count == 2);
+    const auto saved_lora_config = custom_runtime.getMeshtasticPhoneConfig();
+    assert(!saved_lora_config.mesh.use_preset);
+    assert(saved_lora_config.mesh.bandwidth_khz == 62.0f);
+    assert(saved_lora_config.mesh.spread_factor == 11);
+    assert(saved_lora_config.mesh.coding_rate == 8);
+    assert(saved_lora_config.mesh.region ==
+           static_cast<uint8_t>(meshtastic_Config_LoRaConfig_RegionCode_US));
+    assert(saved_lora_config.mesh.hop_limit == 5);
+    assert(saved_lora_config.mesh.tx_enabled);
+    assert(saved_lora_config.mesh.tx_power == 20);
+    assert(saved_lora_config.mesh.channel_num == 7);
+    assert(saved_lora_config.mesh.override_duty_cycle);
+    assert(saved_lora_config.mesh.ignore_mqtt);
+    assert(saved_lora_config.mesh.config_ok_to_mqtt);
+    assert(saved_lora_config.mesh.override_frequency_mhz == 906.875f);
+
+    phone::meshtastic::MeshtasticBleFrame lora_queue_frame{};
+    assert(custom_session.popToPhone(&lora_queue_frame));
+    meshtastic_FromRadio lora_from = meshtastic_FromRadio_init_zero;
+    assert(decodeFromRadio(lora_queue_frame, lora_from));
+    assert(lora_from.which_payload_variant == meshtastic_FromRadio_queueStatus_tag);
+    assert(lora_from.queueStatus.mesh_packet_id == kManualLoraPacketId);
+    assert(lora_from.queueStatus.res == 0);
+
+    phone::meshtastic::MeshtasticBleFrame lora_response_frame{};
+    assert(custom_session.popToPhone(&lora_response_frame));
+    lora_from = meshtastic_FromRadio_init_zero;
+    assert(decodeFromRadio(lora_response_frame, lora_from));
+    assert(lora_from.which_payload_variant == meshtastic_FromRadio_packet_tag);
+    meshtastic_AdminMessage lora_response = meshtastic_AdminMessage_init_zero;
+    pb_istream_t lora_response_stream =
+        pb_istream_from_buffer(lora_from.packet.decoded.payload.bytes,
+                               lora_from.packet.decoded.payload.size);
+    assert(pb_decode(&lora_response_stream, meshtastic_AdminMessage_fields, &lora_response));
+    assert(lora_response.which_payload_variant == meshtastic_AdminMessage_get_config_response_tag);
+    assert(lora_response.get_config_response.which_payload_variant == meshtastic_Config_lora_tag);
+    assert(!lora_response.get_config_response.payload_variant.lora.use_preset);
+    assert(lora_response.get_config_response.payload_variant.lora.bandwidth == 62);
+    assert(lora_response.get_config_response.payload_variant.lora.spread_factor == 11);
+    assert(lora_response.get_config_response.payload_variant.lora.coding_rate == 8);
+    assert(lora_response.get_config_response.payload_variant.lora.override_frequency == 906.875f);
+    assert(lora_response.get_config_response.payload_variant.lora.ignore_mqtt);
+    assert(lora_response.get_config_response.payload_variant.lora.config_ok_to_mqtt);
+    assert(!custom_session.popToPhone(&lora_response_frame));
 
     phone::tests::FakePhoneRuntimeContext config_runtime;
     FakeMeshtasticTransport config_transport;

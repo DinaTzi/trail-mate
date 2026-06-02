@@ -63,6 +63,7 @@ struct DecodedGroupAppPayload
 };
 
 bool shouldUsePublicChannelFallback(const chat::MeshConfig& cfg);
+const uint8_t* publicGroupPsk();
 void xorCrypt(uint8_t* data, size_t len, const uint8_t* key, size_t key_len);
 const uint8_t* selectChannelKey(const chat::MeshConfig& cfg, size_t* out_len);
 bool isPeerPayloadType(uint8_t payload_type);

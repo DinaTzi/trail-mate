@@ -43,6 +43,7 @@ enum class SendFailure : uint8_t
     InvalidInput,
     LocalIdentityMissing,
     PeerKeyMissing,
+    ChannelKeyMissing,
     CryptoFailed,
     PacketBuildFailed,
     RadioSendFailed,

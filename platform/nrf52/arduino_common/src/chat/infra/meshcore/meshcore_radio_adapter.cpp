@@ -26,6 +26,7 @@ constexpr uint8_t kPayloadTypeGrpData = 0x06;
 constexpr uint8_t kPayloadTypeTrace = 0x09;
 constexpr uint8_t kPayloadTypeControl = 0x0B;
 constexpr uint8_t kPayloadTypeRawCustom = 0x0F;
+constexpr uint8_t kPayloadTypeAdvert = 0x04;
 constexpr uint8_t kDirectAppMagic0 = 0xDA;
 constexpr uint8_t kDirectAppMagic1 = 0x7A;
 constexpr uint8_t kDirectAppFlagWantAck = 0x01;
@@ -33,6 +34,9 @@ constexpr uint8_t kGroupDataMagic0 = 0x47;
 constexpr uint8_t kGroupDataMagic1 = 0x44;
 constexpr size_t kMeshcoreMaxFrameSize = 255;
 constexpr size_t kMeshcoreMaxPayloadSize = 220;
+constexpr size_t kAdvertMinPayloadSize =
+    ::chat::meshcore::kMeshCorePubKeySize + sizeof(uint32_t) +
+    ::chat::meshcore::kMeshCoreSignatureSize;
 
 uint32_t estimateTimeoutMs(const ::chat::MeshConfig& cfg, size_t frame_len, size_t path_len, bool flood)
 {
@@ -268,10 +272,44 @@ void MeshCoreRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
         return;
     }
 
-    if (parsed.payload_type == 0x04)
+    if (parsed.payload_type == kPayloadTypeAdvert)
     {
+        if (parsed.payload_len < kAdvertMinPayloadSize)
+        {
+            return;
+        }
+
+        const uint8_t* pubkey = parsed.payload;
+        const uint8_t* timestamp = pubkey + ::chat::meshcore::kMeshCorePubKeySize;
+        const uint8_t* signature = timestamp + sizeof(uint32_t);
+        const uint8_t* app_data = parsed.payload + kAdvertMinPayloadSize;
+        const size_t app_data_len = parsed.payload_len - kAdvertMinPayloadSize;
+
+        std::array<uint8_t, ::chat::meshcore::kMeshCorePubKeySize + sizeof(uint32_t) +
+                                kMeshcoreMaxPayloadSize>
+            signed_message{};
+        size_t signed_len = 0;
+        std::memcpy(signed_message.data() + signed_len,
+                    pubkey,
+                    ::chat::meshcore::kMeshCorePubKeySize);
+        signed_len += ::chat::meshcore::kMeshCorePubKeySize;
+        std::memcpy(signed_message.data() + signed_len, timestamp, sizeof(uint32_t));
+        signed_len += sizeof(uint32_t);
+        if (app_data_len > 0)
+        {
+            std::memcpy(signed_message.data() + signed_len, app_data, app_data_len);
+            signed_len += app_data_len;
+        }
+        if (!::chat::meshcore::meshcoreVerify(pubkey,
+                                              signature,
+                                              signed_message.data(),
+                                              signed_len))
+        {
+            return;
+        }
+
         ::chat::meshcore::DecodedAdvertAppData advert{};
-        if (::chat::meshcore::decodeAdvertAppData(parsed.payload, parsed.payload_len, &advert) &&
+        if (::chat::meshcore::decodeAdvertAppData(app_data, app_data_len, &advert) &&
             advert.valid && advert.has_name)
         {
             ::chat::MeshIncomingText incoming{};

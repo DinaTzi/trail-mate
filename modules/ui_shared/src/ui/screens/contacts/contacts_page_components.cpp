@@ -1952,6 +1952,44 @@ static void on_node_info_back_clicked(lv_event_t* /*e*/)
     close_node_info_screen();
 }
 
+static const char* discovery_failure_message(chat::MeshOperationFailure failure,
+                                             const char* fallback)
+{
+    switch (failure)
+    {
+    case chat::MeshOperationFailure::NotReady:
+        return "Mesh not ready";
+    case chat::MeshOperationFailure::TxDisabled:
+        return "TX disabled";
+    case chat::MeshOperationFailure::RadioOffline:
+        return "Radio offline";
+    case chat::MeshOperationFailure::DutyCycleLimited:
+        return "TX rate limited";
+    case chat::MeshOperationFailure::LocalIdentityMissing:
+        return "Identity missing";
+    case chat::MeshOperationFailure::Busy:
+        return "Radio busy";
+    case chat::MeshOperationFailure::RadioTxFailed:
+        return "Radio TX failed";
+    case chat::MeshOperationFailure::EncodeFailed:
+        return "Packet build failed";
+    case chat::MeshOperationFailure::CryptoFailed:
+        return "Signature failed";
+    case chat::MeshOperationFailure::Unsupported:
+        return "Unsupported";
+    case chat::MeshOperationFailure::InvalidInput:
+        return "Invalid action";
+    case chat::MeshOperationFailure::PeerKeyMissing:
+        return "Peer key missing";
+    case chat::MeshOperationFailure::ChannelKeyMissing:
+        return "Channel key missing";
+    case chat::MeshOperationFailure::None:
+    case chat::MeshOperationFailure::Unknown:
+        break;
+    }
+    return fallback;
+}
+
 static void execute_discovery_command(uint8_t command_index)
 {
     DiscoveryActionSpec spec{};
@@ -1990,10 +2028,14 @@ static void execute_discovery_command(uint8_t command_index)
             lv_timer_del(g_contacts_state.discover_scan_timer);
             g_contacts_state.discover_scan_timer = nullptr;
         }
-        const bool ok = g_contacts_state.chat_service->triggerDiscoveryAction(chat::MeshDiscoveryAction::ScanLocal);
-        if (!ok)
+        const chat::MeshActionResult result =
+            g_contacts_state.chat_service->triggerDiscoveryActionDetailed(
+                chat::MeshDiscoveryAction::ScanLocal);
+        if (!result.ok)
         {
-            ::ui::SystemNotification::show("Scan failed", 2000);
+            ::ui::SystemNotification::show(
+                discovery_failure_message(result.failure, "Scan failed"),
+                2000);
             return;
         }
         ::ui::SystemNotification::show("Scanning 5s...", 1800);
@@ -2006,8 +2048,9 @@ static void execute_discovery_command(uint8_t command_index)
         (spec.command == DiscoveryActionCommand::SendIdLocal)
             ? chat::MeshDiscoveryAction::SendIdLocal
             : chat::MeshDiscoveryAction::SendIdBroadcast;
-    const bool ok = g_contacts_state.chat_service->triggerDiscoveryAction(action);
-    if (ok)
+    const chat::MeshActionResult result =
+        g_contacts_state.chat_service->triggerDiscoveryActionDetailed(action);
+    if (result.ok)
     {
         ::ui::SystemNotification::show(
             (spec.command == DiscoveryActionCommand::SendIdLocal) ? "ID local sent" : "ID bcast sent",
@@ -2016,7 +2059,9 @@ static void execute_discovery_command(uint8_t command_index)
     else
     {
         ::ui::SystemNotification::show(
-            (spec.command == DiscoveryActionCommand::SendIdLocal) ? "ID local fail" : "ID bcast fail",
+            discovery_failure_message(
+                result.failure,
+                (spec.command == DiscoveryActionCommand::SendIdLocal) ? "ID local fail" : "ID bcast fail"),
             2000);
     }
 }
@@ -2547,22 +2592,10 @@ void refresh_ui()
         if (g_contacts_state.current_mode == ContactsMode::Contacts)
         {
             status_text = format_time_status(node.last_seen);
-            const char* proto = node_protocol_short_label(node.protocol);
-            if (proto[0] != '\0')
-            {
-                status_text += " ";
-                status_text += proto;
-            }
         }
         else if (g_contacts_state.current_mode == ContactsMode::Nearby)
         {
             status_text = format_time_status(node.last_seen);
-            const char* proto = node_protocol_short_label(node.protocol);
-            if (proto[0] != '\0')
-            {
-                status_text += " ";
-                status_text += proto;
-            }
         }
         else if (g_contacts_state.current_mode == ContactsMode::Ignored)
         {
@@ -2572,12 +2605,6 @@ void refresh_ui()
             {
                 status_text += " / ";
                 status_text += seen;
-            }
-            const char* proto = node_protocol_short_label(node.protocol);
-            if (proto[0] != '\0')
-            {
-                status_text += " ";
-                status_text += proto;
             }
         }
         else if (g_contacts_state.current_mode == ContactsMode::Team)

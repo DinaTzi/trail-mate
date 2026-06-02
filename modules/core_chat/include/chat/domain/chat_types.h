@@ -110,6 +110,76 @@ enum class MeshDiscoveryAction : uint8_t
     SendIdBroadcast = 3
 };
 
+enum class MeshOperationFailure : uint8_t
+{
+    None = 0,
+    InvalidInput,
+    Unsupported,
+    NotReady,
+    TxDisabled,
+    RadioOffline,
+    DutyCycleLimited,
+    LocalIdentityMissing,
+    PeerKeyMissing,
+    ChannelKeyMissing,
+    EncodeFailed,
+    CryptoFailed,
+    RadioTxFailed,
+    Busy,
+    Unknown,
+};
+
+struct MeshActionResult
+{
+    bool ok = false;
+    MeshOperationFailure failure = MeshOperationFailure::None;
+    int detail = 0;
+
+    static MeshActionResult success()
+    {
+        MeshActionResult result;
+        result.ok = true;
+        result.failure = MeshOperationFailure::None;
+        return result;
+    }
+
+    static MeshActionResult fail(MeshOperationFailure failure, int detail = 0)
+    {
+        MeshActionResult result;
+        result.ok = false;
+        result.failure = failure;
+        result.detail = detail;
+        return result;
+    }
+};
+
+struct MeshSendResult
+{
+    bool ok = false;
+    MessageId msg_id = 0;
+    MeshOperationFailure failure = MeshOperationFailure::None;
+    int detail = 0;
+
+    static MeshSendResult success(MessageId id)
+    {
+        MeshSendResult result;
+        result.ok = true;
+        result.msg_id = id;
+        result.failure = MeshOperationFailure::None;
+        return result;
+    }
+
+    static MeshSendResult fail(MeshOperationFailure failure, MessageId id = 0, int detail = 0)
+    {
+        MeshSendResult result;
+        result.ok = false;
+        result.msg_id = id;
+        result.failure = failure;
+        result.detail = detail;
+        return result;
+    }
+};
+
 /**
  * @brief RX time source for received packets
  */

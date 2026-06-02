@@ -38,10 +38,13 @@ struct Metrics
     int filter_button_height = 28;
     int list_item_height = 28;
     int name_x = 10;
-    int preview_x = 120;
-    int preview_width = 130;
+    int name_width = 96;
+    int preview_x = 112;
+    int preview_width = 112;
     int unread_x = 42;
+    int unread_width = 28;
     int time_x = 10;
+    int time_width = 38;
 };
 
 Metrics current_metrics()
@@ -54,10 +57,13 @@ Metrics current_metrics()
     if (profile.large_touch_hitbox)
     {
         metrics.name_x = 16;
+        metrics.name_width = 146;
         metrics.preview_x = 170;
-        metrics.preview_width = 280;
+        metrics.preview_width = 236;
         metrics.unread_x = 72;
+        metrics.unread_width = 44;
         metrics.time_x = 16;
+        metrics.time_width = 52;
     }
     else
     {
@@ -135,10 +141,19 @@ void format_time_hhmm(char out[16], uint32_t ts)
 
 std::string truncate_preview(const std::string& text)
 {
-    static constexpr size_t kMaxPreviewBytes = 18;
-    if (text.size() <= kMaxPreviewBytes)
+    std::string one_line = text;
+    for (char& ch : one_line)
     {
-        return text;
+        if (ch == '\r' || ch == '\n' || ch == '\t')
+        {
+            ch = ' ';
+        }
+    }
+
+    const size_t kMaxPreviewBytes = ::ui::page_profile::current().large_touch_hitbox ? 42U : 24U;
+    if (one_line.size() <= kMaxPreviewBytes)
+    {
+        return one_line;
     }
 
     auto utf8_char_bytes = [](unsigned char lead) -> size_t
@@ -163,9 +178,9 @@ std::string truncate_preview(const std::string& text)
     };
 
     size_t safe_len = 0;
-    while (safe_len < text.size())
+    while (safe_len < one_line.size())
     {
-        const size_t next = utf8_char_bytes(static_cast<unsigned char>(text[safe_len]));
+        const size_t next = utf8_char_bytes(static_cast<unsigned char>(one_line[safe_len]));
         if (safe_len + next > kMaxPreviewBytes)
         {
             break;
@@ -177,7 +192,7 @@ std::string truncate_preview(const std::string& text)
         safe_len = kMaxPreviewBytes;
     }
 
-    std::string out = text.substr(0, safe_len);
+    std::string out = one_line.substr(0, safe_len);
     out.append("...");
     return out;
 }
@@ -201,12 +216,20 @@ void replace_all(std::string& text, const char* from, const char* to)
 
 std::string compact_list_name(const std::string& name)
 {
-    if (!::ui::components::info_card::use_tdeck_layout())
+    std::string compact = name;
+    for (char& ch : compact)
     {
-        return name;
+        if (ch == '\r' || ch == '\n' || ch == '\t')
+        {
+            ch = ' ';
+        }
     }
 
-    std::string compact = name;
+    if (!::ui::components::info_card::use_tdeck_layout())
+    {
+        return compact;
+    }
+
     replace_all(compact, ::ui::i18n::tr("Broadcast"), ::ui::i18n::tr("Bcast"));
     replace_all(compact, "Primary", "Pri");
     replace_all(compact, "Secondary", "Sec");
@@ -231,6 +254,17 @@ void style_filter_label(lv_obj_t* label)
     ::ui::fonts::apply_localized_font(label, lv_label_get_text(label), ::ui::fonts::ui_chrome_font());
     lv_obj_set_style_text_color(label, lv_color_hex(0x3A2A1A), 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
+}
+
+void apply_single_line(lv_obj_t* label)
+{
+    if (!label)
+    {
+        return;
+    }
+
+    lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+    ::ui::components::info_card::apply_single_line_label(label);
 }
 
 lv_obj_t* create_root(lv_obj_t* parent)
@@ -342,20 +376,28 @@ MessageItemWidgets create_message_item(lv_obj_t* parent)
         w.name_label = lv_label_create(w.btn);
         lv_obj_add_flag(w.name_label, LV_OBJ_FLAG_EVENT_BUBBLE);
         lv_obj_align(w.name_label, LV_ALIGN_LEFT_MID, metrics.name_x, 0);
+        lv_obj_set_width(w.name_label, metrics.name_width);
+        apply_single_line(w.name_label);
 
         w.preview_label = lv_label_create(w.btn);
         lv_obj_add_flag(w.preview_label, LV_OBJ_FLAG_EVENT_BUBBLE);
         lv_obj_align(w.preview_label, LV_ALIGN_LEFT_MID, metrics.preview_x, 0);
-        lv_label_set_long_mode(w.preview_label, LV_LABEL_LONG_DOT);
         lv_obj_set_width(w.preview_label, metrics.preview_width);
+        apply_single_line(w.preview_label);
 
         w.time_label = lv_label_create(w.btn);
         lv_obj_add_flag(w.time_label, LV_OBJ_FLAG_EVENT_BUBBLE);
         lv_obj_align(w.time_label, LV_ALIGN_RIGHT_MID, -metrics.time_x, 0);
+        lv_obj_set_width(w.time_label, metrics.time_width);
+        lv_obj_set_style_text_align(w.time_label, LV_TEXT_ALIGN_RIGHT, 0);
+        apply_single_line(w.time_label);
 
         w.unread_label = lv_label_create(w.btn);
         lv_obj_add_flag(w.unread_label, LV_OBJ_FLAG_EVENT_BUBBLE);
         lv_obj_align(w.unread_label, LV_ALIGN_RIGHT_MID, -metrics.unread_x, 0);
+        lv_obj_set_width(w.unread_label, metrics.unread_width);
+        lv_obj_set_style_text_align(w.unread_label, LV_TEXT_ALIGN_RIGHT, 0);
+        apply_single_line(w.unread_label);
     }
 
     return w;
@@ -373,10 +415,22 @@ void populate_message_item(const MessageItemWidgets& widgets,
     {
         ::ui::components::info_card::apply_single_line_label(widgets.name_label);
     }
+    else
+    {
+        apply_single_line(widgets.name_label);
+    }
 
     const std::string preview = truncate_preview(conv.preview);
     lv_label_set_text(widgets.preview_label, preview.c_str());
     ::ui::fonts::apply_chat_content_font(widgets.preview_label, preview.c_str());
+    if (use_info_card)
+    {
+        ::ui::components::info_card::apply_single_line_label(widgets.preview_label);
+    }
+    else
+    {
+        apply_single_line(widgets.preview_label);
+    }
 
     char time_buf[16];
     format_time_hhmm(time_buf, conv.last_timestamp);
@@ -385,6 +439,10 @@ void populate_message_item(const MessageItemWidgets& widgets,
     if (use_info_card)
     {
         ::ui::components::info_card::apply_single_line_label(widgets.time_label);
+    }
+    else
+    {
+        apply_single_line(widgets.time_label);
     }
 
     if (conv.unread > 0)
@@ -402,6 +460,10 @@ void populate_message_item(const MessageItemWidgets& widgets,
     if (use_info_card)
     {
         ::ui::components::info_card::apply_single_line_label(widgets.unread_label);
+    }
+    else
+    {
+        apply_single_line(widgets.unread_label);
     }
 }
 

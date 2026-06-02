@@ -87,6 +87,20 @@ static lv_obj_t* gps_root = nullptr;
 namespace
 {
 
+struct SavedGpsMapView
+{
+    bool valid = false;
+    int zoom_level = gps_ui::kDefaultZoom;
+    double lat = gps_ui::kDefaultLat;
+    double lng = gps_ui::kDefaultLng;
+    bool has_fix = false;
+    int pan_x = 0;
+    int pan_y = 0;
+    bool follow_position = true;
+};
+
+SavedGpsMapView s_saved_gps_map_view;
+
 void assign_layout_widgets(const gps::ui::layout::Widgets& w)
 {
     gps_root = w.root;
@@ -379,6 +393,35 @@ bool is_available()
     return platform::ui::device::gps_supported();
 }
 
+void remember_gps_view_state()
+{
+    s_saved_gps_map_view.valid = true;
+    s_saved_gps_map_view.zoom_level = g_gps_state.zoom_level;
+    s_saved_gps_map_view.lat = g_gps_state.lat;
+    s_saved_gps_map_view.lng = g_gps_state.lng;
+    s_saved_gps_map_view.has_fix = g_gps_state.has_fix;
+    s_saved_gps_map_view.pan_x = g_gps_state.pan_x;
+    s_saved_gps_map_view.pan_y = g_gps_state.pan_y;
+    s_saved_gps_map_view.follow_position = g_gps_state.follow_position;
+}
+
+bool restore_gps_view_state()
+{
+    if (!s_saved_gps_map_view.valid)
+    {
+        return false;
+    }
+
+    g_gps_state.zoom_level = s_saved_gps_map_view.zoom_level;
+    g_gps_state.lat = s_saved_gps_map_view.lat;
+    g_gps_state.lng = s_saved_gps_map_view.lng;
+    g_gps_state.has_fix = s_saved_gps_map_view.has_fix;
+    g_gps_state.pan_x = s_saved_gps_map_view.pan_x;
+    g_gps_state.pan_y = s_saved_gps_map_view.pan_y;
+    g_gps_state.follow_position = s_saved_gps_map_view.follow_position;
+    return true;
+}
+
 void enter(const shell::Host* host, lv_obj_t* parent)
 {
     s_host = host;
@@ -463,6 +506,18 @@ void enter(const shell::Host* host, lv_obj_t* parent)
     }
 
     init_gps_state_defaults();
+    const bool restored_view = restore_gps_view_state();
+    if (restored_view)
+    {
+        GPS_FLOW_LOG("[GPS][MAP][flow] restored view zoom=%d fix=%d follow=%d pan=%d,%d lat=%.6f lng=%.6f\n",
+                     g_gps_state.zoom_level,
+                     g_gps_state.has_fix,
+                     g_gps_state.follow_position,
+                     g_gps_state.pan_x,
+                     g_gps_state.pan_y,
+                     g_gps_state.lat,
+                     g_gps_state.lng);
+    }
 
     hide_pan_h_indicator();
     hide_pan_v_indicator();
@@ -547,6 +602,7 @@ void exit(lv_obj_t* parent)
             g_gps_state.alive, g_gps_state.exiting, gps_root);
 
     // Prevent re-entrant exit.
+    remember_gps_view_state();
     g_gps_state.exiting = true;
     gps_runtime_pump().setActive(false);
 
@@ -692,6 +748,7 @@ lv_timer_t* s_timer = nullptr;
 int s_map_zoom = kCardputerZeroMapDefaultZoom;
 int s_map_pan_x = 0;
 int s_map_pan_y = 0;
+bool s_map_view_initialized = false;
 ::ui::map::MapOverlaySnapshot s_overlay_snapshot;
 
 void request_exit()
@@ -979,12 +1036,25 @@ bool is_available()
     return platform::ui::device::gps_supported();
 }
 
+void remember_gps_view_state()
+{
+}
+
+bool restore_gps_view_state()
+{
+    return s_map_view_initialized;
+}
+
 void enter(const shell::Host* host, lv_obj_t* parent)
 {
     s_host = host;
-    s_map_zoom = kCardputerZeroMapDefaultZoom;
-    s_map_pan_x = 0;
-    s_map_pan_y = 0;
+    if (!s_map_view_initialized)
+    {
+        s_map_zoom = kCardputerZeroMapDefaultZoom;
+        s_map_pan_x = 0;
+        s_map_pan_y = 0;
+        s_map_view_initialized = true;
+    }
     sync_workspace_viewport_from_legacy_renderer();
 
     lv_group_t* prev_group = lv_group_get_default();

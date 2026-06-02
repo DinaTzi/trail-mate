@@ -21,6 +21,19 @@
 #include "ui/localization.h"
 #include "ui/widgets/system_notification.h"
 
+#ifndef APP_EVENT_LOG_ENABLE
+#define APP_EVENT_LOG_ENABLE 0
+#endif
+
+#if APP_EVENT_LOG_ENABLE
+#define APP_EVENT_LOG(...) std::printf(__VA_ARGS__)
+#else
+#define APP_EVENT_LOG(...) \
+    do                     \
+    {                      \
+    } while (0)
+#endif
+
 namespace platform::esp::arduino_common
 {
 namespace
@@ -223,6 +236,18 @@ bool dispatchEvent(app::IAppFacade& app_context, sys::Event* event)
         {
             update.device_metrics = node_event->device_metrics;
         }
+        APP_EVENT_LOG("[APP][event] node_info node=%08lX proto=%u role=%u hops=%u short='%s' long='%s' snr=%.1f rssi=%.1f ts=%lu ignored=%u pubkey=%u\n",
+                      static_cast<unsigned long>(node_event->node_id),
+                      static_cast<unsigned>(node_event->protocol),
+                      static_cast<unsigned>(node_event->role),
+                      static_cast<unsigned>(node_event->hops_away),
+                      node_event->short_name,
+                      node_event->long_name,
+                      static_cast<double>(node_event->snr),
+                      static_cast<double>(node_event->rssi),
+                      static_cast<unsigned long>(node_event->timestamp),
+                      node_event->is_ignored ? 1U : 0U,
+                      node_event->has_public_key ? 1U : 0U);
         app_context.getContactService().applyNodeUpdate(node_event->node_id, update);
         notifyNodeInfoUpdate(app_context, *node_event);
         delete event;
@@ -253,6 +278,13 @@ bool dispatchEvent(app::IAppFacade& app_context, sys::Event* event)
         pos.hdop = pos_event->hdop;
         pos.vdop = pos_event->vdop;
         pos.gps_accuracy_mm = pos_event->gps_accuracy_mm;
+        APP_EVENT_LOG("[APP][event] node_position node=%08lX lat_i=%ld lon_i=%ld alt=%ld has_alt=%u ts=%lu\n",
+                      static_cast<unsigned long>(pos_event->node_id),
+                      static_cast<long>(pos_event->latitude_i),
+                      static_cast<long>(pos_event->longitude_i),
+                      static_cast<long>(pos_event->altitude),
+                      pos_event->has_altitude ? 1U : 0U,
+                      static_cast<unsigned long>(pos_event->timestamp));
         app_context.getContactService().updateNodePosition(pos_event->node_id, pos);
         delete event;
         return true;

@@ -11,6 +11,8 @@ DeliveryFailureKind toDeliveryFailureKind(SendFailureKind failure)
         return DeliveryFailureKind::None;
     case SendFailureKind::PeerKeyMissing:
         return DeliveryFailureKind::PeerKeyMissing;
+    case SendFailureKind::ChannelKeyMissing:
+        return DeliveryFailureKind::ChannelKeyMissing;
     case SendFailureKind::LocalIdentityMissing:
         return DeliveryFailureKind::LocalIdentityMissing;
     case SendFailureKind::RadioSendFailed:

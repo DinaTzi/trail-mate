@@ -3,6 +3,7 @@
 #include "board/BoardBase.h"
 #include "chat/ble/meshtastic_phone_config_bridge.h"
 #include "chat/infra/meshcore/meshcore_ble_backend.h"
+#include "chat/infra/meshtastic/mt_radio_config.h"
 #include "chat/ports/i_mesh_adapter.h"
 #include "chat/ports/i_node_store.h"
 #include "chat/usecase/chat_service.h"
@@ -479,10 +480,13 @@ bool AppPhoneFacade::getCustomVars(std::string* out) const
     {
         appendCustomVar(*out, "gps", gps::gps_is_powered() ? "1" : "0");
     }
-    const auto cfg = getMeshCorePhoneConfig();
-    appendCustomVar(*out, "node_name", cfg.node_name);
-    appendCustomVar(*out, "channel_name", cfg.mesh.meshcore_channel_name);
-    std::snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(cfg.mesh.meshcore_multi_acks ? 1U : 0U));
+    const auto mesh_cfg = getMeshCorePhoneConfig();
+    const auto mt_cfg = getMeshtasticPhoneConfig();
+    appendCustomVar(*out, "node_name", mesh_cfg.node_name);
+    appendCustomVar(*out, "channel_name", chat::meshtastic::primaryChannelName(mt_cfg.mesh));
+    appendCustomVar(*out, "meshtastic_channel_name", chat::meshtastic::primaryChannelName(mt_cfg.mesh));
+    appendCustomVar(*out, "meshcore_channel_name", mesh_cfg.mesh.meshcore_channel_name);
+    std::snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(mesh_cfg.mesh.meshcore_multi_acks ? 1U : 0U));
     appendCustomVar(*out, "multi_acks", buf);
     return true;
 }
@@ -512,7 +516,15 @@ bool AppPhoneFacade::setCustomVar(const char* key, const char* value)
         mt_changed = true;
         apply_user = true;
     }
-    else if (std::strcmp(key, "channel_name") == 0)
+    else if (std::strcmp(key, "channel_name") == 0 ||
+             std::strcmp(key, "meshtastic_channel_name") == 0)
+    {
+        copyBounded(mt_cfg.mesh.primary_channel_name, sizeof(mt_cfg.mesh.primary_channel_name), value);
+        changed = true;
+        mt_changed = true;
+        apply_mesh = true;
+    }
+    else if (std::strcmp(key, "meshcore_channel_name") == 0)
     {
         copyBounded(mesh_cfg.mesh.meshcore_channel_name, sizeof(mesh_cfg.mesh.meshcore_channel_name), value);
         changed = true;
