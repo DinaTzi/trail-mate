@@ -8,6 +8,7 @@
 #include "ui/screens/gps/gps_modal.h"
 #include "ui/screens/gps/gps_page_lifetime.h"
 #include "ui/screens/gps/gps_page_map.h"
+#include "ui/screens/gps/gps_page_runtime.h"
 #include "ui/screens/gps/gps_route_overlay.h"
 #include "ui/screens/gps/gps_state.h"
 #include "ui/screens/gps/gps_tracker_overlay.h"
@@ -304,6 +305,7 @@ static void handle_map_touch_move(lv_indev_t* indev, const lv_point_t& point)
     g_gps_state.pan_y = new_pan_y;
     g_gps_state.follow_position = false;
     g_gps_state.pending_refresh = false;
+    gps::ui::runtime::remember_gps_view_state();
     update_map_tiles(false);
     GPS_FLOW_LOG("[GPS][MAP][touch] drag_move dx=%d dy=%d pan=%d,%d->%d,%d\n",
                  dx,
@@ -558,6 +560,7 @@ static void refresh_map_after_pan_step()
     extern void update_map_tiles(bool lightweight);
 
     g_gps_state.pending_refresh = false;
+    gps::ui::runtime::remember_gps_view_state();
     update_map_tiles(false);
     log_map_tile_state("pan_step");
 }
@@ -1123,6 +1126,7 @@ static void action_position_center()
     g_gps_state.pan_x = 0;
     g_gps_state.pan_y = 0;
     g_gps_state.follow_position = true;
+    gps::ui::runtime::remember_gps_view_state();
 
     // Create or update GPS marker
     create_gps_marker();
@@ -1338,6 +1342,7 @@ void zoom_popup_apply_selection()
 
     g_gps_state.last_resolution_zoom = g_gps_state.zoom_level;
     g_gps_state.last_resolution_lat = g_gps_state.lat;
+    gps::ui::runtime::remember_gps_view_state();
 
     update_resolution_display();
     update_map_anchor();

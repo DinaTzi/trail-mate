@@ -14,6 +14,7 @@
 #include "ui/screens/gps/gps_constants.h"
 #include "ui/screens/gps/gps_page_components.h"
 #include "ui/screens/gps/gps_page_lifetime.h"
+#include "ui/screens/gps/gps_page_runtime.h"
 #include "ui/screens/gps/gps_page_styles.h"
 #include "ui/screens/gps/gps_state.h"
 #include "ui/screens/gps/gps_tracker_overlay.h"
@@ -1560,6 +1561,7 @@ void tick_gps_update(bool allow_map_refresh)
                     gps_map_transform(g_gps_state.lat, g_gps_state.lng, map_lat, map_lon);
                     g_gps_state.last_resolution_lat = map_lat;
                     update_map_tiles(false);
+                    gps::ui::runtime::remember_gps_view_state();
 
                     last_refresh_lat = new_lat;
                     last_refresh_lng = new_lng;

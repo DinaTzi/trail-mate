@@ -7,6 +7,7 @@
 #include "ui/screens/gps/gps_page_components.h"
 #include "ui/screens/gps/gps_page_lifetime.h"
 #include "ui/screens/gps/gps_page_map.h"
+#include "ui/screens/gps/gps_page_runtime.h"
 #include "ui/screens/gps/gps_state.h"
 #include "ui/support/lvgl_fs_utils.h"
 #include "ui/widgets/map/map_tiles.h"
@@ -596,6 +597,7 @@ bool gps_route_focus(bool show_fail_toast)
     reset_title_status_cache();
     update_title_and_status();
     update_resolution_display();
+    gps::ui::runtime::remember_gps_view_state();
     update_map_tiles(false);
 
     if (g_gps_state.map)
