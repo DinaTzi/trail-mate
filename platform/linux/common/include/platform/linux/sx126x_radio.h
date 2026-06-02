@@ -116,7 +116,7 @@ class Sx126xRadio final
                             std::uint8_t* data,
                             std::size_t size);
 
-    bool prepareAio2Locked();
+    bool prepareRadioHardwareLocked();
     bool probeLocked();
     bool readStatusLocked(std::uint8_t* out_status);
     bool setPacketTypeLocked(std::uint8_t packet_type);

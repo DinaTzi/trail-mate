@@ -20,6 +20,8 @@ framebuffer and evdev owner are promoted into this shell.
 - display: 320 x 170 logical pixels
 - input: built-in keyboard, real key mapping still needs device sampling
 - pointer/touch/trackball: not present in current board facts
+- LoRa: SX1262 on `/dev/spidev0.1`, 500000 Hz, Reset=26, IRQ/DIO1=23,
+  Busy=22, DIO2 RF switch enabled, DIO3 TCXO enabled
 
 ## Build Entrypoint
 
@@ -33,6 +35,8 @@ May:
 - select the Cardputer Zero device UX profile
 - bind Cardputer Zero board facts into Linux runtime startup
 - own future framebuffer, evdev, packaging, and launch details for this device
+- own future Trail Mate Linux SX1262 packet-radio wiring for the documented
+  Cardputer Zero LoRa endpoint
 
 Must not:
 

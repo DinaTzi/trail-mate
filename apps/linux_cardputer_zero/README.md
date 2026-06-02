@@ -14,5 +14,7 @@ Known hardware facts in this repo:
 - display: 320 x 170 logical pixels
 - input: built-in keyboard
 - touch, pointer, and trackball: absent in current board facts
+- LoRa: SX1262 on `/dev/spidev0.1`, 500000 Hz, Reset=26, IRQ/DIO1=23,
+  Busy=22, DIO2 RF switch and DIO3 TCXO enabled
 
 The simulator remains a separate development shell under `apps/linux_sim_shell`.

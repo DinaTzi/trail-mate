@@ -184,7 +184,7 @@ constexpr TargetProfile kTargetProfiles[] = {
         false,
         true,
         false,
-        false,
+        true,
         false,
         false,
     },

@@ -62,8 +62,17 @@ bool LinuxCardputerZeroAppShell::validate() const
            profile->has_keyboard == facts.keyboard_present &&
            profile->has_touch == facts.touch_present &&
            profile->has_trackball == facts.trackball_present &&
+           profile->has_lora == facts.lora_present &&
            facts.logical_display_width == 320 &&
            facts.logical_display_height == 170 &&
+           std::strcmp(facts.lora_chip, "sx1262") == 0 &&
+           std::strcmp(facts.lora_spidev, "/dev/spidev0.1") == 0 &&
+           facts.lora_spi_speed_hz == 500000 &&
+           facts.lora_reset_gpio == 26 &&
+           facts.lora_irq_gpio == 23 &&
+           facts.lora_busy_gpio == 22 &&
+           facts.lora_dio2_as_rf_switch &&
+           facts.lora_dio3_tcxo_voltage &&
            product_composition::findTargetUxBinding(targetId()) != nullptr &&
            config_.ux_pack_id != nullptr &&
            std::strcmp(config_.ux_pack_id, activeUxPackId()) == 0 &&

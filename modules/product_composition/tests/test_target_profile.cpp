@@ -75,6 +75,7 @@ int main()
     assert(std::strcmp(cardputer->app_shell, "apps/linux_cardputer_zero") == 0);
     assert(cardputer->status ==
            product_composition::TargetSupportStatus::PendingHardwareValidation);
+    assert(cardputer->has_lora);
 
     const auto* gat562 = product_composition::findTargetProfile("gat562_mesh_evb_pro");
     assert(gat562 != nullptr);
