@@ -7,6 +7,7 @@
 #include "display/DisplayConfig.h"
 #include "esp32_lvgl_arduino_app_runtime_access.h"
 #include "platform/esp/arduino_common/display_runtime.h"
+#include "platform/esp/arduino_common/debug/sd_debug_log.h"
 #include "platform/esp/arduino_common/startup_support.h"
 #include "platform/esp/boards/board_runtime.h"
 #include "platform/ui/settings_store.h"
@@ -49,6 +50,8 @@ void finishStartup(bool waking_from_sleep)
     if (waking_from_sleep)
     {
         Serial.printf("[Setup] Updated user activity after waking from sleep\n");
+        platform::esp::arduino_common::debug::append_line(
+            "[Setup] Updated user activity after waking from sleep");
     }
 }
 
@@ -77,9 +80,19 @@ void run()
 
     platform::esp::arduino_common::startup_support::initializeBoard(waking_from_sleep);
     Serial.printf("[Setup] heap=%u psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
+    platform::esp::arduino_common::debug::begin_sd_debug_log();
+    platform::esp::arduino_common::debug::printf(
+        "[Setup] board initialized wake=%d heap=%u psram=%u",
+        waking_from_sleep ? 1 : 0,
+        ESP.getFreeHeap(),
+        ESP.getFreePsram());
+    platform::esp::arduino_common::debug::export_previous_coredump_to_sd();
+
     Serial.println("[Setup] LVGL init begin");
+    platform::esp::arduino_common::debug::append_line("[Setup] LVGL init begin");
     platform::esp::arduino_common::display_runtime::initialize();
     Serial.println("[Setup] LVGL init done");
+    platform::esp::arduino_common::debug::append_line("[Setup] LVGL init done");
 
     ui::startup_shell::prepareBootUi(waking_from_sleep);
 
@@ -92,6 +105,11 @@ void run()
                       runtime_status.board_handles_ready ? 1 : 0,
                       runtime_status.app_context_bound ? 1 : 0,
                       runtime_status.background_tasks_started ? 1 : 0);
+        platform::esp::arduino_common::debug::printf(
+            "[Setup] AppContext initialized handles=%d bound=%d tasks=%d",
+            runtime_status.board_handles_ready ? 1 : 0,
+            runtime_status.app_context_bound ? 1 : 0,
+            runtime_status.background_tasks_started ? 1 : 0);
     }
     else
     {
@@ -100,12 +118,19 @@ void run()
                       runtime_status.board_handles_ready ? 1 : 0,
                       runtime_status.app_context_bound ? 1 : 0,
                       runtime_status.background_tasks_started ? 1 : 0);
+        platform::esp::arduino_common::debug::printf(
+            "[Setup] WARNING: AppContext init failed handles=%d bound=%d tasks=%d",
+            runtime_status.board_handles_ready ? 1 : 0,
+            runtime_status.app_context_bound ? 1 : 0,
+            runtime_status.background_tasks_started ? 1 : 0);
     }
 
     ui::boot::set_log_line("Building main menu...");
     initializeShell();
     ui::boot::set_log_line("Startup complete");
     finishStartup(waking_from_sleep);
+    platform::esp::arduino_common::debug::append_line("[Setup] Startup complete");
+    platform::esp::arduino_common::debug::flush();
 }
 
 } // namespace trailmate::apps::esp32_lvgl::arduino_startup_runtime

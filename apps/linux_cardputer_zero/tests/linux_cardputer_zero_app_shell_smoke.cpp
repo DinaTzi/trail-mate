@@ -27,6 +27,7 @@ int main()
     assert(!facts.trackball_present);
     assert(facts.lora_present);
     assert(std::strcmp(facts.lora_state, "hardware_documented_runtime_pending") == 0);
+    assert(std::strcmp(facts.lora_external_module, "M5Stack Cap LoRa-1262") == 0);
     assert(std::strcmp(facts.lora_chip, "sx1262") == 0);
     assert(std::strcmp(facts.lora_spidev, "/dev/spidev0.1") == 0);
     assert(std::strcmp(facts.lora_gpiochip, "/dev/gpiochip0") == 0);
@@ -37,6 +38,16 @@ int main()
     assert(facts.lora_power_gpio == -1);
     assert(facts.lora_dio2_as_rf_switch);
     assert(facts.lora_dio3_tcxo_voltage);
+    assert(facts.gps_present);
+    assert(std::strcmp(facts.gps_state,
+                       "cap_lora_1262_gnss_hardware_documented_runtime_pending") == 0);
+    assert(std::strcmp(facts.gps_external_module, "M5Stack Cap LoRa-1262") == 0);
+    assert(std::strcmp(facts.gps_chip, "ATGM336H-6N@AT6668") == 0);
+    assert(std::strcmp(facts.gps_protocol, "NMEA 0183 4.1") == 0);
+    assert(std::strcmp(facts.gps_transport, "uart") == 0);
+    assert(facts.gps_default_baud == 115200);
+    assert(facts.gps_rx_gpio == 15);
+    assert(facts.gps_tx_gpio == 14);
 
     const auto& notifications = shell.notificationPort().contract();
     assert(std::strcmp(notifications.bus_name, "org.freedesktop.Notifications") == 0);
@@ -87,9 +98,67 @@ int main()
     assert(profile->renderer == product_composition::TargetRenderer::Ascii);
     assert(std::strcmp(profile->app_shell, "apps/linux_cardputer_zero") == 0);
     assert(profile->has_lora);
+    assert(profile->has_gps);
 
     ui::menu::MenuModel menu;
     assert(ui_lvgl_ux::buildMenuForUxPack(shell.activeUxPackId(), menu));
-    assert(menu.size() > 0);
+    assert(menu.size() == 10);
+    bool has_map = false;
+    bool has_gps = false;
+    bool has_sky_plot = false;
+    bool has_pc_link = false;
+    bool has_energy_sweep = false;
+    bool has_walkie = false;
+    bool has_sstv = false;
+    bool has_extensions = false;
+    bool has_settings = false;
+    for (size_t index = 0; index < menu.size(); ++index)
+    {
+        if (menu.items()[index].screen_id == ui::menu::MenuScreenId::Map)
+        {
+            has_map = true;
+        }
+        if (menu.items()[index].screen_id == ui::menu::MenuScreenId::Gps)
+        {
+            has_gps = true;
+        }
+        if (menu.items()[index].screen_id == ui::menu::MenuScreenId::SkyPlot)
+        {
+            has_sky_plot = true;
+        }
+        if (menu.items()[index].screen_id == ui::menu::MenuScreenId::PcLink)
+        {
+            has_pc_link = true;
+        }
+        if (menu.items()[index].screen_id == ui::menu::MenuScreenId::EnergySweep)
+        {
+            has_energy_sweep = true;
+        }
+        if (menu.items()[index].screen_id == ui::menu::MenuScreenId::WalkieTalkie)
+        {
+            has_walkie = true;
+        }
+        if (menu.items()[index].screen_id == ui::menu::MenuScreenId::Sstv)
+        {
+            has_sstv = true;
+        }
+        if (menu.items()[index].screen_id == ui::menu::MenuScreenId::Extensions)
+        {
+            has_extensions = true;
+        }
+        if (menu.items()[index].screen_id == ui::menu::MenuScreenId::Settings)
+        {
+            has_settings = true;
+        }
+    }
+    assert(has_map);
+    assert(!has_gps);
+    assert(has_sky_plot);
+    assert(!has_pc_link);
+    assert(!has_energy_sweep);
+    assert(has_walkie);
+    assert(!has_sstv);
+    assert(has_extensions);
+    assert(has_settings);
     return 0;
 }

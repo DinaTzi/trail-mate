@@ -7,7 +7,7 @@
 #include "platform/ui/team_ui_store_runtime.h"
 #include "ui/app_runtime.h"
 #include "ui/presentation_sources/chat_presentation_source.h"
-#include "ui/presentation_sources/legacy_chat_action_sink.h"
+#include "ui/presentation_sources/runtime_chat_action_sink.h"
 #include "ui/presentation_sources/team_chat_action_sink.h"
 #include "ui/presentation_sources/team_chat_presentation_source.h"
 #include "ui/screens/chat/chat_team_workflow.h"
@@ -32,7 +32,7 @@ namespace
 const chat::ui::shell::Host* s_host = nullptr;
 lv_obj_t* s_chat_container = nullptr;
 std::unique_ptr<::ui::presentation_sources::ChatPresentationSource> s_chat_source = nullptr;
-std::unique_ptr<::ui::presentation_sources::LegacyChatActionSink> s_chat_sink = nullptr;
+std::unique_ptr<::ui::presentation_sources::RuntimeChatActionSink> s_chat_sink = nullptr;
 std::unique_ptr<::ui::chat::ChatWorkspaceModel> s_chat_model = nullptr;
 std::unique_ptr<::chat::delivery::ChatDeliveryReadModel> s_delivery_read_model = nullptr;
 std::unique_ptr<::chat::delivery::ChatDeliveryEventProjector> s_delivery_projector = nullptr;
@@ -206,8 +206,8 @@ void enter(const shell::Host* host, lv_obj_t* parent)
             chat_service,
             &app::messagingFacade().getContactService(),
             s_delivery_read_model.get()));
-    s_chat_sink = std::unique_ptr<::ui::presentation_sources::LegacyChatActionSink>(
-        new ::ui::presentation_sources::LegacyChatActionSink(chat_service));
+    s_chat_sink = std::unique_ptr<::ui::presentation_sources::RuntimeChatActionSink>(
+        new ::ui::presentation_sources::RuntimeChatActionSink(chat_service));
     s_chat_model = std::unique_ptr<::ui::chat::ChatWorkspaceModel>(
         new ::ui::chat::ChatWorkspaceModel(*s_chat_source, *s_chat_sink));
     s_key_verification_session =

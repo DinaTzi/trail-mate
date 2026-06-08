@@ -1,0 +1,117 @@
+#!/bin/sh
+set -eu
+
+find_st7789v_fbdev()
+{
+    [ -r /proc/fb ] || return 1
+
+    while IFS= read -r line; do
+        case "$line" in
+            *fb_st7789v*)
+                set -- $line
+                case "${1:-}" in
+                    ''|*[!0-9]*) return 1 ;;
+                    *) printf '/dev/fb%s\n' "$1"; return 0 ;;
+                esac
+                ;;
+        esac
+    done < /proc/fb
+
+    return 1
+}
+
+case "$0" in
+    */*) script_dir=${0%/*} ;;
+    *) script_dir=/usr/lib/trailmate-cardputer-zero ;;
+esac
+
+settings_root=${TRAIL_MATE_SETTINGS_ROOT:-${HOME:-/home/pi}/.trailmate_cardputer_zero}
+
+load_env_file()
+{
+    env_file=$1
+    [ -r "$env_file" ] || return 0
+    set -a
+    . "$env_file"
+    set +a
+}
+
+load_env_file /etc/trailmate-cardputer-zero.env
+load_env_file "$settings_root/trailmate.env"
+
+: "${TRAIL_MATE_RUNTIME_MODE:=mesh}"
+: "${TRAIL_MATE_LORA_SPI:=/dev/spidev0.1}"
+: "${TRAIL_MATE_LORA_GPIOCHIP:=/dev/gpiochip0}"
+: "${TRAIL_MATE_LORA_POWER_GPIO:=-1}"
+: "${TRAIL_MATE_LORA_RESET_GPIO:=26}"
+: "${TRAIL_MATE_LORA_BUSY_GPIO:=22}"
+: "${TRAIL_MATE_LORA_IRQ_GPIO:=23}"
+: "${TRAIL_MATE_LORA_SPI_HZ:=500000}"
+: "${TRAIL_MATE_LORA_DIO2_RF_SWITCH:=1}"
+: "${TRAIL_MATE_LORA_DIO3_TCXO_1V8:=1}"
+: "${TRAIL_MATE_GPS_BAUD:=115200}"
+: "${TRAIL_MATE_GPS_AUTO_SERIAL:=1}"
+: "${TRAIL_MATE_GPS_DEVICE_CANDIDATES:=/dev/serial0:/dev/ttyAMA1:/dev/ttyAMA0:/dev/ttyS0:/dev/ttyS1}"
+: "${TRAIL_MATE_DESKTOP_NOTIFICATIONS:=freedesktop}"
+
+if [ -z "${ALL_PROXY:-}${all_proxy:-}${HTTPS_PROXY:-}${https_proxy:-}${HTTP_PROXY:-}${http_proxy:-}" ] &&
+   command -v ss >/dev/null 2>&1 &&
+   ss -ltn 2>/dev/null | grep -q '127\.0\.0\.1:7890'; then
+    ALL_PROXY=http://127.0.0.1:7890
+    all_proxy=$ALL_PROXY
+    HTTPS_PROXY=$ALL_PROXY
+    https_proxy=$ALL_PROXY
+    HTTP_PROXY=$ALL_PROXY
+    http_proxy=$ALL_PROXY
+fi
+
+export TRAIL_MATE_RUNTIME_MODE
+export TRAIL_MATE_LORA_SPI TRAIL_MATE_LORA_GPIOCHIP
+export TRAIL_MATE_LORA_POWER_GPIO TRAIL_MATE_LORA_RESET_GPIO
+export TRAIL_MATE_LORA_BUSY_GPIO TRAIL_MATE_LORA_IRQ_GPIO
+export TRAIL_MATE_LORA_SPI_HZ TRAIL_MATE_LORA_DIO2_RF_SWITCH
+export TRAIL_MATE_LORA_DIO3_TCXO_1V8
+export TRAIL_MATE_GPS_BAUD TRAIL_MATE_GPS_AUTO_SERIAL
+export TRAIL_MATE_GPS_DEVICE TRAIL_MATE_GPS_DEVICE_CANDIDATES
+export TRAIL_MATE_DESKTOP_NOTIFICATIONS
+export TRAIL_MATE_EARTHDATA_TOKEN TRAIL_MATE_EARTH_DATA_TOKEN
+export ALL_PROXY all_proxy HTTPS_PROXY https_proxy HTTP_PROXY http_proxy
+
+backend=${TRAIL_MATE_DISPLAY_BACKEND:-auto}
+
+case "$backend" in
+    wayland|labwc)
+        exec "$script_dir/trailmate-cardputer-zero" "$@"
+        ;;
+    auto|"")
+        if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+            exec "$script_dir/trailmate-cardputer-zero" "$@"
+        fi
+        echo "trailmate-cardputer-zero-applaunch: Wayland session is required; set TRAIL_MATE_DISPLAY_BACKEND=fbdev only for explicit framebuffer debugging." >&2
+        exit 127
+        ;;
+    fb|fbdev|framebuffer|device)
+        ;;
+    *)
+        echo "trailmate-cardputer-zero-applaunch: unsupported TRAIL_MATE_DISPLAY_BACKEND=$backend" >&2
+        exit 2
+        ;;
+esac
+
+if [ -z "${TRAIL_MATE_FRAMEBUFFER:-}" ]; then
+    if [ -n "${APPLAUNCH_LINUX_FBDEV_DEVICE:-}" ]; then
+        TRAIL_MATE_FRAMEBUFFER=$APPLAUNCH_LINUX_FBDEV_DEVICE
+    elif detected_fbdev=$(find_st7789v_fbdev); then
+        TRAIL_MATE_FRAMEBUFFER=$detected_fbdev
+    else
+        TRAIL_MATE_FRAMEBUFFER=/dev/fb1
+    fi
+fi
+
+if [ -z "${TRAIL_MATE_INPUT_DEVICE:-}" ]; then
+    TRAIL_MATE_INPUT_DEVICE="${APPLAUNCH_LINUX_KEYBOARD_DEVICE:-/dev/input/by-path/platform-3f804000.i2c-event}"
+fi
+
+export TRAIL_MATE_FRAMEBUFFER TRAIL_MATE_INPUT_DEVICE
+
+exec "$script_dir/trailmate-cardputer-zero-fbdev" "$@"

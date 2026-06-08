@@ -605,6 +605,22 @@ void ChatComposeScreen::on_key(lv_event_t* e)
     }
 
     uint32_t key = lv_event_get_key(e);
+    if (key == LV_KEY_ENTER && screen->impl_->w.send_btn)
+    {
+        lv_obj_t* target = static_cast<lv_obj_t*>(lv_event_get_target(e));
+        lv_obj_t* focused = nullptr;
+        if (lv_group_t* g = lv_group_get_default())
+        {
+            focused = lv_group_get_focused(g);
+        }
+        if (target == screen->impl_->w.send_btn || focused == screen->impl_->w.send_btn)
+        {
+            lv_obj_send_event(screen->impl_->w.send_btn, LV_EVENT_CLICKED, nullptr);
+            lv_event_stop_processing(e);
+            return;
+        }
+    }
+
     if (screen->ime_widget_ && screen->ime_widget_->handle_key(e))
     {
         return;
@@ -617,7 +633,7 @@ void ChatComposeScreen::on_key(lv_event_t* e)
 
     if (is_encoder && key == LV_KEY_ENTER && screen->impl_->w.send_btn)
     {
-        if (lv_group_t* g = lv_group_get_default())
+        if (lv_group_get_default())
         {
             lv_group_focus_obj(screen->impl_->w.send_btn);
         }

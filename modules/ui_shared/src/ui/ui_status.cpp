@@ -7,7 +7,6 @@
 
 #include "app/app_config.h"
 #include "app/app_facade_access.h"
-#include "ble/ble_manager.h"
 #include "chat/usecase/chat_service.h"
 #include "platform/ui/tracker_runtime.h"
 #include "platform/ui/wifi_runtime.h"
@@ -15,10 +14,17 @@
 #if !defined(GAT562_NO_TEAM) || !GAT562_NO_TEAM
 #include "platform/ui/team_ui_snapshot_store.h"
 #endif
-#include "ui/presentation_sources/legacy_gps_status_source.h"
+#include "ui/presentation_sources/runtime_gps_status_source.h"
 #include "ui_presentation/gps/gps_status_model.h"
 
 #include <cstdio>
+
+#if __has_include("ble/ble_manager.h")
+#include "ble/ble_manager.h"
+#define TRAIL_MATE_UI_STATUS_HAS_BLE_MANAGER_HEADER 1
+#else
+#define TRAIL_MATE_UI_STATUS_HAS_BLE_MANAGER_HEADER 0
+#endif
 
 extern "C"
 {
@@ -77,7 +83,7 @@ bool s_menu_active = true;
 ::ui::gps::GpsStatusModel& gpsStatusModel()
 {
     static ::ui::gps::GpsStatusModel model(
-        ::ui::presentation_sources::legacy_gps_status_source());
+        ::ui::presentation_sources::runtime_gps_status_source());
     return model;
 }
 
@@ -128,10 +134,13 @@ StatusSnapshot collect_status()
     const auto gps = gpsStatusModel().snapshot();
     snap.gps_enabled = gps.header.valid && gps.receiver_enabled;
     snap.wifi_enabled = platform::ui::wifi::status().enabled;
+    snap.ble_enabled = app::runtimeFacade().isBleEnabled();
+#if TRAIL_MATE_UI_STATUS_HAS_BLE_MANAGER_HEADER
     if (auto* ble = app::runtimeFacade().getBleManager())
     {
         snap.ble_enabled = ble->isEnabled();
     }
+#endif
 
     refresh_team_cache();
     snap.team_active = s_team_cache.team_active;

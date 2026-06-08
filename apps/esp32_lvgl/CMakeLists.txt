@@ -67,6 +67,14 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_esp32_lvgl_runtime_config_smoke
              COMMAND trailmate_esp32_lvgl_runtime_config_smoke)
 
+    add_executable(trailmate_esp32_lvgl_sd_coredump_contract_smoke
+        tests/esp32_lvgl_sd_coredump_contract_smoke.cpp)
+    target_compile_features(trailmate_esp32_lvgl_sd_coredump_contract_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_esp32_lvgl_sd_coredump_contract_smoke
+             COMMAND trailmate_esp32_lvgl_sd_coredump_contract_smoke
+                     "${TRAIL_MATE_REPO_ROOT}")
+
     add_executable(trailmate_product_target_profile_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/product_composition/tests/test_target_profile.cpp")
     target_link_libraries(trailmate_product_target_profile_smoke

@@ -116,6 +116,10 @@ lv_coord_t list_item_height()
 
 lv_coord_t bottom_bar_button_width()
 {
+    if (page_profile().dense)
+    {
+        return ::ui::page_profile::resolve_control_button_min_width();
+    }
     return page_profile().large_touch_hitbox ? 96 : kBottomBarButtonWidth;
 }
 
@@ -131,6 +135,10 @@ lv_coord_t action_menu_button_height()
 
 lv_coord_t action_menu_row_gap()
 {
+    if (page_profile().dense)
+    {
+        return 2;
+    }
     return page_profile().large_touch_hitbox ? 6 : 4;
 }
 
@@ -412,7 +420,7 @@ lv_obj_t* create_list_item_button(const std::string& text, intptr_t user_data, b
     apply_list_button(btn);
 
     lv_obj_t* label = lv_label_create(btn);
-    lv_obj_align(label, LV_ALIGN_LEFT_MID, 10, 0);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, page_profile().dense ? 6 : 10, 0);
     lv_label_set_text(label, text.c_str());
     lv_obj_add_style(label, &s_btn_label, LV_PART_MAIN);
     lv_obj_set_style_text_font(label, ::ui::fonts::localized_font(::ui::fonts::ui_chrome_font()), 0);
@@ -668,11 +676,12 @@ std::string utf8_truncate(const std::string& text, size_t max_chars)
 
 std::string format_list_name(const std::string& name)
 {
-    if (utf8_count_chars(name) <= 20)
+    const size_t max_chars = page_profile().dense ? 18U : 20U;
+    if (utf8_count_chars(name) <= max_chars)
     {
         return name;
     }
-    return utf8_truncate(name, 20);
+    return utf8_truncate(name, max_chars);
 }
 
 void update_record_page()

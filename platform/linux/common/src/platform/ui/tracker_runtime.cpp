@@ -2,14 +2,19 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <vector>
 
+#include "platform/ui/gps_runtime.h"
 #include "platform/linux/runtime_paths.h"
+#include "sys/clock.h"
 
 namespace platform::ui::tracker
 {
@@ -23,6 +28,10 @@ uint32_t s_interval_seconds = 60;
 bool s_distance_only = false;
 Format s_format = Format::GPX;
 std::string s_track_dir_cache{};
+uint32_t s_last_sample_ms = 0;
+bool s_has_last_point = false;
+double s_last_lat = 0.0;
+double s_last_lng = 0.0;
 
 std::filesystem::path track_dir_path()
 {
@@ -65,6 +74,137 @@ std::string make_track_file_name()
     return "track-" + std::to_string(seconds) + extension_for_format(s_format);
 }
 
+bool should_sample_now(uint32_t now_ms)
+{
+    if (!s_recording || s_current_path.empty())
+    {
+        return false;
+    }
+    if (s_last_sample_ms == 0)
+    {
+        return true;
+    }
+    const uint32_t interval_ms = std::max<uint32_t>(1U, s_interval_seconds) * 1000U;
+    return static_cast<int32_t>(now_ms - s_last_sample_ms) >= static_cast<int32_t>(interval_ms);
+}
+
+bool distance_gate_allows(const platform::ui::gps::GpsState& state)
+{
+    if (!s_distance_only || !s_has_last_point)
+    {
+        return true;
+    }
+    constexpr double kMinDeltaDeg = 0.00001;
+    return std::abs(state.lat - s_last_lat) >= kMinDeltaDeg ||
+           std::abs(state.lng - s_last_lng) >= kMinDeltaDeg;
+}
+
+void append_csv_point(std::ofstream& stream,
+                      const platform::ui::gps::GpsState& state,
+                      uint32_t epoch_s)
+{
+    stream << epoch_s << ','
+           << std::fixed << std::setprecision(7) << state.lat << ','
+           << std::fixed << std::setprecision(7) << state.lng << ','
+           << std::fixed << std::setprecision(1) << state.alt_m << ','
+           << std::fixed << std::setprecision(2) << state.speed_mps << ','
+           << std::fixed << std::setprecision(1) << state.course_deg << '\n';
+}
+
+void append_gpx_point(std::ofstream& stream,
+                      const platform::ui::gps::GpsState& state,
+                      uint32_t epoch_s)
+{
+    stream << "<trkpt lat=\""
+           << std::fixed << std::setprecision(7) << state.lat
+           << "\" lon=\""
+           << std::fixed << std::setprecision(7) << state.lng
+           << "\">";
+    if (state.has_alt)
+    {
+        stream << "<ele>"
+               << std::fixed << std::setprecision(1) << state.alt_m
+               << "</ele>";
+    }
+    stream << "<time>" << epoch_s << "</time>";
+    if (state.has_speed)
+    {
+        stream << "<speed>"
+               << std::fixed << std::setprecision(2) << state.speed_mps
+               << "</speed>";
+    }
+    if (state.has_course)
+    {
+        stream << "<course>"
+               << std::fixed << std::setprecision(1) << state.course_deg
+               << "</course>";
+    }
+    stream << "</trkpt>\n";
+}
+
+void append_binary_point(std::ofstream& stream,
+                         const platform::ui::gps::GpsState& state,
+                         uint32_t epoch_s)
+{
+    struct BinaryPoint
+    {
+        uint32_t epoch_s = 0;
+        double lat = 0.0;
+        double lng = 0.0;
+        float alt_m = 0.0f;
+        float speed_mps = 0.0f;
+        float course_deg = 0.0f;
+    };
+
+    const BinaryPoint point{
+        epoch_s,
+        state.lat,
+        state.lng,
+        static_cast<float>(state.alt_m),
+        static_cast<float>(state.speed_mps),
+        static_cast<float>(state.course_deg),
+    };
+    stream.write(reinterpret_cast<const char*>(&point), sizeof(point));
+}
+
+bool append_track_point(const platform::ui::gps::GpsState& state)
+{
+    if (!state.valid || s_current_path.empty())
+    {
+        return false;
+    }
+    if (!distance_gate_allows(state))
+    {
+        return false;
+    }
+
+    std::ofstream stream(s_current_path, std::ios::binary | std::ios::app);
+    if (!stream.is_open())
+    {
+        return false;
+    }
+
+    const uint32_t epoch_s = sys::epoch_seconds_now();
+    switch (s_format)
+    {
+    case Format::CSV:
+        append_csv_point(stream, state, epoch_s);
+        break;
+    case Format::Binary:
+        append_binary_point(stream, state, epoch_s);
+        break;
+    case Format::GPX:
+    default:
+        append_gpx_point(stream, state, epoch_s);
+        break;
+    }
+
+    s_has_last_point = true;
+    s_last_lat = state.lat;
+    s_last_lng = state.lng;
+    return true;
+}
+
 } // namespace
 
 bool is_supported()
@@ -95,21 +235,62 @@ bool start_recording()
     {
         return false;
     }
-    stream << "# Trail Mate Linux tracker\n";
-    stream << "# auto_recording=" << (s_auto_recording ? "1" : "0") << "\n";
-    stream << "# interval_seconds=" << s_interval_seconds << "\n";
-    stream << "# distance_only=" << (s_distance_only ? "1" : "0") << "\n";
+    switch (s_format)
+    {
+    case Format::CSV:
+        stream << "epoch_s,lat,lon,alt_m,speed_mps,course_deg\n";
+        break;
+    case Format::Binary:
+    {
+        constexpr char kHeader[] = "TMTK1";
+        stream.write(kHeader, sizeof(kHeader) - 1);
+        break;
+    }
+    case Format::GPX:
+    default:
+        stream << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+        stream << "<gpx version=\"1.1\" creator=\"Trail Mate Linux\">\n";
+        stream << "<trk><name>Trail Mate Track</name><trkseg>\n";
+        break;
+    }
     stream.close();
 
     s_current_path = path.string();
     s_recording = true;
+    s_last_sample_ms = 0;
+    s_has_last_point = false;
     return true;
 }
 
 void stop_recording()
 {
+    if (s_recording && s_format == Format::GPX && !s_current_path.empty())
+    {
+        std::ofstream stream(s_current_path, std::ios::binary | std::ios::app);
+        if (stream.is_open())
+        {
+            stream << "</trkseg></trk></gpx>\n";
+        }
+    }
     s_recording = false;
     s_current_path.clear();
+    s_last_sample_ms = 0;
+    s_has_last_point = false;
+}
+
+void poll()
+{
+    const uint32_t now_ms = sys::millis_now();
+    if (!should_sample_now(now_ms))
+    {
+        return;
+    }
+
+    const auto state = ::platform::ui::gps::get_data();
+    if (append_track_point(state))
+    {
+        s_last_sample_ms = now_ms;
+    }
 }
 
 bool current_path(std::string& out_path)

@@ -64,6 +64,21 @@
         "TRAIL_MATE_BUILD_LINUX_SIM_SHELL": "OFF",
         "TRAIL_MATE_BUILD_LINUX_UCONSOLE_GTK": "ON"
       }
+    },
+    {
+      "name": "linux-cardputer-zero-release",
+      "displayName": "Linux Cardputer Zero package release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cardputer-zero-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF",
+        "TRAIL_MATE_BUILD_LINUX_CARDPUTER_ZERO": "ON",
+        "TRAIL_MATE_BUILD_LINUX_SIM_SHELL": "OFF",
+        "TRAIL_MATE_BUILD_LINUX_UCONSOLE_GTK": "OFF",
+        "TRAIL_MATE_CARDPUTER_ZERO_BUILD_DEVICE": "ON",
+        "TRAIL_MATE_CARDPUTER_ZERO_ENABLE_DEB_PACKAGE": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -86,6 +101,13 @@
     {
       "name": "linux-uconsole-deb",
       "configurePreset": "linux-uconsole-release",
+      "targets": [
+        "package"
+      ]
+    },
+    {
+      "name": "linux-cardputer-zero-deb",
+      "configurePreset": "linux-cardputer-zero-release",
       "targets": [
         "package"
       ]

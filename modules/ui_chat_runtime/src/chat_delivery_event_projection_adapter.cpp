@@ -1,6 +1,6 @@
 #include "ui_chat_runtime/chat_delivery_event_projection_adapter.h"
 
-#include "chat/delivery/legacy_chat_delivery_bridge.h"
+#include "chat/delivery/chat_delivery_message_projection.h"
 #include "chat/usecase/chat_service.h"
 #include "sys/event_bus.h"
 
@@ -9,7 +9,7 @@ namespace ui_chat_runtime
 
 ChatDeliveryEventProjectionAdapter::ChatDeliveryEventProjectionAdapter(
     ::chat::ChatService& chat_service,
-    IChatDeliveryEventPort& delivery_events)
+    ::chat::delivery::IChatDeliveryEventPort& delivery_events)
     : chat_service_(chat_service),
       delivery_events_(delivery_events)
 {
@@ -19,8 +19,8 @@ void ChatDeliveryEventProjectionAdapter::onChatSendResult(
     const ::sys::ChatSendResultEvent& event)
 {
     const auto failure = event.success
-                             ? ::chat::delivery::LegacyChatSendFailure::None
-                             : ::chat::delivery::LegacyChatSendFailure::Unknown;
+                             ? ::chat::delivery::SendFailureKind::None
+                             : ::chat::delivery::SendFailureKind::Unknown;
     (void)publishSendResult(event.msg_id,
                             event.success,
                             failure,
@@ -34,14 +34,14 @@ void ChatDeliveryEventProjectionAdapter::onAckTimeout(
     (void)publishSendResult(
         msg_id,
         false,
-        ::chat::delivery::LegacyChatSendFailure::AckTimeout,
+        ::chat::delivery::SendFailureKind::AckTimeout,
         timestamp_ms);
 }
 
 bool ChatDeliveryEventProjectionAdapter::publishSendResult(
     ::chat::MessageId msg_id,
     bool success,
-    ::chat::delivery::LegacyChatSendFailure failure,
+    ::chat::delivery::SendFailureKind failure,
     uint32_t timestamp_ms)
 {
     if (msg_id == 0)
@@ -55,13 +55,14 @@ bool ChatDeliveryEventProjectionAdapter::publishSendResult(
         return false;
     }
 
-    ::chat::delivery::LegacyChatSendResult result{};
-    result.ref = ::chat::delivery::toDeliveryRef(*message);
-    result.success = success;
-    result.failure = failure;
-    result.timestamp_ms = timestamp_ms;
-    delivery_events_.publishDeliveryEvent(
-        ::chat::delivery::mapLegacyChatSendResult(result));
+    ::chat::delivery::ChatDeliveryEvent event{};
+    event.ref = ::chat::delivery::toDeliveryRef(*message);
+    event.state = success ? ::chat::delivery::DeliveryState::Sent
+                          : ::chat::delivery::DeliveryState::Failed;
+    event.failure = success ? ::chat::delivery::SendFailureKind::None
+                            : failure;
+    event.timestamp_ms = timestamp_ms;
+    delivery_events_.publishDeliveryEvent(event);
     return true;
 }
 

@@ -38,6 +38,16 @@ const char* contourLayerDir(MapTileLayer layer)
         return "major-50";
     case MapTileLayer::ContourMajor25:
         return "major-25";
+    case MapTileLayer::ContourMinor100:
+        return "minor-100";
+    case MapTileLayer::ContourMinor50:
+        return "minor-50";
+    case MapTileLayer::ContourMinor20:
+        return "minor-20";
+    case MapTileLayer::ContourMinor10:
+        return "minor-10";
+    case MapTileLayer::ContourMinor5:
+        return "minor-5";
     default:
         return nullptr;
     }

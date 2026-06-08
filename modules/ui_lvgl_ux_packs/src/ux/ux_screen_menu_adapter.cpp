@@ -19,10 +19,16 @@ ui::menu::MenuScreenId toMenuScreenId(ScreenId id)
         return ui::menu::MenuScreenId::Map;
     case ScreenId::Gps:
         return ui::menu::MenuScreenId::Gps;
+    case ScreenId::SkyPlot:
+        return ui::menu::MenuScreenId::SkyPlot;
     case ScreenId::Team:
         return ui::menu::MenuScreenId::Team;
     case ScreenId::Tracker:
         return ui::menu::MenuScreenId::Tracker;
+    case ScreenId::PcLink:
+        return ui::menu::MenuScreenId::PcLink;
+    case ScreenId::EnergySweep:
+        return ui::menu::MenuScreenId::EnergySweep;
     case ScreenId::Settings:
         return ui::menu::MenuScreenId::Settings;
     case ScreenId::WalkieTalkie:

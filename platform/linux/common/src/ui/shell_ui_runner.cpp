@@ -24,6 +24,7 @@ namespace
 using clock = std::chrono::steady_clock;
 
 constexpr auto kFrameTime = std::chrono::milliseconds(16);
+constexpr std::uint32_t kLvglFunctionKeyF1 = 0x110001U;
 
 std::chrono::steady_clock::time_point g_lvgl_start_time = clock::now();
 
@@ -58,6 +59,8 @@ std::chrono::steady_clock::time_point g_lvgl_start_time = clock::now();
         return LV_KEY_UP;
     case app::InputKey::Down:
         return LV_KEY_DOWN;
+    case app::InputKey::F1:
+        return kLvglFunctionKeyF1;
     case app::InputKey::Unknown:
     case app::InputKey::Fn:
     case app::InputKey::Ctrl:
@@ -314,11 +317,11 @@ void runShellUi(platform::SurfacePresenter& presenter,
                 std::chrono::milliseconds auto_exit_after)
 {
     ShellSession shell;
+    CanvasLvglHost host{shell};
+
     if (!shell.begin())
         throw std::runtime_error(
             "Failed to begin ShellSession for the shared UI shell.");
-
-    CanvasLvglHost host{shell};
 
     auto next_frame = clock::now();
     const auto started_at = next_frame;

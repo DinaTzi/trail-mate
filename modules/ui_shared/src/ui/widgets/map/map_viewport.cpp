@@ -757,6 +757,29 @@ bool project_point(const Runtime& runtime, const GeoPoint& point, lv_point_t& ou
     return impl != nullptr && project_geo_point(*impl, point, out_screen_point);
 }
 
+bool screen_center(const Runtime& runtime, GeoPoint& out_center)
+{
+    out_center = GeoPoint{};
+    const RuntimeImpl* impl = runtime.impl_;
+    if (!impl || !is_runtime_alive(*impl) || !impl->anchor.valid)
+    {
+        return false;
+    }
+
+    double lat = 0.0;
+    double lon = 0.0;
+    get_screen_center_lat_lng(impl->tile_ctx, lat, lon);
+    if (!std::isfinite(lat) || !std::isfinite(lon))
+    {
+        return false;
+    }
+
+    out_center.valid = true;
+    out_center.lat = lat;
+    out_center.lon = lon;
+    return true;
+}
+
 bool preview_project_point(lv_obj_t* viewport_root, const Model& model, const GeoPoint& point, lv_point_t& out_screen_point)
 {
     if (!viewport_root || !lv_obj_is_valid(viewport_root) || !model.focus_point.valid || !point.valid)

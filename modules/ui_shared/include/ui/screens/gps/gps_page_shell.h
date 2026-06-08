@@ -8,12 +8,28 @@
 #include "lvgl.h"
 #include "ui/page/page_host.h"
 
+#include <stdint.h>
+
 namespace gps::ui::shell
 {
 
 using Host = ::ui::page::Host;
 
+enum class Projection : uint8_t
+{
+    Map = 0,
+    GpsStatus,
+};
+
+struct RouteSpec
+{
+    const Host* host = nullptr;
+    Projection projection = Projection::Map;
+};
+
 void enter(void* user_data, lv_obj_t* parent);
 void exit(void* user_data, lv_obj_t* parent);
+void enter_route(const RouteSpec* spec, lv_obj_t* parent);
+void exit_route(const RouteSpec* spec, lv_obj_t* parent);
 
 } // namespace gps::ui::shell

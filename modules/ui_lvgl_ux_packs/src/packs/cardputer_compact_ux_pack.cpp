@@ -34,9 +34,9 @@ const UxFeatureSet& CardputerCompactUxPack::features() const
         true,
         true,
         true,
+        true,
         false,
-        false,
-        false,
+        true,
     };
     return features;
 }
@@ -48,9 +48,11 @@ void CardputerCompactUxPack::buildScreens(ScreenRegistry& out) const
     (void)out.add({ScreenId::Chat, "Chat", true});
     (void)out.add({ScreenId::Contacts, "Contacts", true});
     (void)out.add({ScreenId::Map, "Map", true});
-    (void)out.add({ScreenId::Gps, "GPS", true});
+    (void)out.add({ScreenId::SkyPlot, "Sky Plot", true});
     (void)out.add({ScreenId::Team, "Team", true});
     (void)out.add({ScreenId::Tracker, "Tracker", true});
+    (void)out.add({ScreenId::WalkieTalkie, "Walkie", true});
+    (void)out.add({ScreenId::Extensions, "Extensions", true});
     (void)out.add({ScreenId::Settings, "Settings", true});
 }
 

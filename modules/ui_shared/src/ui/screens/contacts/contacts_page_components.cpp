@@ -311,23 +311,6 @@ static const char* mesh_protocol_short_label(chat::MeshProtocol protocol)
     return chat::infra::meshProtocolShortName(protocol);
 }
 
-static const char* node_protocol_short_label(chat::contacts::NodeProtocolType protocol)
-{
-    switch (protocol)
-    {
-    case chat::contacts::NodeProtocolType::LXMF:
-        return "LX";
-    case chat::contacts::NodeProtocolType::RNode:
-        return "RN";
-    case chat::contacts::NodeProtocolType::MeshCore:
-        return "MC";
-    case chat::contacts::NodeProtocolType::Meshtastic:
-        return "MT";
-    default:
-        return "";
-    }
-}
-
 static bool node_protocol_to_mesh(chat::contacts::NodeProtocolType protocol, chat::MeshProtocol* out)
 {
     if (!out)

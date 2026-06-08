@@ -16,12 +16,22 @@ int main()
     assert(pack.features().map);
     assert(pack.features().gps);
     assert(pack.features().settings);
-    assert(!pack.features().walkie);
+    assert(pack.features().walkie);
     assert(!pack.features().sstv);
+    assert(pack.features().extensions);
 
     ui_lvgl_ux::ScreenRegistry screens;
     pack.buildScreens(screens);
-    assert(screens.size() == 8);
+    assert(screens.size() == 10);
+    assert(screens.items()[3].id == ui_lvgl_ux::ScreenId::Map);
+    assert(screens.items()[4].id == ui_lvgl_ux::ScreenId::SkyPlot);
+    for (std::size_t index = 0; index < screens.size(); ++index)
+    {
+        assert(screens.items()[index].id != ui_lvgl_ux::ScreenId::Gps);
+        assert(screens.items()[index].id != ui_lvgl_ux::ScreenId::PcLink);
+        assert(screens.items()[index].id != ui_lvgl_ux::ScreenId::EnergySweep);
+        assert(screens.items()[index].id != ui_lvgl_ux::ScreenId::Sstv);
+    }
 
     ui_lvgl_ux::InputBindingSet bindings;
     pack.buildInputBindings(bindings);

@@ -18,7 +18,16 @@ constexpr int kActionBtnPadH = 10;
 int actionButtonHeight()
 {
     const auto& profile = ::ui::page_profile::current();
+    if (profile.dense)
+    {
+        return ::ui::page_profile::resolve_control_button_height();
+    }
     return profile.large_touch_hitbox ? profile.list_item_height : kActionBtnHeight;
+}
+
+int actionButtonPadH()
+{
+    return ::ui::page_profile::is_dense() ? 7 : kActionBtnPadH;
 }
 
 int listItemHeight()
@@ -43,11 +52,13 @@ void TeamPageLvglRenderer::render(
     if (context.body)
     {
         lv_obj_set_style_translate_y(context.body, 0, 0);
-        lv_obj_set_style_pad_top(context.body, 6, 0);
-        lv_obj_set_style_pad_bottom(context.body, 6, 0);
-        lv_obj_set_style_pad_left(context.body, 6, 0);
-        lv_obj_set_style_pad_right(context.body, 6, 0);
-        lv_obj_set_style_pad_row(context.body, 6, 0);
+        const lv_coord_t pad = ::ui::page_profile::is_dense() ? 3 : 6;
+        const lv_coord_t row = ::ui::page_profile::is_dense() ? 2 : 6;
+        lv_obj_set_style_pad_top(context.body, pad, 0);
+        lv_obj_set_style_pad_bottom(context.body, pad, 0);
+        lv_obj_set_style_pad_left(context.body, pad, 0);
+        lv_obj_set_style_pad_right(context.body, pad, 0);
+        lv_obj_set_style_pad_row(context.body, row, 0);
     }
 
     switch (input.page)
@@ -175,11 +186,12 @@ lv_obj_t* TeamPageLvglRenderer::createFittedButton(
     lv_obj_t* btn = lv_btn_create(parent);
     lv_obj_set_height(btn, actionButtonHeight());
     style::apply_button_secondary(btn);
-    lv_obj_set_style_pad_hor(btn, kActionBtnPadH, LV_PART_MAIN);
+    const lv_coord_t pad_h = actionButtonPadH();
+    lv_obj_set_style_pad_hor(btn, pad_h, LV_PART_MAIN);
     lv_obj_t* label = lv_label_create(btn);
     ::ui::i18n::set_label_text(label, text);
     lv_obj_update_layout(label);
-    lv_coord_t width = lv_obj_get_width(label) + (kActionBtnPadH * 2);
+    lv_coord_t width = lv_obj_get_width(label) + (pad_h * 2);
     if (width < ::ui::page_profile::resolve_compact_button_min_width())
     {
         width = ::ui::page_profile::resolve_compact_button_min_width();

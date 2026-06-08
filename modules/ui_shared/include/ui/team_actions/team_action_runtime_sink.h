@@ -22,7 +22,7 @@ namespace ui::team_actions
 //   - build ChatWorkspaceSnapshot
 //   - access LVGL widgets
 //   - map Team to DirectPeer/Channel
-//   - use LegacyChatActionSink
+//   - depend on compatibility chat sinks
 //   - expose raw packet encoding to ChatUiController
 class TeamActionRuntimeSink final : public ITeamActionSink
 {

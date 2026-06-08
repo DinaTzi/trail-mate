@@ -73,8 +73,10 @@ bool LinuxCardputerZeroAppShell::validate() const
            profile->has_touch == facts.touch_present &&
            profile->has_trackball == facts.trackball_present &&
            profile->has_lora == facts.lora_present &&
+           profile->has_gps == facts.gps_present &&
            facts.logical_display_width == 320 &&
            facts.logical_display_height == 170 &&
+           std::strcmp(facts.lora_external_module, "M5Stack Cap LoRa-1262") == 0 &&
            std::strcmp(facts.lora_chip, "sx1262") == 0 &&
            std::strcmp(facts.lora_spidev, "/dev/spidev0.1") == 0 &&
            facts.lora_spi_speed_hz == 500000 &&
@@ -83,6 +85,13 @@ bool LinuxCardputerZeroAppShell::validate() const
            facts.lora_busy_gpio == 22 &&
            facts.lora_dio2_as_rf_switch &&
            facts.lora_dio3_tcxo_voltage &&
+           std::strcmp(facts.gps_external_module, "M5Stack Cap LoRa-1262") == 0 &&
+           std::strcmp(facts.gps_chip, "ATGM336H-6N@AT6668") == 0 &&
+           std::strcmp(facts.gps_protocol, "NMEA 0183 4.1") == 0 &&
+           std::strcmp(facts.gps_transport, "uart") == 0 &&
+           facts.gps_default_baud == 115200 &&
+           facts.gps_rx_gpio == 15 &&
+           facts.gps_tx_gpio == 14 &&
            product_composition::findTargetUxBinding(targetId()) != nullptr &&
            config_.ux_pack_id != nullptr &&
            std::strcmp(config_.ux_pack_id, activeUxPackId()) == 0 &&

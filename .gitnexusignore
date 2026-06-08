@@ -1,0 +1,17 @@
+# Local/generated artifacts
+.codegraph/
+.gitnexus/
+.pio/
+.tmp/
+build/
+builds/
+dist/
+
+# Vendored or dependency-managed trees
+managed_components/
+third_party/
+
+# Tooling caches
+.cache/
+__pycache__/
+*.pyc

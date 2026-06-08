@@ -1,0 +1,75 @@
+FROM debian:bookworm
+
+ARG TRAIL_MATE_CARDPUTER_ZERO_APT_MIRROR=
+ENV DEBIAN_FRONTEND=noninteractive
+
+SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
+
+RUN if [ -n "${TRAIL_MATE_CARDPUTER_ZERO_APT_MIRROR}" ]; then \
+        mirror="${TRAIL_MATE_CARDPUTER_ZERO_APT_MIRROR%/}"; \
+        printf '%s\n' \
+            "deb ${mirror} bookworm main" \
+            "deb ${mirror} bookworm-updates main" \
+            "deb ${mirror}-security bookworm-security main" \
+            > /etc/apt/sources.list; \
+        rm -f /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    apt_options=( \
+        -o Acquire::Retries=8 \
+        -o Acquire::http::Timeout=45 \
+        -o Acquire::https::Timeout=45 \
+        -o Acquire::Queue-Mode=access \
+        -o Acquire::http::Pipeline-Depth=0 \
+        -o Acquire::http::No-Cache=true \
+        -o Acquire::BrokenProxy=true \
+    ); \
+    apt_get() { apt-get "${apt_options[@]}" "$@"; }; \
+    for attempt in 1 2 3 4 5; do \
+        if apt_get update; then \
+            break; \
+        fi; \
+        if [ "${attempt}" -eq 5 ]; then \
+            printf 'Failed to update Cardputer Zero builder APT metadata after %s attempts.\n' "${attempt}" >&2; \
+            exit 1; \
+        fi; \
+        rm -f /var/cache/apt/archives/partial/* || true; \
+        sleep $((attempt * 5)); \
+    done; \
+    apt_install_packages=( \
+        ca-certificates \
+        cmake \
+        dpkg-dev \
+        file \
+        g++ \
+        git \
+        libc6-dev \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libsqlite3-dev \
+        libwayland-bin \
+        libwayland-dev \
+        libxkbcommon-dev \
+        ninja-build \
+        pkg-config \
+        wayland-protocols \
+        binutils \
+    ); \
+    for attempt in 1 2 3 4 5; do \
+        if apt_get install -y --no-install-recommends "${apt_install_packages[@]}"; then \
+            break; \
+        fi; \
+        if [ "${attempt}" -eq 5 ]; then \
+            printf 'Failed to install Cardputer Zero builder dependencies after %s attempts.\n' "${attempt}" >&2; \
+            exit 1; \
+        fi; \
+        rm -f /var/cache/apt/archives/partial/* || true; \
+        apt_get update || true; \
+        sleep $((attempt * 5)); \
+    done
+
+COPY cardputer_zero_deb_package_entrypoint.sh /opt/trailmate/cardputer_zero_deb_package_entrypoint.sh
+RUN chmod 0755 /opt/trailmate/cardputer_zero_deb_package_entrypoint.sh && \
+    mkdir -p /work/source /work/build /work/out
+
+WORKDIR /work/source
+CMD ["/bin/sleep", "infinity"]

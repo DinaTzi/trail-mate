@@ -84,10 +84,10 @@ class UiController : public IChatUiRefreshSink
 
   private:
     lv_obj_t* parent_;
-    // Legacy ownership:
-    // ChatService is still required here for event processing, team legacy
-    // path, key verification, and compatibility refresh flows. Non-team
-    // presentation should migrate toward ChatWorkspaceModel.
+    // Runtime ownership:
+    // ChatService is retained for event processing, Team workflow, key
+    // verification, and controller refresh flows. Presentation state is owned
+    // by ChatWorkspaceModel and runtime projection ports.
     chat::ChatService& service_;
     ::ui::chat::ChatWorkspaceModel& chat_model_;
     ChatTeamWorkflow& team_workflow_;

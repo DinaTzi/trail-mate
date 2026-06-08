@@ -11,6 +11,7 @@
 #include "esp_log.h"
 #include "platform/esp/boards/board_runtime.h"
 #include "platform/esp/idf_common/bsp_runtime.h"
+#include "platform/esp/idf_common/debug/sd_coredump_export.h"
 #include "platform/esp/idf_common/startup_support.h"
 #include "platform/ui/device_runtime.h"
 #include "platform/ui/gps_runtime.h"
@@ -121,6 +122,7 @@ void runEsp32LvglStartupRuntime(const Esp32LvglRuntimeConfig& config)
         ESP_LOGI(config.log_tag, "Boot time restored from hardware RTC");
     }
     (void)platform::esp::idf_common::bsp_runtime::ensure_sdcard_ready();
+    (void)platform::esp::idf_common::debug::export_previous_coredump_to_sd();
 
     ESP_LOGI(config.log_tag, "prepareBootUi begin waking=%d", waking_from_sleep ? 1 : 0);
     if (lockUi(1000))

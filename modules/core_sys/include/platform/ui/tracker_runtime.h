@@ -19,6 +19,7 @@ bool is_supported();
 bool is_recording();
 bool start_recording();
 void stop_recording();
+void poll();
 bool current_path(std::string& out_path);
 bool list_tracks(std::vector<std::string>& out_tracks, std::size_t max_count = 32);
 bool remove_track(const std::string& path);

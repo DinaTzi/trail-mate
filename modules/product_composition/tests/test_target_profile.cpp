@@ -76,6 +76,7 @@ int main()
     assert(cardputer->status ==
            product_composition::TargetSupportStatus::PendingHardwareValidation);
     assert(cardputer->has_lora);
+    assert(cardputer->has_gps);
 
     const auto* gat562 = product_composition::findTargetProfile("gat562_mesh_evb_pro");
     assert(gat562 != nullptr);

@@ -24,6 +24,7 @@ enum class InputKey
     Right,
     Up,
     Down,
+    F1,
 };
 
 struct InputEvent

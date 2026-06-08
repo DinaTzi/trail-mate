@@ -30,7 +30,15 @@ namespace
 constexpr const char* kTag = "ui-menu-layout";
 #endif
 
+#ifndef TRAIL_MATE_MENU_LAYOUT_DIAG
+#define TRAIL_MATE_MENU_LAYOUT_DIAG 0
+#endif
+
+#if TRAIL_MATE_MENU_LAYOUT_DIAG
 #define MENU_LAYOUT_DIAG(...) std::printf("[UI][Menu] " __VA_ARGS__)
+#else
+#define MENU_LAYOUT_DIAG(...)
+#endif
 
 constexpr size_t kMaxMenuApps = 16;
 
@@ -702,12 +710,19 @@ const char* stableIdForScreenId(ui::menu::MenuScreenId screen_id)
     case ui::menu::MenuScreenId::Contacts:
         return "contacts";
     case ui::menu::MenuScreenId::Map:
-    case ui::menu::MenuScreenId::Gps:
         return "map";
+    case ui::menu::MenuScreenId::Gps:
+        return "gps";
+    case ui::menu::MenuScreenId::SkyPlot:
+        return "sky_plot";
     case ui::menu::MenuScreenId::Team:
         return "team";
     case ui::menu::MenuScreenId::Tracker:
         return "tracker";
+    case ui::menu::MenuScreenId::PcLink:
+        return "pc_link";
+    case ui::menu::MenuScreenId::EnergySweep:
+        return "energy_sweep";
     case ui::menu::MenuScreenId::Settings:
         return "settings";
     case ui::menu::MenuScreenId::WalkieTalkie:
@@ -762,6 +777,16 @@ AppScreen* findCatalogAppByStableId(const char* stable_id)
     return nullptr;
 }
 
+AppScreen* findCatalogAppForMenuItem(const ui::menu::MenuItem& item)
+{
+    AppScreen* app = findCatalogAppByStableId(stableIdForScreenId(item.screen_id));
+    if (app == nullptr && item.screen_id == ui::menu::MenuScreenId::Gps)
+    {
+        app = findCatalogAppByStableId("map");
+    }
+    return app;
+}
+
 bool createAppButtonsFromUxMenu(lv_obj_t* panel)
 {
     const ui::menu::MenuModel* ux_menu = s_init_options.ux_menu;
@@ -779,7 +804,7 @@ bool createAppButtonsFromUxMenu(lv_obj_t* panel)
             continue;
         }
 
-        AppScreen* app = findCatalogAppByStableId(stableIdForScreenId(item.screen_id));
+        AppScreen* app = findCatalogAppForMenuItem(item);
         if (app == nullptr || appAlreadyAdded(app, created_count))
         {
             continue;

@@ -8,6 +8,8 @@ test/
 
 .wolf/
 .claude/
+.codegraph/
+.gitnexus/
 
 CLAUDE.md
 

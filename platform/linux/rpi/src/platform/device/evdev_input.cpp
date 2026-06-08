@@ -47,6 +47,7 @@ constexpr auto kKeyMap = std::to_array<KeyMapping>({
     {KEY_BACKSPACE, app::InputKey::Backspace},
     {KEY_TAB, app::InputKey::Tab},
     {KEY_ESC, app::InputKey::Power},
+    {KEY_F1, app::InputKey::F1},
 
     // Modifiers (mapped as modifiers – input handling may need expansion later)
     {KEY_LEFTSHIFT, app::InputKey::Shift},
@@ -336,6 +337,9 @@ app::InputEvent makeInputEvent(const KeyMapping& mapping, bool shift_held)
             break;
         case app::InputKey::Alt:
             label_str = "Alt";
+            break;
+        case app::InputKey::F1:
+            label_str = "F1";
             break;
         default:
             break;

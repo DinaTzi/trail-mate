@@ -34,8 +34,7 @@
 #include "ui/localization.h"
 #include "ui/menu/menu_layout.h"
 #include "ui/page/page_profile.h"
-#include "ui/presentation_sources/legacy_settings_action_sink.h"
-#include "ui/presentation_sources/legacy_settings_source.h"
+#include "ui/presentation_sources/runtime_settings_source.h"
 #include "ui/screens/settings/settings_page_components.h"
 #include "ui/screens/settings/settings_page_input.h"
 #include "ui/screens/settings/settings_page_layout.h"
@@ -150,8 +149,8 @@ static lv_obj_t* s_gps_diagnostics_label = nullptr;
 static ::ui::settings::SettingsModel& settings_model()
 {
     static ::ui::settings::SettingsModel model(
-        ::ui::presentation_sources::legacy_settings_source(),
-        ::ui::presentation_sources::legacy_settings_action_sink());
+        ::ui::presentation_sources::runtime_settings_source(),
+        ::ui::presentation_sources::runtime_settings_action_sink());
     return model;
 }
 
@@ -487,8 +486,10 @@ static void configure_list_item_button(lv_obj_t* btn)
     }
 
     lv_obj_set_size(btn, LV_PCT(100), resolve_settings_list_item_height());
-    lv_obj_set_style_pad_left(btn, 10, LV_PART_MAIN);
-    lv_obj_set_style_pad_right(btn, 10, LV_PART_MAIN);
+    const bool dense = ::ui::page_profile::is_dense();
+    lv_obj_set_style_pad_left(btn, dense ? 6 : 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(btn, dense ? 6 : 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(btn, dense ? 4 : 8, LV_PART_MAIN);
     lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_SPACE_BETWEEN,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -511,9 +512,21 @@ static void create_item_content(settings::ui::ItemWidget& widget, lv_obj_t* btn)
     lv_obj_t* label = lv_label_create(btn);
     ::ui::i18n::set_label_text(label, widget.def->label);
     style::apply_label_primary(label);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+    if (::ui::page_profile::is_dense())
+    {
+        lv_obj_set_width(label, 0);
+        lv_obj_set_flex_grow(label, 1);
+    }
 
     widget.value_label = lv_label_create(btn);
     style::apply_label_muted(widget.value_label);
+    lv_label_set_long_mode(widget.value_label, LV_LABEL_LONG_DOT);
+    if (::ui::page_profile::is_dense())
+    {
+        lv_obj_set_width(widget.value_label, 72);
+        lv_obj_set_style_text_align(widget.value_label, LV_TEXT_ALIGN_RIGHT, 0);
+    }
     update_item_value(widget);
 }
 
@@ -3267,6 +3280,48 @@ static bool should_show_item(const settings::ui::SettingItem& item)
     }
 
     if (has_pref_key(item, "screen_brightness") && !device_runtime::supports_screen_brightness())
+    {
+        return false;
+    }
+    if (has_pref_key(item, "screen_timeout") && !screen_runtime::supports_app_timeout_setting())
+    {
+        return false;
+    }
+    if (has_pref_key(item, "gps_init_baud") && !gps_runtime::supports_receiver_baud_setting())
+    {
+        return false;
+    }
+    if ((has_pref_key(item, "gps_init_probe_ms") ||
+         has_pref_key(item, "gps_init_profile") ||
+         has_pref_key(item, "gps_init_rxm") ||
+         has_pref_key(item, "gps_init_gnss") ||
+         has_pref_key(item, "gps_init_nmea")) &&
+        !gps_runtime::supports_receiver_init_policy_settings())
+    {
+        return false;
+    }
+    if ((has_pref_key(item, "gps_mode") ||
+         has_pref_key(item, "gps_sat_mask") ||
+         has_pref_key(item, "gps_strategy")) &&
+        !gps_runtime::supports_gnss_runtime_settings())
+    {
+        return false;
+    }
+    if (has_pref_key(item, "gps_interval") && !gps_runtime::supports_collection_interval_setting())
+    {
+        return false;
+    }
+    if (has_pref_key(item, "gps_alt_ref") && !gps_runtime::supports_altitude_reference_setting())
+    {
+        return false;
+    }
+    if (has_pref_key(item, "gps_coord_fmt") && !gps_runtime::supports_coordinate_format_setting())
+    {
+        return false;
+    }
+    if ((has_pref_key(item, "external_nmea") ||
+         has_pref_key(item, "external_nmea_sent")) &&
+        !gps_runtime::supports_external_nmea_output_setting())
     {
         return false;
     }

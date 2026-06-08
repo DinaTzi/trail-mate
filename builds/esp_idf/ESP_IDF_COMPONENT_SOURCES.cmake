@@ -18,6 +18,7 @@ set(TRAILMATE_ESP_IDF_PRODUCT_COMPOSITION_SOURCES
     "${TRAILMATE_ROOT}/modules/product_composition/src/target_build_binding.cpp")
 
 set(TRAILMATE_ESP_IDF_PLATFORM_SOURCES
+    "${TRAILMATE_ROOT}/platform/esp/idf_common/src/debug/sd_coredump_export.cpp"
     "${TRAILMATE_ROOT}/platform/esp/radio/meshtastic_radio_adapter.cpp")
 
 set(TRAILMATE_ESP_IDF_FINAL_INCLUDE_DIRS

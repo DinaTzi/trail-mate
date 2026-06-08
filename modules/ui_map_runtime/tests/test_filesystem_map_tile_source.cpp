@@ -92,11 +92,12 @@ void test_directories()
 {
     FakeFileSystem fs;
     fs.dirs.push_back("A:/maps/base/terrain");
-    fs.dirs.push_back("A:/maps/contour/major-100");
+    fs.dirs.push_back("A:/maps/contour/minor-20");
 
     ui::map_tiles::FilesystemMapTileSource source(fs, "A:");
     assert(source.layerDirectoryAvailable(ui::map_tiles::MapTileLayer::Terrain));
     assert(!source.layerDirectoryAvailable(ui::map_tiles::MapTileLayer::Satellite));
+    assert(source.layerDirectoryAvailable(ui::map_tiles::MapTileLayer::ContourMinor20));
     assert(source.anyContourDirectoryAvailable());
 }
 

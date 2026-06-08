@@ -67,7 +67,10 @@ Metrics current_metrics()
     }
     else
     {
-        metrics.filter_panel_width = std::max(metrics.filter_panel_width, 104);
+        metrics.filter_panel_width =
+            ::ui::page_profile::is_dense()
+                ? metrics.filter_panel_width
+                : std::max(metrics.filter_panel_width, 104);
     }
     return metrics;
 }

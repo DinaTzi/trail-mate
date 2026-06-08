@@ -860,8 +860,8 @@ bool generate_profile_png(const MapContourProfile& profile,
         work_dir / ("contours_" + profile_label(profile) + ".tif");
     const auto [r, g, b, a] =
         profile.kind == MapContourKind::Major
-            ? std::array<int, 4>{214, 193, 145, 220}
-            : std::array<int, 4>{167, 149, 108, 190};
+            ? std::array<int, 4>{46, 32, 18, 255}
+            : std::array<int, 4>{96, 68, 42, 235};
 
     std::ostringstream rasterize;
     rasterize << "gdal_rasterize -q ";

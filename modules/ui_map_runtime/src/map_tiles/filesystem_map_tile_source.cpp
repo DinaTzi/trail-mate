@@ -78,6 +78,11 @@ bool FilesystemMapTileSource::anyContourDirectoryAvailable() const
         MapTileLayer::ContourMajor100,
         MapTileLayer::ContourMajor50,
         MapTileLayer::ContourMajor25,
+        MapTileLayer::ContourMinor100,
+        MapTileLayer::ContourMinor50,
+        MapTileLayer::ContourMinor20,
+        MapTileLayer::ContourMinor10,
+        MapTileLayer::ContourMinor5,
     };
 
     for (MapTileLayer layer : kContourLayers)

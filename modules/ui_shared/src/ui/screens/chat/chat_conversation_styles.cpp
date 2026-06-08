@@ -1,6 +1,7 @@
 #if !defined(ARDUINO_T_WATCH_S3)
 #include "ui/screens/chat/chat_conversation_styles.h"
 #include "ui/assets/fonts/font_utils.h"
+#include "ui/page/page_profile.h"
 
 namespace chat::ui::conversation::styles
 {
@@ -39,6 +40,15 @@ void init_once()
 {
     if (inited) return;
     inited = true;
+    const bool dense = ::ui::page_profile::is_dense();
+    const lv_coord_t pad_x = dense ? 4 : kPadX;
+    const lv_coord_t pad_y = dense ? 3 : kPadY;
+    const lv_coord_t gap_y = dense ? 2 : kGapY;
+    const lv_coord_t bubble_pad_x = dense ? 6 : kBubblePadX;
+    const lv_coord_t bubble_pad_y = dense ? 3 : kBubblePadY;
+    const lv_coord_t bubble_radius = dense ? 7 : kBubbleRadius;
+    const lv_font_t* body_font = ::ui::page_profile::resolve_body_font();
+    const lv_font_t* meta_font = ::ui::page_profile::resolve_caption_font();
 
     lv_style_init(&s_root);
     lv_style_set_bg_color(&s_root, lv_color_hex(0xFFF3DF));
@@ -51,21 +61,21 @@ void init_once()
     lv_style_set_bg_color(&s_msg_list, lv_color_hex(0xFFF3DF));
     lv_style_set_bg_opa(&s_msg_list, LV_OPA_COVER);
     lv_style_set_border_width(&s_msg_list, 0);
-    lv_style_set_pad_left(&s_msg_list, kPadX);
-    lv_style_set_pad_right(&s_msg_list, kPadX);
-    lv_style_set_pad_top(&s_msg_list, kPadY);
-    lv_style_set_pad_bottom(&s_msg_list, kPadY);
-    lv_style_set_pad_row(&s_msg_list, kGapY);
+    lv_style_set_pad_left(&s_msg_list, pad_x);
+    lv_style_set_pad_right(&s_msg_list, pad_x);
+    lv_style_set_pad_top(&s_msg_list, pad_y);
+    lv_style_set_pad_bottom(&s_msg_list, pad_y);
+    lv_style_set_pad_row(&s_msg_list, gap_y);
     lv_style_set_radius(&s_msg_list, 0);
 
     lv_style_init(&s_action_bar);
     lv_style_set_bg_color(&s_action_bar, lv_color_hex(0xFFF0D3));
     lv_style_set_bg_opa(&s_action_bar, LV_OPA_COVER);
     lv_style_set_border_width(&s_action_bar, 0);
-    lv_style_set_pad_left(&s_action_bar, 10);
-    lv_style_set_pad_right(&s_action_bar, 10);
-    lv_style_set_pad_top(&s_action_bar, 4);
-    lv_style_set_pad_bottom(&s_action_bar, 4);
+    lv_style_set_pad_left(&s_action_bar, dense ? 4 : 10);
+    lv_style_set_pad_right(&s_action_bar, dense ? 4 : 10);
+    lv_style_set_pad_top(&s_action_bar, dense ? 1 : 4);
+    lv_style_set_pad_bottom(&s_action_bar, dense ? 1 : 4);
 
     lv_style_init(&s_reply_btn);
     lv_style_set_bg_color(&s_reply_btn, lv_color_hex(0xFFF7E9));
@@ -86,22 +96,22 @@ void init_once()
     lv_style_init(&s_row);
     lv_style_set_bg_opa(&s_row, LV_OPA_TRANSP);
     lv_style_set_border_width(&s_row, 0);
-    lv_style_set_pad_top(&s_row, kGapY / 2);
-    lv_style_set_pad_bottom(&s_row, kGapY / 2);
+    lv_style_set_pad_top(&s_row, gap_y / 2);
+    lv_style_set_pad_bottom(&s_row, gap_y / 2);
     lv_style_set_pad_left(&s_row, 0);
     lv_style_set_pad_right(&s_row, 0);
     lv_style_set_radius(&s_row, 0);
-    lv_style_set_pad_column(&s_row, 6);
+    lv_style_set_pad_column(&s_row, dense ? 3 : 6);
 
     lv_style_init(&s_bubble_base);
     lv_style_set_bg_opa(&s_bubble_base, LV_OPA_COVER);
     lv_style_set_border_width(&s_bubble_base, 0);
-    lv_style_set_radius(&s_bubble_base, kBubbleRadius);
-    lv_style_set_pad_left(&s_bubble_base, kBubblePadX);
-    lv_style_set_pad_right(&s_bubble_base, kBubblePadX);
-    lv_style_set_pad_top(&s_bubble_base, kBubblePadY);
-    lv_style_set_pad_bottom(&s_bubble_base, kBubblePadY);
-    lv_style_set_pad_row(&s_bubble_base, 2);
+    lv_style_set_radius(&s_bubble_base, bubble_radius);
+    lv_style_set_pad_left(&s_bubble_base, bubble_pad_x);
+    lv_style_set_pad_right(&s_bubble_base, bubble_pad_x);
+    lv_style_set_pad_top(&s_bubble_base, bubble_pad_y);
+    lv_style_set_pad_bottom(&s_bubble_base, bubble_pad_y);
+    lv_style_set_pad_row(&s_bubble_base, dense ? 1 : 2);
     lv_style_set_pad_column(&s_bubble_base, 0);
     lv_style_set_bg_grad_dir(&s_bubble_base, LV_GRAD_DIR_NONE);
 
@@ -114,17 +124,17 @@ void init_once()
     lv_style_init(&s_bubble_text);
     lv_style_set_text_color(&s_bubble_text, kTextColor);
     lv_style_set_text_align(&s_bubble_text, LV_TEXT_ALIGN_LEFT);
-    lv_style_set_text_font(&s_bubble_text, ::ui::fonts::localized_font(::ui::fonts::ui_chrome_font()));
+    lv_style_set_text_font(&s_bubble_text, ::ui::fonts::localized_font(body_font));
 
     lv_style_init(&s_bubble_time);
     lv_style_set_text_color(&s_bubble_time, lv_color_hex(0x6A5646));
     lv_style_set_text_align(&s_bubble_time, LV_TEXT_ALIGN_LEFT);
-    lv_style_set_text_font(&s_bubble_time, &lv_font_montserrat_14);
+    lv_style_set_text_font(&s_bubble_time, meta_font);
 
     lv_style_init(&s_bubble_status);
     lv_style_set_text_color(&s_bubble_status, lv_color_hex(0xCC0000));
     lv_style_set_text_align(&s_bubble_status, LV_TEXT_ALIGN_LEFT);
-    lv_style_set_text_font(&s_bubble_status, &lv_font_montserrat_14);
+    lv_style_set_text_font(&s_bubble_status, meta_font);
 }
 
 void apply_root(lv_obj_t* root)

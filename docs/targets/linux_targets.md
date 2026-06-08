@@ -35,9 +35,10 @@ absorb GTK, simulator, framebuffer, device-shell, or runtime behavior into
 
 `cardputerzero` is no longer described as a future Raspberry Pi simulator path.
 Its current owner is `apps/linux_cardputer_zero`; the remaining work is real
-Cardputer Zero framebuffer, evdev, per-page 320 x 170 screenshots from the
-Pager-derived UI path, notification daemon session, Fcitx5 session, launch, and
-package validation.
+Cardputer Zero Wayland APPLaunch startup, keyboard mapping, per-page 320 x 170
+screenshots from the Pager-derived UI path, notification daemon session,
+Fcitx5 session, explicit framebuffer/evdev debug fallback, and package
+validation.
 
 ## Non-Goals
 

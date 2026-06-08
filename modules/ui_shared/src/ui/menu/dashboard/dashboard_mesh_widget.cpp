@@ -7,7 +7,7 @@
 #include "platform/ui/device_runtime.h"
 #include "ui/localization.h"
 #include "ui/menu/dashboard/dashboard_state.h"
-#include "ui/presentation_sources/legacy_mesh_status_source.h"
+#include "ui/presentation_sources/runtime_mesh_status_source.h"
 #include "ui_presentation/mesh/mesh_status_model.h"
 
 namespace ui::menu::dashboard
@@ -71,7 +71,7 @@ void create_stat_column(MeshWidgetUi& mesh, lv_obj_t* parent, lv_coord_t x, lv_c
 ::ui::mesh::MeshStatusModel& meshStatusModel()
 {
     static ::ui::mesh::MeshStatusModel model(
-        ::ui::presentation_sources::legacy_mesh_status_source());
+        ::ui::presentation_sources::runtime_mesh_status_source());
     return model;
 }
 

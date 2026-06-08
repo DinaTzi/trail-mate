@@ -1,6 +1,6 @@
 #include "ui/presentation_sources/chat_presentation_source.h"
 
-#include "chat/delivery/legacy_chat_delivery_bridge.h"
+#include "chat/delivery/chat_delivery_message_projection.h"
 #include "chat_presentation_adapters/chat_conversation_mapper.h"
 #include "chat_presentation_adapters/chat_message_mapper.h"
 #include "ui_presentation/common/fixed_text.h"

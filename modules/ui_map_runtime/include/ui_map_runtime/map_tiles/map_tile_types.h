@@ -18,6 +18,11 @@ enum class MapTileLayer : uint8_t
     ContourMajor100,
     ContourMajor50,
     ContourMajor25,
+    ContourMinor100,
+    ContourMinor50,
+    ContourMinor20,
+    ContourMinor10,
+    ContourMinor5,
 };
 
 enum class MapTileFormat : uint8_t
