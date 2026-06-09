@@ -34,6 +34,9 @@ uint32_t radio_rx_done_mask()
 #if defined(RADIOLIB_SX128X_IRQ_RX_DONE)
     mask |= RADIOLIB_SX128X_IRQ_RX_DONE;
 #endif
+#if defined(ARDUINO_LILYGO_LORA_LR1121) && defined(RADIOLIB_LR11X0_IRQ_RX_DONE)
+    mask |= RADIOLIB_LR11X0_IRQ_RX_DONE;
+#endif
     return mask;
 }
 
@@ -57,6 +60,17 @@ uint32_t radio_terminal_irq_mask()
 #endif
 #if defined(RADIOLIB_SX128X_IRQ_TIMEOUT)
     mask |= RADIOLIB_SX128X_IRQ_TIMEOUT;
+#endif
+#if defined(ARDUINO_LILYGO_LORA_LR1121)
+#if defined(RADIOLIB_LR11X0_IRQ_CRC_ERR)
+    mask |= RADIOLIB_LR11X0_IRQ_CRC_ERR;
+#endif
+#if defined(RADIOLIB_LR11X0_IRQ_HEADER_ERR)
+    mask |= RADIOLIB_LR11X0_IRQ_HEADER_ERR;
+#endif
+#if defined(RADIOLIB_LR11X0_IRQ_TIMEOUT)
+    mask |= RADIOLIB_LR11X0_IRQ_TIMEOUT;
+#endif
 #endif
     return mask;
 }
@@ -126,6 +140,26 @@ const char* describe_irq_flags(uint32_t flags, char* buf, size_t len)
 #endif
 #if defined(RADIOLIB_SX128X_IRQ_PREAMBLE_DETECTED)
     append_irq_flag(buf, len, "PREAMBLE", (flags & RADIOLIB_SX128X_IRQ_PREAMBLE_DETECTED) != 0);
+#endif
+#if defined(ARDUINO_LILYGO_LORA_LR1121)
+#if defined(RADIOLIB_LR11X0_IRQ_RX_DONE)
+    append_irq_flag(buf, len, "RX_DONE", (flags & RADIOLIB_LR11X0_IRQ_RX_DONE) != 0);
+#endif
+#if defined(RADIOLIB_LR11X0_IRQ_CRC_ERR)
+    append_irq_flag(buf, len, "CRC_ERR", (flags & RADIOLIB_LR11X0_IRQ_CRC_ERR) != 0);
+#endif
+#if defined(RADIOLIB_LR11X0_IRQ_HEADER_ERR)
+    append_irq_flag(buf, len, "HEADER_ERR", (flags & RADIOLIB_LR11X0_IRQ_HEADER_ERR) != 0);
+#endif
+#if defined(RADIOLIB_LR11X0_IRQ_TIMEOUT)
+    append_irq_flag(buf, len, "TIMEOUT", (flags & RADIOLIB_LR11X0_IRQ_TIMEOUT) != 0);
+#endif
+#if defined(RADIOLIB_LR11X0_IRQ_SYNC_WORD_HEADER_VALID)
+    append_irq_flag(buf, len, "SYNC_HDR", (flags & RADIOLIB_LR11X0_IRQ_SYNC_WORD_HEADER_VALID) != 0);
+#endif
+#if defined(RADIOLIB_LR11X0_IRQ_PREAMBLE_DETECTED)
+    append_irq_flag(buf, len, "PREAMBLE", (flags & RADIOLIB_LR11X0_IRQ_PREAMBLE_DETECTED) != 0);
+#endif
 #endif
     if (buf[0] == '\0')
     {
