@@ -26,7 +26,6 @@
       "-I../../modules/core_chat/third_party/nanopb",
       "-I../../modules/core_sys/include",
       "-I../../modules/core_mesh/include",
-      "-I../../modules/core_phone/include",
       "-I../../platform/shared/include",
       "-I../../platform/nrf52/arduino_common/include"
     ]
@@ -37,9 +36,6 @@
     },
     {
       "name": "core_mesh"
-    },
-    {
-      "name": "core_phone"
     },
     {
       "name": "core_sys"

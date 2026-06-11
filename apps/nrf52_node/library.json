@@ -27,7 +27,6 @@
       "-I../../modules/core_gps/include",
       "-I../../modules/core_sys/include",
       "-I../../modules/core_mesh/include",
-      "-I../../modules/core_phone/include",
       "-I../../modules/ui_mono_128x64/include",
       "-I../../modules/ui_shared/include",
       "-I../../modules/chat_presentation_adapters/include",
@@ -47,9 +46,6 @@
     },
     {
       "name": "core_mesh"
-    },
-    {
-      "name": "core_phone"
     },
     {
       "name": "core_sys"

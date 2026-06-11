@@ -3,6 +3,10 @@
 #include "app/app_config.h"
 #include "chat/runtime/self_identity_policy.h"
 
+#ifndef TRAILMATE_NRF52_BLE_DISABLED
+#define TRAILMATE_NRF52_BLE_DISABLED 1
+#endif
+
 namespace ble
 {
 class BleManager;

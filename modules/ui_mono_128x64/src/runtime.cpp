@@ -21,6 +21,10 @@
 #include <cstdlib>
 #include <cstring>
 
+#ifndef TRAILMATE_NRF52_BLE_DISABLED
+#define TRAILMATE_NRF52_BLE_DISABLED 0
+#endif
+
 namespace ui::mono_128x64
 {
 namespace
@@ -1120,12 +1124,18 @@ void setEncryptEnabled(app::AppConfig& config, bool enabled)
 
 bool loadBlePairingStatus(app::IAppFacade* app, ble::BlePairingStatus* out)
 {
+#if TRAILMATE_NRF52_BLE_DISABLED
+    (void)app;
+    (void)out;
+    return false;
+#else
     if (!app || !out)
     {
         return false;
     }
     ble::BleManager* manager = app->getBleManager();
     return manager ? manager->getPairingStatus(out) : false;
+#endif
 }
 
 enum class BleDisplayState
@@ -1137,6 +1147,10 @@ enum class BleDisplayState
 
 BleDisplayState resolveBleDisplayState(app::IAppFacade* app)
 {
+#if TRAILMATE_NRF52_BLE_DISABLED
+    (void)app;
+    return BleDisplayState::Off;
+#else
     if (!app)
     {
         return BleDisplayState::Off;
@@ -1155,6 +1169,7 @@ BleDisplayState resolveBleDisplayState(app::IAppFacade* app)
     }
 
     return BleDisplayState::On;
+#endif
 }
 
 const char* bleDisplayStateLabel(BleDisplayState state)

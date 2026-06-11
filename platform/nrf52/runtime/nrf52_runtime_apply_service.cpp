@@ -1,6 +1,8 @@
 ﻿#include "platform/nrf52/runtime/nrf52_runtime_apply_service.h"
 
+#if !TRAILMATE_NRF52_BLE_DISABLED
 #include "ble/ble_manager.h"
+#endif
 #include "boards/gat562_mesh_evb_pro/gat562_board.h"
 #include "boards/gat562_mesh_evb_pro/settings_store.h"
 #include "chat/infra/mesh_adapter_router_core.h"
@@ -48,10 +50,14 @@ void RuntimeApplyService::applyMesh(app::AppConfig& config,
     {
         chat_service->setActiveProtocol(config.mesh_protocol);
     }
+#if !TRAILMATE_NRF52_BLE_DISABLED
     if (ble_manager)
     {
         ble_manager->applyProtocol(config.mesh_protocol);
     }
+#else
+    (void)ble_manager;
+#endif
 
     platform::nrf52::debug_console::printf("[gat562][cfg] applyMesh end\n");
 
@@ -78,11 +84,16 @@ void RuntimeApplyService::applyUserInfo(const chat::runtime::EffectiveSelfIdenti
     const bool ble_identity_changed =
         std::strcmp(previous_identity.long_name, current_identity.long_name) != 0 ||
         std::strcmp(previous_identity.short_name, current_identity.short_name) != 0;
+#if !TRAILMATE_NRF52_BLE_DISABLED
     if (ble_identity_changed && ble_manager && ble_manager->isEnabled())
     {
         ble_manager->setEnabled(false);
         ble_manager->setEnabled(true);
     }
+#else
+    (void)ble_manager;
+    (void)ble_identity_changed;
+#endif
 }
 
 void RuntimeApplyService::applyPosition(const app::AppConfig& config,

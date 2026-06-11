@@ -46,6 +46,14 @@ static void recv_cb(const esp_now_recv_info_t* info, const uint8_t* data, int da
         tm_services_record_error(TM_C6_ERROR_PAYLOAD_TOO_LARGE, "espnow_rx_too_large");
         return;
     }
+    if (!tm_services_can_accept_wireless_rx("espnow_low_memory"))
+    {
+        emit_event(TM_C6_ESPNOW_EVENT_RECV_DROPPED,
+                   1,
+                   info != NULL ? info->src_addr : NULL,
+                   TM_C6_ERROR_LOW_MEMORY);
+        return;
+    }
 
     tm_c6_espnow_packet_t packet = {};
     if (info != NULL && info->src_addr != NULL)
@@ -67,6 +75,10 @@ static void recv_cb(const esp_now_recv_info_t* info, const uint8_t* data, int da
     if (xQueueSend(s_rx_queue, &packet, 0) != pdTRUE)
     {
         tm_services_record_error(TM_C6_ERROR_QUEUE_FULL, "espnow_rx_queue_full");
+        emit_event(TM_C6_ESPNOW_EVENT_RECV_DROPPED,
+                   1,
+                   info != NULL ? info->src_addr : NULL,
+                   TM_C6_ERROR_QUEUE_FULL);
     }
 }
 

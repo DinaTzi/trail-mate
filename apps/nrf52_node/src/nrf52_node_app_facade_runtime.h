@@ -2,12 +2,19 @@
 
 #include "app/app_config.h"
 #include "app/app_facades.h"
-#include "ble/ble_manager.h"
 #include "chat/runtime/self_identity_policy.h"
 #include "chat/runtime/self_identity_provider.h"
 #include "platform/nrf52/runtime/nrf52_runtime_apply_service.h"
 
 #include <memory>
+
+#ifndef TRAILMATE_NRF52_BLE_DISABLED
+#define TRAILMATE_NRF52_BLE_DISABLED 1
+#endif
+
+#if !TRAILMATE_NRF52_BLE_DISABLED
+#include "ble/ble_manager.h"
+#endif
 
 namespace chat
 {
@@ -36,8 +43,11 @@ class Gat562Board;
 namespace trailmate::apps::nrf52_node
 {
 
-class AppFacadeRuntime final : public app::IAppBleFacade,
+class AppFacadeRuntime final : public app::IAppBleFacade
+#if !TRAILMATE_NRF52_BLE_DISABLED
+    ,
                                public ble::IBleRuntimeContext
+#endif
 {
   public:
     static AppFacadeRuntime& instance();
@@ -99,12 +109,14 @@ class AppFacadeRuntime final : public app::IAppBleFacade,
     void tickEventRuntime() override;
     void dispatchPendingEvents(std::size_t max_events = 32) override;
 
+#if !TRAILMATE_NRF52_BLE_DISABLED
     const app::AppConfig& bleConfig() const override;
     bool bleEnabled() const override;
     void bleEffectiveUserInfo(char* out_long, std::size_t long_len,
                               char* out_short, std::size_t short_len) const override;
     chat::NodeId bleSelfNodeId() const override;
     app::IAppBleFacade& bleAppFacade() override;
+#endif
 
     const chat::runtime::EffectiveSelfIdentity& effectiveIdentity() const;
 
@@ -133,7 +145,9 @@ class AppFacadeRuntime final : public app::IAppBleFacade,
     std::unique_ptr<chat::IChatStore> chat_store_;
     std::unique_ptr<chat::IMeshAdapter> mesh_router_;
     std::unique_ptr<chat::ChatService> chat_service_;
+#if !TRAILMATE_NRF52_BLE_DISABLED
     std::unique_ptr<ble::BleManager> ble_manager_;
+#endif
     std::unique_ptr<platform::nrf52::runtime::RuntimeApplyService> apply_service_;
     boards::gat562_mesh_evb_pro::Gat562Board* board_ = nullptr;
     chat::ui::IChatUiRuntime* chat_ui_runtime_ = nullptr;

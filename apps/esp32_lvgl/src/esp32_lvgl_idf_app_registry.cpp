@@ -106,6 +106,11 @@ void companion_enter(void* user_data, lv_obj_t* parent)
                     "Wi-Fi",
                     platform::ui::wireless_companion::service_state_name(st.wifi_state));
 
+    add_u32_line(state->root, "BLE uplink", st.ble_uplink_count);
+    add_u32_line(state->root, "BLE events", st.ble_event_count);
+    add_u32_line(state->root, "ESP-NOW uplink", st.espnow_uplink_count);
+    add_u32_line(state->root, "ESP-NOW events", st.espnow_event_count);
+    add_u32_line(state->root, "Wi-Fi events", st.wifi_event_count);
     add_u32_line(state->root, "Firmware", st.firmware_version);
     add_u32_line(state->root, "Free heap", st.free_heap);
 }
