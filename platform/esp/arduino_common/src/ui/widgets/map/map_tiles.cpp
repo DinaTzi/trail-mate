@@ -1917,11 +1917,6 @@ void calculate_required_tiles(TileContext& ctx, double lat, double lng, int zoom
     evict_cache(ctx);
     rebuild_render_queue(ctx);
 
-    // Update GPS marker position after tiles are laid out (rendered after map)
-    // This ensures marker is on top and moves with the map
-    // Note: update_gps_marker_position() is defined in gps_page_map.cpp
-    // It will be called from there after map updates to avoid circular dependencies
-
     // Count tiles to load for logging
     // Count visible tiles that don't have PNG loaded yet (may have placeholder)
     int tiles_to_load = 0;

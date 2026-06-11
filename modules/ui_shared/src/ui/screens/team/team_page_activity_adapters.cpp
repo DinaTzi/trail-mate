@@ -2,8 +2,6 @@
 
 #include "platform/ui/team_ui_store_runtime.h"
 #include "sys/event_bus.h"
-#include "ui/screens/gps/gps_state.h"
-#include "ui/screens/gps/gps_tracker_overlay.h"
 
 namespace team
 {
@@ -60,13 +58,15 @@ bool TeamPageActivityStoreAdapter::appendStructuredChat(
 
 uint32_t TeamPageGpsTrackLoaderAdapter::selectedMemberId() const
 {
-    return g_gps_state.selected_member_id;
+    return 0;
 }
 
 bool TeamPageGpsTrackLoaderAdapter::loadTrackFile(const char* path,
                                                   bool show_toast)
 {
-    return gps_tracker_load_file(path, show_toast);
+    (void)path;
+    (void)show_toast;
+    return false;
 }
 
 void TeamPageUnreadPublisherAdapter::publishTeamUnread(uint32_t unread_count)

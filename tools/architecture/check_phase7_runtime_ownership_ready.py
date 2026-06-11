@@ -2640,13 +2640,17 @@ def check_team_page_activity_sink_boundary() -> int:
             "team_ui_append_member_track",
             "team_ui_get_member_track_path",
             "team_ui_chatlog_append_structured",
-            "g_gps_state.selected_member_id",
-            "gps_tracker_load_file",
             "sys::EventBus::publish",
             "sys::ChatUnreadChangedEvent",
         ]:
             if token not in text:
                 failures += fail(f"Team Page activity adapter source missing token: {token}")
+        for token in [
+            "g_gps_state",
+            "gps_tracker_load_file",
+        ]:
+            if token in text:
+                failures += fail(f"Team Page activity adapter still owns GPS map legacy token: {token}")
 
     if exists(controller):
         text = strip_cpp_comments(read_text(controller))
