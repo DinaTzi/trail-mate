@@ -61,6 +61,10 @@ static const lv_font_t* resolve_top_bar_font(lv_coord_t height)
     {
         return &lv_font_montserrat_16;
     }
+    if (height <= 24)
+    {
+        return ::ui::page_profile::resolve_title_font();
+    }
     return &lv_font_montserrat_14;
 }
 
@@ -69,14 +73,17 @@ void top_bar_init(TopBar& bar, lv_obj_t* parent, const TopBarConfig& config)
     const auto& profile = ::ui::page_profile::current();
     const lv_coord_t resolved_height = resolve_top_bar_height(config);
     const bool large_touch = profile.large_touch_hitbox || resolved_height >= 56;
-    const lv_coord_t side_pad = large_touch ? 18 : (resolved_height >= 40 ? 14 : 10);
-    const lv_coord_t vertical_pad = large_touch ? 10 : (resolved_height >= 40 ? 8 : 6);
-    const lv_coord_t back_btn_height = std::max<lv_coord_t>(large_touch ? 44 : 20,
-                                                            resolved_height - (vertical_pad * 2));
-    const lv_coord_t back_btn_width = std::max<lv_coord_t>(large_touch ? 68 : 44,
-                                                           back_btn_height + (large_touch ? 24 : (resolved_height >= 40 ? 16 : 10)));
+    const bool dense = !large_touch && resolved_height <= 24;
+    const lv_coord_t side_pad = large_touch ? 18 : (dense ? 4 : (resolved_height >= 40 ? 14 : 10));
+    const lv_coord_t vertical_pad = large_touch ? 10 : (dense ? 3 : (resolved_height >= 40 ? 8 : 6));
+    const lv_coord_t back_btn_height = std::max<lv_coord_t>(
+        large_touch ? 44 : (dense ? 16 : 20),
+        resolved_height - (vertical_pad * 2));
+    const lv_coord_t back_btn_width = std::max<lv_coord_t>(
+        large_touch ? 68 : (dense ? 28 : 44),
+        back_btn_height + (large_touch ? 24 : (dense ? 10 : (resolved_height >= 40 ? 16 : 10))));
     const lv_coord_t back_btn_radius = std::max<lv_coord_t>(large_touch ? 16 : 10, back_btn_height / 2);
-    const lv_coord_t right_label_width = large_touch ? 156 : (resolved_height >= 40 ? 120 : 90);
+    const lv_coord_t right_label_width = large_touch ? 156 : (dense ? 72 : (resolved_height >= 40 ? 120 : 90));
     const lv_font_t* text_font = resolve_top_bar_font(resolved_height);
 
     bar.container = lv_obj_create(parent);

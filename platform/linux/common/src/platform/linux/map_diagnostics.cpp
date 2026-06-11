@@ -37,6 +37,20 @@ bool disables_doh(const std::string& value)
            lower == "none" || lower == "disabled";
 }
 
+std::string optional_env_value(const char* specific_name,
+                               const char* shared_name)
+{
+    if (const char* specific = std::getenv(specific_name))
+    {
+        return specific;
+    }
+    if (const char* shared = std::getenv(shared_name))
+    {
+        return shared;
+    }
+    return {};
+}
+
 std::string timestamp_utc()
 {
     using clock = std::chrono::system_clock;
@@ -79,17 +93,27 @@ void append_map_diagnostic(std::string_view category,
 
 std::string map_curl_doh_url()
 {
-    if (const char* specific = std::getenv("TRAIL_MATE_MAP_DOH_URL"))
+    const std::string value =
+        optional_env_value("TRAIL_MATE_MAP_DOH_URL",
+                           "TRAIL_MATE_CURL_DOH_URL");
+    return disables_doh(value) ? std::string() : value;
+}
+
+std::string map_curl_ip_resolve_mode()
+{
+    const std::string value =
+        optional_env_value("TRAIL_MATE_MAP_IP_RESOLVE",
+                           "TRAIL_MATE_CURL_IP_RESOLVE");
+    const std::string lower = lower_copy(value);
+    if (lower == "4" || lower == "v4" || lower == "ipv4")
     {
-        const std::string value = specific;
-        return disables_doh(value) ? std::string() : value;
+        return "ipv4";
     }
-    if (const char* shared = std::getenv("TRAIL_MATE_CURL_DOH_URL"))
+    if (lower == "6" || lower == "v6" || lower == "ipv6")
     {
-        const std::string value = shared;
-        return disables_doh(value) ? std::string() : value;
+        return "ipv6";
     }
-    return "https://1.1.1.1/dns-query";
+    return {};
 }
 
 void apply_map_curl_resolver(CURL* curl)
@@ -99,15 +123,24 @@ void apply_map_curl_resolver(CURL* curl)
         return;
     }
     const std::string doh = map_curl_doh_url();
-    if (doh.empty())
+    if (!doh.empty())
     {
-        return;
-    }
 #if LIBCURL_VERSION_NUM >= 0x073E00
-    curl_easy_setopt(curl, CURLOPT_DOH_URL, doh.c_str());
+        curl_easy_setopt(curl, CURLOPT_DOH_URL, doh.c_str());
 #else
-    (void)doh;
+        (void)doh;
 #endif
+    }
+
+    const std::string ip_mode = map_curl_ip_resolve_mode();
+    if (ip_mode == "ipv4")
+    {
+        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+    }
+    else if (ip_mode == "ipv6")
+    {
+        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V6);
+    }
 }
 
 std::string curl_error_message(CURLcode code, const char* error_buffer)

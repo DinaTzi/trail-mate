@@ -80,6 +80,7 @@ if(TRAIL_MATE_UCONSOLE_BUILD_REAL_GTK_UI AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
         trailmate_add_linux_common(trailmate_uconsole_linux_common)
 
         add_library(trailmate_uconsole_runtime_models
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/presentation_sources/runtime_gps_status_source.cpp"
             "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/presentation_sources/legacy_gps_status_source.cpp"
             "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/presentation_sources/legacy_map_presentation_source.cpp"
             "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/presentation_sources/legacy_map_action_sink.cpp"

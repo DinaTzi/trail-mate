@@ -1,5 +1,7 @@
 #include "ui/components/two_pane_styles.h"
 
+#include "ui/page/page_profile.h"
+
 #if defined(ESP_PLATFORM)
 #include "esp_log.h"
 #endif
@@ -29,6 +31,12 @@ lv_style_t s_item_focused;
 lv_style_t s_label_primary;
 lv_style_t s_label_muted;
 lv_style_t s_label_accent;
+
+lv_style_selector_t selector_for_state(lv_state_t state)
+{
+    return static_cast<lv_style_selector_t>(
+        static_cast<unsigned>(LV_PART_MAIN) | static_cast<unsigned>(state));
+}
 
 } // namespace
 
@@ -67,7 +75,7 @@ void init_once()
     lv_style_set_bg_color(&s_btn_basic, lv_color_hex(kMainPanelBg));
     lv_style_set_border_width(&s_btn_basic, 1);
     lv_style_set_border_color(&s_btn_basic, lv_color_hex(kBorder));
-    lv_style_set_radius(&s_btn_basic, 12);
+    lv_style_set_radius(&s_btn_basic, ::ui::page_profile::current().filter_button_height <= 24 ? 6 : 12);
     lv_style_set_text_color(&s_btn_basic, lv_color_hex(kTextPrimary));
 
     lv_style_init(&s_btn_filter_checked);
@@ -83,7 +91,7 @@ void init_once()
     lv_style_set_bg_color(&s_item_base, lv_color_hex(kMainPanelBg));
     lv_style_set_border_width(&s_item_base, 1);
     lv_style_set_border_color(&s_item_base, lv_color_hex(kBorder));
-    lv_style_set_radius(&s_item_base, 6);
+    lv_style_set_radius(&s_item_base, ::ui::page_profile::current().list_item_height <= 24 ? 4 : 6);
 
     lv_style_init(&s_item_focused);
     lv_style_set_bg_opa(&s_item_focused, LV_OPA_COVER);
@@ -128,17 +136,17 @@ void apply_btn_filter(lv_obj_t* btn)
 {
     init_once();
     lv_obj_add_style(btn, &s_btn_basic, LV_PART_MAIN);
-    lv_obj_add_style(btn, &s_btn_filter_checked, LV_PART_MAIN | LV_STATE_CHECKED);
-    lv_obj_add_style(btn, &s_btn_filter_focused, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_add_style(btn, &s_btn_filter_focused, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+    lv_obj_add_style(btn, &s_btn_filter_checked, selector_for_state(LV_STATE_CHECKED));
+    lv_obj_add_style(btn, &s_btn_filter_focused, selector_for_state(LV_STATE_FOCUSED));
+    lv_obj_add_style(btn, &s_btn_filter_focused, selector_for_state(LV_STATE_FOCUS_KEY));
 }
 
 void apply_list_item(lv_obj_t* item)
 {
     init_once();
     lv_obj_add_style(item, &s_item_base, LV_PART_MAIN);
-    lv_obj_add_style(item, &s_item_focused, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_add_style(item, &s_item_focused, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+    lv_obj_add_style(item, &s_item_focused, selector_for_state(LV_STATE_FOCUSED));
+    lv_obj_add_style(item, &s_item_focused, selector_for_state(LV_STATE_FOCUS_KEY));
 }
 
 void apply_label_primary(lv_obj_t* label)

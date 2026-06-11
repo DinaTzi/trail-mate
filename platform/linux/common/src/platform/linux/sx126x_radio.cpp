@@ -664,7 +664,7 @@ bool Sx126xRadio::initLocked(const Sx126xRadioConfig& config)
         return false;
     }
 
-    online_ = prepareAio2Locked() && probeLocked();
+    online_ = prepareRadioHardwareLocked() && probeLocked();
     if (!online_)
     {
         if (last_error_[0] == '\0')
@@ -969,7 +969,7 @@ bool Sx126xRadio::readRegisterLocked(std::uint16_t addr,
     return readCommandLocked(kCmdReadRegister, prefix, sizeof(prefix), data, size, true);
 }
 
-bool Sx126xRadio::prepareAio2Locked()
+bool Sx126xRadio::prepareRadioHardwareLocked()
 {
 #if !defined(__linux__)
     return false;
@@ -1013,7 +1013,7 @@ bool Sx126xRadio::prepareAio2Locked()
         const std::uint8_t tcxo[4] = {0x02, 0x00, 0x01, 0x40};
         if (!writeCommandLocked(kCmdSetDio3AsTcxoCtrl, tcxo, sizeof(tcxo), true))
         {
-            setErrorStringLocked("AIO2 SX1262 TCXO enable failed: " +
+            setErrorStringLocked("SX1262 TCXO enable failed: " +
                                  describe_radio_config(config_));
             return false;
         }
@@ -1025,7 +1025,7 @@ bool Sx126xRadio::prepareAio2Locked()
         const std::uint8_t dio2 = 0x01;
         if (!writeCommandLocked(kCmdSetDio2AsRfSwitchCtrl, &dio2, 1, true))
         {
-            setErrorStringLocked("AIO2 SX1262 DIO2 RF switch enable failed: " +
+            setErrorStringLocked("SX1262 DIO2 RF switch enable failed: " +
                                  describe_radio_config(config_));
             return false;
         }

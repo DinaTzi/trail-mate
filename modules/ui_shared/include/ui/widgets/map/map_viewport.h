@@ -120,6 +120,7 @@ class Runtime
     friend void apply_overlay(Runtime& runtime, const ui::map::MapOverlaySnapshot& overlay);
     friend void clear(Runtime& runtime);
     friend bool project_point(const Runtime& runtime, const GeoPoint& point, lv_point_t& out_screen_point);
+    friend bool screen_center(const Runtime& runtime, GeoPoint& out_center);
     friend Status status(const Runtime& runtime);
     friend bool take_missing_tile_notice(Runtime& runtime, uint8_t* out_map_source);
     friend void set_gesture_enabled(Runtime& runtime, bool enabled);
@@ -134,6 +135,7 @@ void apply_model(Runtime& runtime, const Model& model);
 void apply_overlay(Runtime& runtime, const ui::map::MapOverlaySnapshot& overlay);
 void clear(Runtime& runtime);
 bool project_point(const Runtime& runtime, const GeoPoint& point, lv_point_t& out_screen_point);
+bool screen_center(const Runtime& runtime, GeoPoint& out_center);
 bool preview_project_point(lv_obj_t* viewport_root, const Model& model, const GeoPoint& point, lv_point_t& out_screen_point);
 bool focus_tile_available(const Model& model);
 Status status(const Runtime& runtime);

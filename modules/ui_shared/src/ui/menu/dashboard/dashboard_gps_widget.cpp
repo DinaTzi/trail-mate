@@ -10,7 +10,7 @@
 #include "sys/clock.h"
 #include "ui/localization.h"
 #include "ui/menu/dashboard/dashboard_state.h"
-#include "ui/presentation_sources/legacy_gps_status_source.h"
+#include "ui/presentation_sources/runtime_gps_status_source.h"
 #include "ui_presentation/gps/gps_status_model.h"
 
 namespace ui::menu::dashboard
@@ -21,7 +21,7 @@ namespace
 ::ui::gps::GpsStatusModel& dashboard_gps_status_model()
 {
     static ::ui::gps::GpsStatusModel model(
-        ::ui::presentation_sources::legacy_gps_status_source());
+        ::ui::presentation_sources::runtime_gps_status_source());
     return model;
 }
 

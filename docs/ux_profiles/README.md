@@ -33,7 +33,7 @@ Phase 8 profiles:
 - `deck_full.md`
 - `pager_compact.md`
 - `watch_quick.md`
-- `cardputer_wide.md`
+- `cardputer_compact.md`
 - `tab5_touch.md`
 - `tiny_node_status.md`
 - `uconsole_desktop.md`

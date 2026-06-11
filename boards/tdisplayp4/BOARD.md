@@ -25,3 +25,7 @@ This record describes hardware facts only.
 - GPS UART present: yes
 - LoRa present: yes
 - keyboard present: no
+- ESP32-C6 companion present: yes
+- ESP32-C6 SDIO link: CLK=18, CMD=19, D0=14, D1=15, D2=16, D3=17
+- ESP32-C6 reset/release control: XL9535 IO14, release high / assert low
+- motion sensor present: yes, ICM20948 at 0x68

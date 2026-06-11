@@ -364,6 +364,7 @@ ScreenSleepHooks adapt_hooks(const Hooks& hooks)
 uint32_t clamp_timeout_ms(uint32_t timeout_ms) { return clampScreenTimeoutMs(timeout_ms); }
 uint32_t timeout_ms() { return getScreenSleepTimeout(); }
 uint16_t timeout_secs() { return readScreenTimeoutSecs(); }
+bool supports_app_timeout_setting() { return true; }
 void set_timeout_ms(uint32_t t) { setScreenSleepTimeout(t); }
 void init(const Hooks& h) { initScreenSleepRuntime(adapt_hooks(h)); }
 bool is_sleeping() { return isScreenSleeping(); }

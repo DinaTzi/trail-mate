@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -10,9 +12,16 @@
 #include <deque>
 #include <random>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#if defined(__linux__)
+#include <spawn.h>
+#include <sys/wait.h>
+extern char** environ;
+#endif
 
 #include "chat/domain/chat_model.h"
 #include "chat/infra/contact_store_core.h"
@@ -28,6 +37,7 @@
 #include "platform/ui/gps_runtime.h"
 #include "platform/ui/settings_store.h"
 #include "platform/ui/team_ui_store_runtime.h"
+#include "platform/ui/tracker_runtime.h"
 #include "sys/clock.h"
 #include "sys/event_bus.h"
 #include "team/ports/i_team_crypto.h"
@@ -208,6 +218,105 @@ bool raw_lora_enabled_for_mode(::platform::linux_runtime::LinuxRuntimeMode mode)
 
     return mode == ::platform::linux_runtime::LinuxRuntimeMode::DeviceRealMesh ||
            LinuxRawLoraMeshAdapter::hardwareCandidatePresent();
+}
+
+bool desktop_notifications_enabled()
+{
+    const char* value = std::getenv("TRAIL_MATE_DESKTOP_NOTIFICATIONS");
+    if (value == nullptr || value[0] == '\0')
+    {
+        return false;
+    }
+    return std::strcmp(value, "freedesktop") == 0 ||
+           std::strcmp(value, "1") == 0 ||
+           std::strcmp(value, "true") == 0 ||
+           std::strcmp(value, "TRUE") == 0 ||
+           std::strcmp(value, "yes") == 0 ||
+           std::strcmp(value, "YES") == 0;
+}
+
+std::string notification_text(const std::string& text, std::size_t max_len)
+{
+    std::string out;
+    out.reserve(std::min(text.size(), max_len));
+    for (const char ch : text)
+    {
+        const auto byte = static_cast<unsigned char>(ch);
+        if (ch == '\r' || ch == '\n' || ch == '\t')
+        {
+            if (!out.empty() && out.back() != ' ')
+            {
+                out.push_back(' ');
+            }
+        }
+        else if (byte >= 0x20U)
+        {
+            out.push_back(ch);
+        }
+        if (out.size() >= max_len)
+        {
+            if (max_len >= 3U)
+            {
+                out.resize(max_len - 3U);
+                out += "...";
+            }
+            break;
+        }
+    }
+    return out.empty() ? "Message received" : out;
+}
+
+std::string chat_notification_summary(const ::chat::ChatMessage& msg)
+{
+    const char* scope = msg.peer == 0 ? "Broadcast" : "Direct";
+    if (msg.from == 0)
+    {
+        return std::string("Trail Mate ") + scope;
+    }
+
+    char node[32] = {};
+    std::snprintf(node,
+                  sizeof(node),
+                  "%08lX",
+                  static_cast<unsigned long>(msg.from));
+    return std::string(scope) + " from " + node;
+}
+
+void send_desktop_notification_async(std::string summary, std::string body)
+{
+#if defined(__linux__)
+    std::thread([summary = std::move(summary), body = std::move(body)]() mutable
+                {
+        const char* urgency = "normal";
+        const char* category = "im.received";
+        char* const argv[] = {
+            const_cast<char*>("notify-send"),
+            const_cast<char*>("-a"),
+            const_cast<char*>("Trail Mate"),
+            const_cast<char*>("-u"),
+            const_cast<char*>(urgency),
+            const_cast<char*>("-c"),
+            const_cast<char*>(category),
+            const_cast<char*>(summary.c_str()),
+            const_cast<char*>(body.c_str()),
+            nullptr,
+        };
+
+        pid_t pid = 0;
+        const int rc = posix_spawnp(&pid, "notify-send", nullptr, nullptr, argv, environ);
+        if (rc != 0)
+        {
+            return;
+        }
+        int status = 0;
+        while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
+        {
+        } })
+        .detach();
+#else
+    (void)summary;
+    (void)body;
+#endif
 }
 
 const ::chat::MeshConfig& mesh_config_for_protocol(
@@ -679,6 +788,12 @@ class LinuxChatEventBusBridge final : public ::chat::ChatService::IncomingMessag
                                            msg.text.c_str(),
                                            rx_meta),
             0);
+        if (desktop_notifications_enabled())
+        {
+            send_desktop_notification_async(
+                chat_notification_summary(msg),
+                notification_text(msg.text, 160U));
+        }
     }
 
   private:
@@ -1081,13 +1196,25 @@ class LinuxLoopbackTeamPairingService final : public ::team::TeamPairingService,
     std::deque<RxPacket> rx_packets_{};
 };
 
-class LinuxNullTrackSource final : public ::team::ITeamTrackSource
+class LinuxGpsTrackSource final : public ::team::ITeamTrackSource
 {
   public:
     bool readTrackPoint(::team::proto::TeamTrackPoint* out_point) override
     {
-        (void)out_point;
-        return false;
+        if (out_point == nullptr)
+        {
+            return false;
+        }
+
+        const auto gps = ::platform::ui::gps::get_data();
+        if (!gps.valid)
+        {
+            return false;
+        }
+
+        out_point->lat_e7 = static_cast<int32_t>(std::llround(gps.lat * 10000000.0));
+        out_point->lon_e7 = static_cast<int32_t>(std::llround(gps.lng * 10000000.0));
+        return true;
     }
 };
 
@@ -1614,7 +1741,7 @@ struct LinuxAppServices::Implementation
     LinuxTeamPairingEventQueue pairing_event_sink;
     LinuxLoopbackTeamPairingTransport pairing_transport;
     LinuxLoopbackTeamPairingService pairing_service;
-    LinuxNullTrackSource track_source;
+    LinuxGpsTrackSource track_source;
     ::team::TeamService team_service;
     ::team::TeamController team_controller;
     ::team::TeamTrackSampler team_track_sampler;
@@ -1750,7 +1877,19 @@ void LinuxAppServices::applyUserInfo()
 
 void LinuxAppServices::applyPositionConfig()
 {
+    platform::ui::gps::set_fallback_mode(
+        impl().demo_world_enabled
+            ? platform::ui::gps::FallbackMode::DemoDefaults
+            : platform::ui::gps::FallbackMode::LiveOnly);
     platform::ui::gps::set_enabled(config_.gps_enabled);
+    platform::ui::gps::GpsReceiverInitConfig receiver_init{};
+    receiver_init.baud = config_.gps_init_baud;
+    receiver_init.probe_ms = config_.gps_init_probe_ms;
+    receiver_init.profile = config_.gps_init_profile;
+    receiver_init.rxm_policy = config_.gps_init_rxm_policy;
+    receiver_init.gnss_policy = config_.gps_init_gnss_policy;
+    receiver_init.nmea_policy = config_.gps_init_nmea_policy;
+    platform::ui::gps::set_receiver_init_config(receiver_init);
     platform::ui::gps::set_collection_interval(config_.gps_interval_ms);
     platform::ui::gps::set_power_strategy(config_.gps_strategy);
     platform::ui::gps::set_gnss_config(config_.gps_mode, config_.gps_sat_mask);
@@ -1758,6 +1897,7 @@ void LinuxAppServices::applyPositionConfig()
                                                 config_.external_nmea_sentence_mask);
     platform::ui::gps::set_motion_idle_timeout(config_.motion_config.idle_timeout_ms);
     platform::ui::gps::set_motion_sensor_id(config_.motion_config.sensor_id);
+    (void)platform::ui::gps::diagnostics();
 }
 
 void LinuxAppServices::applyNetworkLimits()
@@ -1806,7 +1946,7 @@ bool LinuxAppServices::switchMeshProtocol(::chat::MeshProtocol protocol,
     config_.mesh_protocol = protocol;
     if (impl_)
     {
-        impl_->chat_service.setActiveProtocol(protocol);
+        applyMeshConfig();
     }
     if (persist)
     {
@@ -1966,7 +2106,9 @@ void LinuxAppServices::updateCoreServices()
 
     ::team::ui::TeamUiSnapshot snap;
     const bool has_team = ::team::ui::team_ui_snapshot_store().load(snap) && snap.in_team;
+    ::platform::ui::gps::tick_service();
     impl_->team_track_sampler.update(&impl_->team_controller, has_team);
+    ::platform::ui::tracker::poll();
 }
 
 void LinuxAppServices::tickEventRuntime()

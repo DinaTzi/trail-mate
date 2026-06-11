@@ -630,7 +630,7 @@ bool create_display()
 #endif
     disp_cfg.flags.buff_dma = false;
     disp_cfg.flags.buff_spiram = false;
-    disp_cfg.flags.sw_rotate = false;
+    disp_cfg.flags.sw_rotate = true;
 #if LVGL_VERSION_MAJOR >= 9
     disp_cfg.flags.swap_bytes = false;
 #endif
@@ -647,7 +647,7 @@ bool create_display()
         return false;
     }
 
-    lv_display_set_rotation(s_display, LV_DISPLAY_ROTATION_0);
+    lv_display_set_rotation(s_display, LV_DISPLAY_ROTATION_90);
     return true;
 }
 

@@ -101,7 +101,7 @@ bool isTeamConversationId(const chat::ConversationId& conv)
     return conv.channel == kTeamChatChannel && conv.peer == 0;
 }
 
-chat::ConversationMeta legacyConversationMetaFromRow(
+chat::ConversationMeta conversationMetaFromSnapshotRow(
     const ::ui::chat::ConversationRow& row)
 {
     chat::ConversationMeta meta;
@@ -116,8 +116,9 @@ chat::ConversationMeta legacyConversationMetaFromRow(
     return meta;
 }
 
-void appendSnapshotConversationsToLegacy(const ::ui::chat::ChatWorkspaceSnapshot& snapshot,
-                                         std::vector<chat::ConversationMeta>& out)
+void appendSnapshotConversationsToControllerList(
+    const ::ui::chat::ChatWorkspaceSnapshot& snapshot,
+    std::vector<chat::ConversationMeta>& out)
 {
     for (size_t i = 0; i < snapshot.conversation_count; ++i)
     {
@@ -126,13 +127,13 @@ void appendSnapshotConversationsToLegacy(const ::ui::chat::ChatWorkspaceSnapshot
         {
             continue;
         }
-        chat::ConversationMeta meta = legacyConversationMetaFromRow(snapshot.conversations[i]);
+        chat::ConversationMeta meta = conversationMetaFromSnapshotRow(snapshot.conversations[i]);
         meta.id = core_id;
         out.push_back(meta);
     }
 }
 
-bool legacyTeamConversationMetaFromSnapshot(
+bool teamConversationMetaFromSnapshot(
     const ::ui::chat::ChatWorkspaceSnapshot& snapshot,
     chat::ConversationMeta& out)
 {
@@ -840,14 +841,14 @@ void UiController::syncConversationListFromStore()
     cached_conversations_.clear();
     if (loadChatSnapshot())
     {
-        appendSnapshotConversationsToLegacy(chat_snapshot_buffer_,
-                                            cached_conversations_);
+        appendSnapshotConversationsToControllerList(chat_snapshot_buffer_,
+                                                    cached_conversations_);
     }
     normalizeConversationNames(cached_conversations_);
 
     chat::ConversationMeta team_conv;
     if (loadTeamChatSnapshot() &&
-        legacyTeamConversationMetaFromSnapshot(team_chat_snapshot_buffer_, team_conv))
+        teamConversationMetaFromSnapshot(team_chat_snapshot_buffer_, team_conv))
     {
         cached_conversations_.insert(cached_conversations_.begin(), team_conv);
     }

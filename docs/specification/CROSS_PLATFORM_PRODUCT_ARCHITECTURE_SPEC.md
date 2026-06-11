@@ -148,6 +148,11 @@ the actual distinction is platform, board, shell, or product target.
 Capabilities describe available abilities such as LoRa, GPS, BLE, storage,
 display, input, battery, hostlink, and network.
 
+On dual-MCU targets, a capability may be provided by a wireless companion. That
+does not move business authority to the companion. For ESP32-P4 plus ESP32-C6
+products, P4 owns Trail Mate meaning while C6 owns BLE, ESP-NOW, and Wi-Fi
+surface mechanics through HostLink C6.
+
 Authorities describe where mutable truth lives. Examples:
 
 ```text
@@ -208,4 +213,3 @@ move large source trees
 make target manifests runtime configuration
 block CI on the new architecture checker
 ```
-

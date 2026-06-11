@@ -110,7 +110,7 @@ lv_obj_t* create_actions(lv_obj_t* content)
         action_height = control_height;
     }
     lv_obj_set_width(actions, LV_PCT(100));
-    lv_obj_set_height(actions, action_height + 8);
+    lv_obj_set_height(actions, action_height + (profile.dense ? 2 : 8));
     lv_obj_set_flex_flow(actions, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(actions, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     make_non_scrollable(actions);

@@ -299,6 +299,39 @@ none
 Proxy Mode must be declared in target manifests so business code does not infer
 it from platform or board names.
 
+## Wireless Companion
+
+A secondary execution host that owns wireless surface mechanics for a target
+while the main product host owns Trail Mate meaning and mutable business truth.
+
+Current example:
+
+```text
+ESP32-C6 companion on ESP32-P4 targets
+```
+
+The wireless companion may own BLE GAP/GATT, ESP-NOW, Wi-Fi facade mechanics,
+short-lived queues, and HostLink session state. It must not own LoRa, GPS,
+MeshCore/Meshtastic routing, NodeDB, Team final state, message history, maps,
+or business keys.
+
+## HostLink C6
+
+The explicit P4-to-ESP32-C6 frame protocol used by the wireless companion.
+
+HostLink C6 is not the same protocol as the existing Data Exchange HostLink
+USB/CDC protocol. It has its own magic, header, CRC32, frame types, and
+channels. All P4-C6 data must preserve channel identity so P4 can route
+wireless facade bytes to the correct business module.
+
+## Display Orientation Policy
+
+The target-level rule that decides whether the active UI is landscape locked,
+sensor-aware but landscape-only, or sensor auto-rotating.
+
+Motion sensor presence is a board fact. It is not by itself an orientation
+policy. Page code must not make board-specific rotation decisions.
+
 ## Required Distinction
 
 ```text
@@ -322,4 +355,3 @@ Target:
   linux-uconsole-ascii
   linux-headless
 ```
-

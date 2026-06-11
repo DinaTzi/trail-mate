@@ -25,12 +25,22 @@ const ::ui::page_profile::PageLayoutProfile& page_profile()
 
 lv_coord_t panel_gap()
 {
-    return page_profile().large_touch_hitbox ? 6 : 3;
+    const auto& profile = page_profile();
+    if (profile.dense)
+    {
+        return 0;
+    }
+    return profile.large_touch_hitbox ? 6 : 3;
 }
 
 lv_coord_t panel_pad()
 {
-    return page_profile().large_touch_hitbox ? 4 : 3;
+    const auto& profile = page_profile();
+    if (profile.dense)
+    {
+        return 1;
+    }
+    return profile.large_touch_hitbox ? 4 : 3;
 }
 
 inline void make_non_scrollable(lv_obj_t* obj)

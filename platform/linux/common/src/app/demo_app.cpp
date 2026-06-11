@@ -120,6 +120,9 @@ void DemoApp::handleInput(const InputEvent& event) noexcept
     case InputKey::Down:
         status_text_ = "DOWN NAVIGATION";
         break;
+    case InputKey::F1:
+        status_text_ = "HELP REQUESTED";
+        break;
     case InputKey::Unknown:
         status_text_ = "UNKNOWN INPUT";
         break;

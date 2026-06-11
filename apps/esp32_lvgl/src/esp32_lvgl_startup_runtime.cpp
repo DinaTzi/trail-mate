@@ -1,17 +1,18 @@
 #include "esp32_lvgl_startup_runtime.h"
 
+#include "esp32_lvgl_idf_app_runtime_access.h"
 #include "esp32_lvgl_loop_runtime.h"
 
 #if defined(ESP_PLATFORM)
-#include "apps/esp_idf/app_runtime_access.h"
-
 #include "app/app_config.h"
 #include "app/app_facade_access.h"
 #include "board/BoardBase.h"
 #include "esp_log.h"
 #include "platform/esp/boards/board_runtime.h"
 #include "platform/esp/idf_common/bsp_runtime.h"
+#include "platform/esp/idf_common/debug/sd_coredump_export.h"
 #include "platform/esp/idf_common/startup_support.h"
+#include "platform/esp/idf_common/wireless_companion/c6_companion.h"
 #include "platform/ui/device_runtime.h"
 #include "platform/ui/gps_runtime.h"
 #include "platform/ui/screen_runtime.h"
@@ -69,7 +70,7 @@ void applyPlatformRuntimeConfig(const Esp32LvglRuntimeConfig& config)
 ui::startup_shell::Hooks buildShellHooks()
 {
     ui::startup_shell::Hooks hooks{};
-    hooks.messaging = &app::messagingFacade();
+    hooks.messaging = app::hasAppFacade() ? &app::messagingFacade() : nullptr;
     hooks.apps = ui::appCatalog();
     hooks.show_main_menu = menu_show;
     hooks.watch_face = ui::startup_shell::defaultWatchFaceHooks();
@@ -120,7 +121,9 @@ void runEsp32LvglStartupRuntime(const Esp32LvglRuntimeConfig& config)
     {
         ESP_LOGI(config.log_tag, "Boot time restored from hardware RTC");
     }
+    (void)platform::esp::idf_common::wireless_companion::ensure_c6_companion_started();
     (void)platform::esp::idf_common::bsp_runtime::ensure_sdcard_ready();
+    (void)platform::esp::idf_common::debug::export_previous_coredump_to_sd();
 
     ESP_LOGI(config.log_tag, "prepareBootUi begin waking=%d", waking_from_sleep ? 1 : 0);
     if (lockUi(1000))
@@ -134,7 +137,7 @@ void runEsp32LvglStartupRuntime(const Esp32LvglRuntimeConfig& config)
         ESP_LOGW(config.log_tag, "prepareBootUi failed to acquire LVGL lock");
     }
 
-    apps::esp_idf::app_runtime_access::initialize(config);
+    idf_app_runtime_access::initialize(config);
     applyPlatformRuntimeConfig(config);
 
     const ui::startup_shell::Hooks shell_hooks = buildShellHooks();
@@ -152,7 +155,7 @@ void runEsp32LvglStartupRuntime(const Esp32LvglRuntimeConfig& config)
         ESP_LOGW(config.log_tag, "initializeShell failed to acquire LVGL lock");
     }
 
-    const auto& runtime_status = apps::esp_idf::app_runtime_access::status();
+    const auto& runtime_status = idf_app_runtime_access::status();
     ESP_LOGI(config.log_tag,
              "%s runtime status handles=%d lifecycle=%d bound=%d",
              config.target_name,

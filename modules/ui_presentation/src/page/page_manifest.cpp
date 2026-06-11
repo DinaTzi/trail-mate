@@ -71,9 +71,13 @@ constexpr PageManifestItem kUConsoleDesktopItems[] = {
 constexpr PageManifestItem kCardputerCompactItems[] = {
     {PageId::Dashboard, "dashboard", true, true},
     {PageId::Chat, "chat", true, true},
+    {PageId::Contacts, "contacts", true, true},
     {PageId::Map, "map", true, true},
-    {PageId::Gps, "gps", true, true},
+    {PageId::SkyPlot, "sky_plot", true, true},
     {PageId::Team, "team", true, true},
+    {PageId::Tracker, "tracker", true, true},
+    {PageId::WalkieTalkie, "walkie_talkie", true, true},
+    {PageId::Extensions, "extensions", true, true},
     {PageId::Settings, "settings", true, true},
 };
 

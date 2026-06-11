@@ -4,6 +4,8 @@
  */
 
 #include "ui/screens/team/team_page_styles.h"
+#include "ui/assets/fonts/font_utils.h"
+#include "ui/page/page_profile.h"
 
 namespace team
 {
@@ -46,6 +48,15 @@ void init_once()
         return;
     }
     s_inited = true;
+    const bool dense = ::ui::page_profile::is_dense();
+    const lv_coord_t body_pad = dense ? 3 : 6;
+    const lv_coord_t row_gap = dense ? 2 : 6;
+    const lv_coord_t action_pad = dense ? 1 : 4;
+    const lv_coord_t action_gap = dense ? 4 : 6;
+    const lv_coord_t button_radius = dense ? 7 : 12;
+    const lv_coord_t list_radius = dense ? 5 : 8;
+    const lv_font_t* body_font = ::ui::page_profile::resolve_body_font();
+    const lv_font_t* meta_font = ::ui::page_profile::resolve_caption_font();
 
     lv_style_init(&s_root);
     lv_style_set_bg_color(&s_root, lv_color_hex(0xFFF3DF));
@@ -64,39 +75,41 @@ void init_once()
     lv_style_set_bg_opa(&s_content, LV_OPA_COVER);
     lv_style_set_border_width(&s_content, 0);
     lv_style_set_pad_all(&s_content, 0);
-    lv_style_set_pad_top(&s_content, 3);
+    lv_style_set_pad_top(&s_content, dense ? 0 : 3);
 
     lv_style_init(&s_body);
     lv_style_set_bg_color(&s_body, lv_color_hex(0xFFF3DF));
     lv_style_set_bg_opa(&s_body, LV_OPA_COVER);
     lv_style_set_border_width(&s_body, 0);
-    lv_style_set_pad_all(&s_body, 6);
-    lv_style_set_pad_row(&s_body, 6);
+    lv_style_set_pad_all(&s_body, body_pad);
+    lv_style_set_pad_row(&s_body, row_gap);
     lv_style_set_pad_column(&s_body, 0);
 
     lv_style_init(&s_actions);
     lv_style_set_bg_color(&s_actions, lv_color_hex(0xFFF3DF));
     lv_style_set_bg_opa(&s_actions, LV_OPA_COVER);
     lv_style_set_border_width(&s_actions, 0);
-    lv_style_set_pad_all(&s_actions, 4);
+    lv_style_set_pad_all(&s_actions, action_pad);
     lv_style_set_pad_row(&s_actions, 0);
-    lv_style_set_pad_column(&s_actions, 6);
+    lv_style_set_pad_column(&s_actions, action_gap);
 
     lv_style_init(&s_section_label);
     lv_style_set_text_color(&s_section_label, lv_color_hex(kTextMain));
     lv_style_set_text_align(&s_section_label, LV_TEXT_ALIGN_LEFT);
+    lv_style_set_text_font(&s_section_label, ::ui::fonts::localized_font(body_font));
 
     lv_style_init(&s_meta_label);
     lv_style_set_text_color(&s_meta_label, lv_color_hex(kTextSub));
     lv_style_set_text_align(&s_meta_label, LV_TEXT_ALIGN_LEFT);
+    lv_style_set_text_font(&s_meta_label, ::ui::fonts::localized_font(meta_font));
 
     lv_style_init(&s_list_item);
     lv_style_set_bg_color(&s_list_item, lv_color_hex(kListBg));
     lv_style_set_bg_opa(&s_list_item, LV_OPA_COVER);
     lv_style_set_border_width(&s_list_item, 1);
     lv_style_set_border_color(&s_list_item, lv_color_hex(kListBorder));
-    lv_style_set_radius(&s_list_item, 8);
-    lv_style_set_pad_all(&s_list_item, 6);
+    lv_style_set_radius(&s_list_item, list_radius);
+    lv_style_set_pad_all(&s_list_item, dense ? 3 : 6);
 
     lv_style_init(&s_btn_basic);
     lv_style_set_bg_color(&s_btn_basic, lv_color_hex(kBtnBg));
@@ -104,7 +117,7 @@ void init_once()
     lv_style_set_text_color(&s_btn_basic, lv_color_hex(kTextMain));
     lv_style_set_border_width(&s_btn_basic, 1);
     lv_style_set_border_color(&s_btn_basic, lv_color_hex(kBtnBorder));
-    lv_style_set_radius(&s_btn_basic, 12);
+    lv_style_set_radius(&s_btn_basic, button_radius);
 
     lv_style_init(&s_btn_focused);
     lv_style_set_bg_color(&s_btn_focused, lv_color_hex(kBtnBgFoc));

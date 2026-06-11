@@ -1,10 +1,12 @@
 #include "platform/ui/device_runtime.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -45,6 +47,134 @@ bool ensure_storage_root()
 {
     const auto paths = ::platform::linux_runtime::resolve_paths();
     return ::platform::linux_runtime::ensure_directory(paths.sd_root);
+}
+
+std::string trim_copy(std::string value)
+{
+    while (!value.empty() &&
+           (value.back() == '\n' || value.back() == '\r' ||
+            value.back() == ' ' || value.back() == '\t'))
+    {
+        value.pop_back();
+    }
+    std::size_t start = 0;
+    while (start < value.size() &&
+           (value[start] == ' ' || value[start] == '\t'))
+    {
+        ++start;
+    }
+    return start == 0 ? value : value.substr(start);
+}
+
+std::optional<std::string> read_text_file(const std::filesystem::path& path)
+{
+    std::ifstream stream(path);
+    if (!stream.is_open())
+    {
+        return std::nullopt;
+    }
+
+    std::string value;
+    std::getline(stream, value);
+    return trim_copy(value);
+}
+
+std::optional<int> read_int_file(const std::filesystem::path& path)
+{
+    const auto text = read_text_file(path);
+    if (!text)
+    {
+        return std::nullopt;
+    }
+
+    char* end = nullptr;
+    const long parsed = std::strtol(text->c_str(), &end, 10);
+    if (end == text->c_str())
+    {
+        return std::nullopt;
+    }
+    return static_cast<int>(parsed);
+}
+
+bool status_is_charging(const std::string& status)
+{
+    return status == "Charging" ||
+           status == "Full" ||
+           status == "Not charging";
+}
+
+std::optional<BatteryInfo> read_linux_power_supply_battery()
+{
+#if defined(__linux__)
+    const std::filesystem::path root("/sys/class/power_supply");
+    std::error_code ec;
+    if (!std::filesystem::exists(root, ec) || ec)
+    {
+        return std::nullopt;
+    }
+
+    for (const auto& entry : std::filesystem::directory_iterator(root, ec))
+    {
+        if (ec)
+        {
+            break;
+        }
+        const std::filesystem::path dir = entry.path();
+        const auto type = read_text_file(dir / "type");
+        if (type && *type != "Battery")
+        {
+            continue;
+        }
+
+        const auto capacity = read_int_file(dir / "capacity");
+        if (!capacity)
+        {
+            continue;
+        }
+
+        BatteryInfo info{};
+        info.available = true;
+        info.level = std::clamp(*capacity, 0, 100);
+        if (const auto status = read_text_file(dir / "status"))
+        {
+            info.charging = status_is_charging(*status);
+        }
+        return info;
+    }
+#endif
+    return std::nullopt;
+}
+
+std::optional<bool> read_linux_external_power_online()
+{
+#if defined(__linux__)
+    const std::filesystem::path root("/sys/class/power_supply");
+    std::error_code ec;
+    if (!std::filesystem::exists(root, ec) || ec)
+    {
+        return std::nullopt;
+    }
+
+    for (const auto& entry : std::filesystem::directory_iterator(root, ec))
+    {
+        if (ec)
+        {
+            break;
+        }
+        const std::filesystem::path dir = entry.path();
+        const auto type = read_text_file(dir / "type");
+        if (!type || *type == "Battery")
+        {
+            continue;
+        }
+        const auto online = read_int_file(dir / "online");
+        if (online)
+        {
+            return *online > 0;
+        }
+    }
+#endif
+    return std::nullopt;
 }
 
 #if defined(__linux__)
@@ -101,10 +231,25 @@ bool rtc_ready()
 BatteryInfo battery_info()
 {
     BatteryInfo info{};
-    const int level = platform::linux_runtime::env_int(kBatteryLevelEnv, -1);
-    info.available = level >= 0;
-    info.level = level;
-    info.charging = platform::linux_runtime::env_flag(kBatteryChargingEnv);
+    const bool level_env_set = std::getenv(kBatteryLevelEnv) != nullptr;
+    if (level_env_set)
+    {
+        const int level = platform::linux_runtime::env_int(kBatteryLevelEnv, -1);
+        info.available = level >= 0;
+        info.level = level;
+        info.charging = platform::linux_runtime::env_flag(kBatteryChargingEnv);
+        return info;
+    }
+
+    if (const auto battery = read_linux_power_supply_battery())
+    {
+        return *battery;
+    }
+
+    info.available = false;
+    info.level = -1;
+    info.charging = read_linux_external_power_online().value_or(
+        platform::linux_runtime::env_flag(kBatteryChargingEnv));
     return info;
 }
 

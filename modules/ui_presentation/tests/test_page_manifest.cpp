@@ -38,6 +38,24 @@ int main()
     assert(uconsole != nullptr);
     assert(contains(*uconsole, ui::presentation::PageId::Diagnostics));
 
+    const auto* cardputer = ui::presentation::findPageManifest("cardputer_compact_manifest");
+    assert(cardputer != nullptr);
+    assert(cardputer->item_count == 10);
+    assert(contains(*cardputer, ui::presentation::PageId::Dashboard));
+    assert(contains(*cardputer, ui::presentation::PageId::Chat));
+    assert(contains(*cardputer, ui::presentation::PageId::Contacts));
+    assert(contains(*cardputer, ui::presentation::PageId::Map));
+    assert(contains(*cardputer, ui::presentation::PageId::SkyPlot));
+    assert(!contains(*cardputer, ui::presentation::PageId::Gps));
+    assert(contains(*cardputer, ui::presentation::PageId::Team));
+    assert(contains(*cardputer, ui::presentation::PageId::Tracker));
+    assert(!contains(*cardputer, ui::presentation::PageId::PcLink));
+    assert(!contains(*cardputer, ui::presentation::PageId::Sstv));
+    assert(!contains(*cardputer, ui::presentation::PageId::EnergySweep));
+    assert(contains(*cardputer, ui::presentation::PageId::WalkieTalkie));
+    assert(contains(*cardputer, ui::presentation::PageId::Extensions));
+    assert(contains(*cardputer, ui::presentation::PageId::Settings));
+
     const auto* node = ui::presentation::findPageManifest("node_headless_manifest");
     assert(node != nullptr);
     assert(node->item_count == 2);

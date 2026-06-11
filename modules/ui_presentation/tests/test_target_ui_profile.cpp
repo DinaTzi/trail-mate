@@ -26,6 +26,17 @@ int main()
     assert(uconsole->has_pointer);
     assert(uconsole->has_side_nav);
 
+    const auto* cardputer = ui::presentation::findTargetUiProfile("cardputer_compact_ui");
+    assert(cardputer != nullptr);
+    assert(cardputer->screen_width == 320);
+    assert(cardputer->screen_height == 170);
+    assert(cardputer->display_class == ui::presentation::DisplayClass::WideLandscape);
+    assert(cardputer->input_class == ui::presentation::InputClass::Keyboard);
+    assert(cardputer->layout_class == ui::presentation::LayoutClass::CardputerCompact);
+    assert(cardputer->has_physical_keyboard);
+    assert(!cardputer->has_touch);
+    assert(std::strcmp(cardputer->page_manifest_id, "cardputer_compact_manifest") == 0);
+
     const auto* node = ui::presentation::findTargetUiProfile("node_headless_ui");
     assert(node != nullptr);
     assert(node->display_class == ui::presentation::DisplayClass::Headless);

@@ -25,6 +25,46 @@ uint32_t last_motion_ms()
     return ::gps::gps_get_last_motion_ms();
 }
 
+void tick_service()
+{
+    // ESP GPS is driven by its own runtime task; UI/services consume snapshots.
+}
+
+bool supports_receiver_baud_setting()
+{
+    return true;
+}
+
+bool supports_receiver_init_policy_settings()
+{
+    return true;
+}
+
+bool supports_gnss_runtime_settings()
+{
+    return true;
+}
+
+bool supports_collection_interval_setting()
+{
+    return true;
+}
+
+bool supports_external_nmea_output_setting()
+{
+    return true;
+}
+
+bool supports_altitude_reference_setting()
+{
+    return true;
+}
+
+bool supports_coordinate_format_setting()
+{
+    return true;
+}
+
 bool is_enabled()
 {
     return ::gps::gps_is_enabled();

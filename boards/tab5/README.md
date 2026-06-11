@@ -11,7 +11,13 @@ Current extracted board profile and verified M5-Bus routing for the Tab5 target:
 - Module GNSS sensor bus: shared SYS I2C on `31/32`
 - RS485 UART: `UART1`, `TX=20`, `RX=21`, `DE=34`
 - SDMMC: `D0=39`, `D1=40`, `D2=41`, `D3=42`, `CMD=44`, `CLK=43`
+- ESP32-C6 SDIO2 link reference: `CLK=12`, `CMD=13`, `D0=11`, `D1=10`,
+  `D2=9`, `D3=8`
+- ESP32-C6 reset reference: `GPIO54`, requires validation before runtime use
+  because the current board profile also records `GPIO54` as Port A / Grove
+  I2C SCL
 - Audio I2S: `BCLK=27`, `MCLK=30`, `WS=29`, `DOUT=26`, `DIN=28`
+- Motion sensors: `BMI270+BMM150`
 - M5-Bus LoRa SPI host: `SPI3_HOST` (`2` in ESP-IDF `spi_host_device_t` enum)
 - M5-Bus LoRa SPI: `SCK=5`, `MISO=19`, `MOSI=18`
 - M5-Bus LoRa control: `NSS=35`, `RST=45`, `IRQ=16`, `BUSY=-1`, `PWR_EN=-1`
@@ -32,3 +38,5 @@ Current responsibilities:
 - bind `AppContext` into the Tab5 IDF app shell
 - keep Tab5-specific pin/capability knowledge in `boards/tab5/board_profile.h`
 - own Tab5-specific runtime glue under `boards/tab5/*` rather than `platform/esp/boards/*`
+- describe C6 and motion-sensor hardware facts without deciding BLE facade,
+  Team Mode, or display-orientation product policy

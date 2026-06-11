@@ -46,6 +46,11 @@ uint16_t timeout_secs()
     return static_cast<uint16_t>(timeout_ms() / 1000U);
 }
 
+bool supports_app_timeout_setting()
+{
+    return true;
+}
+
 void set_timeout_ms(uint32_t timeout_ms)
 {
     ::platform::ui::settings_store::put_uint(kSettingsNs, kScreenTimeoutKey, normalize_timeout_ms(timeout_ms));

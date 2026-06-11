@@ -10,27 +10,67 @@
 #include "ui_map_runtime/map_tiles/filesystem_map_tile_source.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <future>
+#include <map>
 #include <string>
+#include <vector>
 
+#include "platform/linux/map_contour_tile_generator.h"
+#include "platform/linux/map_diagnostics.h"
+#include "platform/linux/map_tile_cache.h"
 #include "platform/linux/runtime_paths.h"
+#include "platform/ui/settings_store.h"
 
 namespace
 {
 
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kMaxMercatorLat = 85.05112878;
+constexpr std::size_t kMaxBaseFetchJobs = 3;
+constexpr std::size_t kMaxContourFetchJobs = 1;
+constexpr uint32_t kBaseFetchRetryDelayMs = 30000;
+constexpr uint32_t kContourFetchRetryDelayMs = 120000;
+constexpr const char* kMapSettingsNamespace = "uconsole_map";
+constexpr const char* kEarthdataTokenKey = "earthdata_token";
 
 uint8_t g_requested_map_source = 0;
 bool g_requested_contour_enabled = false;
 bool g_missing_tile_notice_pending = false;
 bool g_missing_tile_notice_emitted = false;
+bool g_contour_token_missing_logged = false;
 uint8_t g_missing_tile_notice_source = 0;
+
+struct BaseTileFetchJob
+{
+    ::platform::linux_runtime::MapTileId tile{};
+    std::string key{};
+    std::future<::platform::linux_runtime::MapTileResult> future{};
+};
+
+struct ContourTileFetchJob
+{
+    ::platform::linux_runtime::MapContourTileId tile{};
+    std::string key{};
+    std::future<::platform::linux_runtime::MapContourGenerationResult> future{};
+};
+
+struct TileFetchRuntime
+{
+    std::vector<BaseTileFetchJob> base_jobs{};
+    std::vector<ContourTileFetchJob> contour_jobs{};
+    std::map<std::string, uint32_t> base_retry_after_ms{};
+    std::map<std::string, uint32_t> contour_retry_after_ms{};
+};
+
+void delete_tile_object(MapTile& tile);
+MapTile* find_tile(TileContext& ctx, int32_t x, int32_t y, int z, uint8_t map_source);
 
 class StdMapTileFileSystem final : public ui::map_tiles::IMapTileFileSystem
 {
@@ -76,6 +116,47 @@ uint32_t now_ms()
         std::chrono::duration_cast<std::chrono::milliseconds>(clock::now().time_since_epoch()).count());
 }
 
+std::string trim_copy(std::string value)
+{
+    auto not_space = [](unsigned char ch)
+    {
+        return std::isspace(ch) == 0;
+    };
+    value.erase(value.begin(),
+                std::find_if(value.begin(), value.end(), not_space));
+    value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(),
+                value.end());
+    return value;
+}
+
+std::string earthdata_token()
+{
+    const char* env_names[] = {
+        "TRAIL_MATE_EARTHDATA_TOKEN",
+        "TRAIL_MATE_EARTH_DATA_TOKEN",
+    };
+    for (const char* name : env_names)
+    {
+        if (const char* value = std::getenv(name))
+        {
+            std::string token = trim_copy(value);
+            if (!token.empty())
+            {
+                return token;
+            }
+        }
+    }
+
+    std::string persisted{};
+    if (::platform::ui::settings_store::get_string(kMapSettingsNamespace,
+                                                   kEarthdataTokenKey,
+                                                   persisted))
+    {
+        return trim_copy(persisted);
+    }
+    return {};
+}
+
 std::filesystem::path default_storage_root()
 {
     return ::platform::linux_runtime::resolve_paths().sd_root;
@@ -94,6 +175,30 @@ ui::map_tiles::FilesystemMapTileSource& tile_source()
         tile_file_system(),
         root.c_str());
     return source;
+}
+
+::platform::linux_runtime::MapTileCache& online_tile_cache()
+{
+    static ::platform::linux_runtime::MapTileCache cache;
+    return cache;
+}
+
+::platform::linux_runtime::MapContourTileStore& contour_tile_store()
+{
+    static ::platform::linux_runtime::MapContourTileStore store;
+    return store;
+}
+
+::platform::linux_runtime::MapContourTileGenerator& contour_tile_generator()
+{
+    static ::platform::linux_runtime::MapContourTileGenerator generator;
+    return generator;
+}
+
+TileFetchRuntime& tile_fetch_runtime()
+{
+    static TileFetchRuntime runtime;
+    return runtime;
 }
 
 uint8_t clamp_tile_zoom(int z)
@@ -119,20 +224,336 @@ ui::map_tiles::MapTileRef base_tile_ref(int z, int x, int y, uint8_t map_source)
     return ref;
 }
 
-bool contour_tile_ref(int z, int x, int y, ui::map_tiles::MapTileRef& out)
+::platform::linux_runtime::MapTileId base_tile_id(int z, int x, int y, uint8_t map_source)
 {
-    bool supported = false;
-    const auto layer = ui::map_tiles::mapTileContourLayerForZoom(z, &supported);
-    if (!supported)
+    ::platform::linux_runtime::MapTileId tile{};
+    tile.source = ::platform::linux_runtime::sanitize_map_base_source(
+        sanitize_map_source(map_source));
+    tile.z = z;
+    tile.x = x;
+    tile.y = y;
+    ::platform::linux_runtime::normalize_map_tile(tile);
+    return tile;
+}
+
+std::string base_fetch_key(const ::platform::linux_runtime::MapTileId& tile)
+{
+    return std::string(::platform::linux_runtime::map_base_source_key(tile.source)) +
+           ":" + std::to_string(tile.z) +
+           ":" + std::to_string(tile.x) +
+           ":" + std::to_string(tile.y);
+}
+
+std::string contour_fetch_key(const ::platform::linux_runtime::MapContourTileId& tile)
+{
+    return ::platform::linux_runtime::map_contour_profile_key(tile.profile) +
+           ":" + std::to_string(tile.z) +
+           ":" + std::to_string(tile.x) +
+           ":" + std::to_string(tile.y);
+}
+
+bool contour_layer_for_profile(
+    const ::platform::linux_runtime::MapContourProfile& profile,
+    ui::map_tiles::MapTileLayer& out)
+{
+    using ::platform::linux_runtime::MapContourKind;
+    if (profile.kind == MapContourKind::Major)
     {
-        return false;
+        switch (profile.interval_m)
+        {
+        case 500:
+            out = ui::map_tiles::MapTileLayer::ContourMajor500;
+            return true;
+        case 200:
+            out = ui::map_tiles::MapTileLayer::ContourMajor200;
+            return true;
+        case 100:
+            out = ui::map_tiles::MapTileLayer::ContourMajor100;
+            return true;
+        case 50:
+            out = ui::map_tiles::MapTileLayer::ContourMajor50;
+            return true;
+        case 25:
+            out = ui::map_tiles::MapTileLayer::ContourMajor25;
+            return true;
+        default:
+            return false;
+        }
     }
 
-    out.layer = layer;
-    out.z = clamp_tile_zoom(z);
-    out.x = static_cast<uint32_t>(x < 0 ? 0 : x);
-    out.y = static_cast<uint32_t>(y < 0 ? 0 : y);
-    return true;
+    switch (profile.interval_m)
+    {
+    case 100:
+        out = ui::map_tiles::MapTileLayer::ContourMinor100;
+        return true;
+    case 50:
+        out = ui::map_tiles::MapTileLayer::ContourMinor50;
+        return true;
+    case 20:
+        out = ui::map_tiles::MapTileLayer::ContourMinor20;
+        return true;
+    case 10:
+        out = ui::map_tiles::MapTileLayer::ContourMinor10;
+        return true;
+    case 5:
+        out = ui::map_tiles::MapTileLayer::ContourMinor5;
+        return true;
+    default:
+        return false;
+    }
+}
+
+std::vector<::platform::linux_runtime::MapContourTileId> contour_tile_ids(
+    int z,
+    int x,
+    int y)
+{
+    const auto profiles = ::platform::linux_runtime::contour_profiles_for_zoom(
+        z,
+        false);
+    std::vector<::platform::linux_runtime::MapContourTileId> out;
+    out.reserve(profiles.size());
+    for (const auto& profile : profiles)
+    {
+        ui::map_tiles::MapTileLayer layer{};
+        if (!contour_layer_for_profile(profile, layer))
+        {
+            continue;
+        }
+        ::platform::linux_runtime::MapContourTileId id{};
+        id.profile = profile;
+        id.z = z;
+        id.x = x;
+        id.y = y;
+        ::platform::linux_runtime::normalize_map_contour_tile(id);
+        out.push_back(id);
+    }
+    return out;
+}
+
+template <typename T>
+bool future_ready(std::future<T>& future)
+{
+    return future.valid() &&
+           future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready;
+}
+
+uint8_t map_source_from_base_id(::platform::linux_runtime::MapBaseSource source)
+{
+    return static_cast<uint8_t>(source);
+}
+
+void mark_visible_tile_for_reload(TileContext& ctx,
+                                  const ::platform::linux_runtime::MapTileId& tile)
+{
+    MapTile* visible = find_tile(ctx,
+                                 tile.x,
+                                 tile.y,
+                                 tile.z,
+                                 map_source_from_base_id(tile.source));
+    if (visible && visible->visible)
+    {
+        delete_tile_object(*visible);
+    }
+}
+
+void mark_visible_contour_for_reload(TileContext& ctx,
+                                     const ::platform::linux_runtime::MapContourTileId& tile)
+{
+    if (!ctx.tiles)
+    {
+        return;
+    }
+
+    for (auto& visible : *ctx.tiles)
+    {
+        if (visible.visible &&
+            visible.z == tile.z &&
+            visible.x == tile.x &&
+            visible.y == tile.y)
+        {
+            delete_tile_object(visible);
+        }
+    }
+}
+
+bool retry_is_active(const std::map<std::string, uint32_t>& retry_after,
+                     const std::string& key,
+                     uint32_t now)
+{
+    const auto it = retry_after.find(key);
+    return it != retry_after.end() && it->second > now;
+}
+
+void schedule_base_tile_fetch(int z, int x, int y, uint8_t map_source)
+{
+    auto& runtime = tile_fetch_runtime();
+    if (runtime.base_jobs.size() >= kMaxBaseFetchJobs)
+    {
+        return;
+    }
+
+    const auto tile = base_tile_id(z, x, y, map_source);
+    if (online_tile_cache().tile_available(tile))
+    {
+        return;
+    }
+
+    const std::string key = base_fetch_key(tile);
+    const uint32_t now = now_ms();
+    if (retry_is_active(runtime.base_retry_after_ms, key, now))
+    {
+        return;
+    }
+
+    const auto already_queued = std::find_if(
+        runtime.base_jobs.begin(),
+        runtime.base_jobs.end(),
+        [&](const BaseTileFetchJob& job)
+        {
+            return job.key == key;
+        });
+    if (already_queued != runtime.base_jobs.end())
+    {
+        return;
+    }
+
+    runtime.base_jobs.push_back(BaseTileFetchJob{
+        tile,
+        key,
+        std::async(std::launch::async,
+                   [tile]()
+                   {
+                       return online_tile_cache().ensure_tile(tile);
+                   })});
+    ::platform::linux_runtime::append_map_diagnostic(
+        "tile",
+        "queued " + key);
+}
+
+void schedule_contour_tile_fetch(int z, int x, int y)
+{
+    auto& runtime = tile_fetch_runtime();
+    if (runtime.contour_jobs.size() >= kMaxContourFetchJobs)
+    {
+        return;
+    }
+
+    const auto tiles = contour_tile_ids(z, x, y);
+    if (tiles.empty())
+    {
+        return;
+    }
+
+    const std::string token = earthdata_token();
+    if (token.empty())
+    {
+        if (!g_contour_token_missing_logged)
+        {
+            g_contour_token_missing_logged = true;
+            ::platform::linux_runtime::append_map_diagnostic(
+                "contour",
+                "skipped: Earthdata token missing");
+        }
+        return;
+    }
+
+    const uint32_t now = now_ms();
+    for (const auto& tile : tiles)
+    {
+        if (contour_tile_store().tile_available(tile))
+        {
+            continue;
+        }
+
+        const std::string key = contour_fetch_key(tile);
+        if (retry_is_active(runtime.contour_retry_after_ms, key, now))
+        {
+            continue;
+        }
+
+        const auto already_queued = std::find_if(
+            runtime.contour_jobs.begin(),
+            runtime.contour_jobs.end(),
+            [&](const ContourTileFetchJob& job)
+            {
+                return job.key == key;
+            });
+        if (already_queued != runtime.contour_jobs.end())
+        {
+            continue;
+        }
+
+        runtime.contour_jobs.push_back(ContourTileFetchJob{
+            tile,
+            key,
+            std::async(std::launch::async,
+                       [tile, token]()
+                       {
+                           return contour_tile_generator().ensure_tiles({tile}, token);
+                       })});
+        ::platform::linux_runtime::append_map_diagnostic(
+            "contour",
+            "queued " + key);
+        return;
+    }
+}
+
+void poll_tile_fetch_jobs(TileContext& ctx)
+{
+    auto& runtime = tile_fetch_runtime();
+    const uint32_t now = now_ms();
+
+    for (auto it = runtime.base_jobs.begin(); it != runtime.base_jobs.end();)
+    {
+        if (!future_ready(it->future))
+        {
+            ++it;
+            continue;
+        }
+
+        const auto result = it->future.get();
+        const bool available =
+            result.status == ::platform::linux_runtime::MapTileStatus::Cached ||
+            result.status == ::platform::linux_runtime::MapTileStatus::Downloaded;
+        if (available)
+        {
+            runtime.base_retry_after_ms.erase(it->key);
+            mark_visible_tile_for_reload(ctx, it->tile);
+        }
+        else
+        {
+            runtime.base_retry_after_ms[it->key] = now + kBaseFetchRetryDelayMs;
+        }
+        it = runtime.base_jobs.erase(it);
+    }
+
+    for (auto it = runtime.contour_jobs.begin(); it != runtime.contour_jobs.end();)
+    {
+        if (!future_ready(it->future))
+        {
+            ++it;
+            continue;
+        }
+
+        const auto result = it->future.get();
+        if (!result.message.empty())
+        {
+            ::platform::linux_runtime::append_map_diagnostic(
+                "contour",
+                result.message);
+        }
+        if (result.generated_tiles > 0 || result.cached_tiles > 0)
+        {
+            runtime.contour_retry_after_ms.erase(it->key);
+            mark_visible_contour_for_reload(ctx, it->tile);
+        }
+        else
+        {
+            runtime.contour_retry_after_ms[it->key] = now + kContourFetchRetryDelayMs;
+        }
+        it = runtime.contour_jobs.erase(it);
+    }
 }
 
 std::filesystem::path build_base_tile_actual_path(int z, int x, int y, uint8_t map_source)
@@ -149,18 +570,70 @@ std::filesystem::path build_base_tile_actual_path(int z, int x, int y, uint8_t m
 
 std::filesystem::path build_contour_tile_actual_path(int z, int x, int y)
 {
-    ui::map_tiles::MapTileRef ref{};
-    if (!contour_tile_ref(z, x, y, ref))
+    const auto tiles = contour_tile_ids(z, x, y);
+    if (tiles.empty())
     {
         return {};
     }
 
-    char path[160]{};
-    if (!tile_source().resolvePath(ref, path, sizeof(path)))
+    return contour_tile_store().existing_tile_path(tiles.front());
+}
+
+struct ContourOverlayPath
+{
+    std::filesystem::path path{};
+    bool major = false;
+};
+
+std::vector<ContourOverlayPath> available_contour_overlay_paths(
+    int z,
+    int x,
+    int y,
+    bool* out_supported,
+    bool* out_complete)
+{
+    const auto tiles = contour_tile_ids(z, x, y);
+    if (out_supported)
     {
-        return {};
+        *out_supported = !tiles.empty();
     }
-    return std::filesystem::path(path);
+    if (out_complete)
+    {
+        *out_complete = !tiles.empty();
+    }
+
+    std::vector<ContourOverlayPath> out;
+    out.reserve(tiles.size());
+    for (const auto& tile : tiles)
+    {
+        if (!contour_tile_store().tile_available(tile))
+        {
+            if (out_complete)
+            {
+                *out_complete = false;
+            }
+            continue;
+        }
+
+        out.push_back(ContourOverlayPath{
+            contour_tile_store().existing_tile_path(tile),
+            tile.profile.kind ==
+                ::platform::linux_runtime::MapContourKind::Major,
+        });
+    }
+
+    std::stable_sort(out.begin(),
+                     out.end(),
+                     [](const ContourOverlayPath& lhs,
+                        const ContourOverlayPath& rhs)
+                     {
+                         if (lhs.major != rhs.major)
+                         {
+                             return !lhs.major && rhs.major;
+                         }
+                         return false;
+                     });
+    return out;
 }
 
 bool build_lvgl_path_from_actual(const std::filesystem::path& actual_path, char* out_path, size_t out_size)
@@ -437,15 +910,30 @@ void create_or_refresh_tile_card(TileContext& ctx, MapTile& tile)
     const auto base_result = tile_source().lookup(
         base_tile_ref(tile.z, static_cast<int>(tile.x), static_cast<int>(tile.y), tile.map_source));
     const bool has_base = base_result.status == ui::map_tiles::MapTileStatus::Available;
+    if (!has_base)
+    {
+        schedule_base_tile_fetch(tile.z,
+                                 static_cast<int>(tile.x),
+                                 static_cast<int>(tile.y),
+                                 tile.map_source);
+    }
 
-    const auto contour_actual_path =
-        g_requested_contour_enabled ? build_contour_tile_actual_path(tile.z, static_cast<int>(tile.x), static_cast<int>(tile.y))
-                                    : std::filesystem::path{};
-    ui::map_tiles::MapTileRef contour_ref{};
-    const bool has_contour =
-        g_requested_contour_enabled &&
-        contour_tile_ref(tile.z, static_cast<int>(tile.x), static_cast<int>(tile.y), contour_ref) &&
-        tile_source().lookup(contour_ref).status == ui::map_tiles::MapTileStatus::Available;
+    bool contour_supported = false;
+    bool contour_complete = false;
+    const auto contour_paths =
+        g_requested_contour_enabled
+            ? available_contour_overlay_paths(tile.z,
+                                              static_cast<int>(tile.x),
+                                              static_cast<int>(tile.y),
+                                              &contour_supported,
+                                              &contour_complete)
+            : std::vector<ContourOverlayPath>{};
+    if (has_base && g_requested_contour_enabled && contour_supported && !contour_complete)
+    {
+        schedule_contour_tile_fetch(tile.z,
+                                    static_cast<int>(tile.x),
+                                    static_cast<int>(tile.y));
+    }
 
     if (!tile.img_obj || !lv_obj_is_valid(tile.img_obj))
     {
@@ -457,7 +945,7 @@ void create_or_refresh_tile_card(TileContext& ctx, MapTile& tile)
     tile.has_png_file = has_base;
     tile.base_missing = !has_base;
     tile.contour_checked = g_requested_contour_enabled;
-    tile.contour_loaded = has_contour;
+    tile.contour_loaded = !g_requested_contour_enabled || !contour_supported || contour_complete;
     tile.last_used_ms = now_ms();
 
     lv_obj_set_pos(tile.img_obj, screen_x, screen_y);
@@ -483,16 +971,16 @@ void create_or_refresh_tile_card(TileContext& ctx, MapTile& tile)
             lv_obj_set_size(image, TILE_SIZE, TILE_SIZE);
             lv_obj_align(image, LV_ALIGN_CENTER, 0, 0);
 
-            if (has_contour)
+            for (const auto& contour_entry : contour_paths)
             {
                 char contour_path[LV_FS_MAX_PATH_LEN];
-                if (build_lvgl_path_from_actual(contour_actual_path, contour_path, sizeof(contour_path)))
+                if (build_lvgl_path_from_actual(contour_entry.path, contour_path, sizeof(contour_path)))
                 {
                     lv_obj_t* contour = lv_image_create(tile.img_obj);
                     lv_image_set_src(contour, contour_path);
                     lv_obj_set_size(contour, TILE_SIZE, TILE_SIZE);
                     lv_obj_align(contour, LV_ALIGN_CENTER, 0, 0);
-                    lv_obj_set_style_opa(contour, LV_OPA_80, 0);
+                    lv_obj_set_style_opa(contour, LV_OPA_COVER, 0);
                 }
             }
             return;
@@ -568,13 +1056,13 @@ bool base_tile_available(int z, int x, int y, uint8_t map_source)
 
 bool map_source_directory_available(uint8_t map_source)
 {
-    return tile_source().layerDirectoryAvailable(
-        ui::map_tiles::mapTileLayerFromBaseSource(sanitize_map_source(map_source)));
+    (void)map_source;
+    return ::platform::linux_runtime::ensure_directory(online_tile_cache().root());
 }
 
 bool contour_directory_available()
 {
-    return tile_source().anyContourDirectoryAvailable();
+    return tile_source().anyContourDirectoryAvailable() || !earthdata_token().empty();
 }
 
 bool take_missing_tile_notice(uint8_t* out_map_source)
@@ -784,6 +1272,16 @@ void calculate_required_tiles(TileContext& ctx, double lat, double lng, int zoom
     const int half_cols = cols / 2 + 1;
     const int half_rows = rows / 2 + 1;
 
+    double center_lat = 0.0;
+    double center_lng = 0.0;
+    get_screen_center_lat_lng(ctx, center_lat, center_lng);
+    int center_tile_x = static_cast<int>(ctx.anchor->gps_tile_x);
+    int center_tile_y = static_cast<int>(ctx.anchor->gps_tile_y);
+    if (std::isfinite(center_lat) && std::isfinite(center_lng))
+    {
+        latLngToTile(center_lat, center_lng, zoom, center_tile_x, center_tile_y);
+    }
+
     for (auto& tile : *ctx.tiles)
     {
         tile.visible = false;
@@ -793,8 +1291,8 @@ void calculate_required_tiles(TileContext& ctx, double lat, double lng, int zoom
     {
         for (int dx = -half_cols; dx <= half_cols; ++dx)
         {
-            int tile_x = static_cast<int>(ctx.anchor->gps_tile_x) + dx;
-            int tile_y = static_cast<int>(ctx.anchor->gps_tile_y) + dy;
+            int tile_x = center_tile_x + dx;
+            int tile_y = center_tile_y + dy;
             normalize_tile(zoom, tile_x, tile_y);
 
             int screen_x = 0;
@@ -856,6 +1354,8 @@ void tile_loader_step(TileContext& ctx)
         return;
     }
 
+    poll_tile_fetch_jobs(ctx);
+
     MapTile* next_tile = nullptr;
     for (auto& tile : *ctx.tiles)
     {
@@ -870,6 +1370,31 @@ void tile_loader_step(TileContext& ctx)
                 next_tile = &tile;
             }
             continue;
+        }
+
+        if (tile.contour_checked != g_requested_contour_enabled)
+        {
+            delete_tile_object(tile);
+            if (!next_tile || tile.priority < next_tile->priority)
+            {
+                next_tile = &tile;
+            }
+            continue;
+        }
+
+        if (tile.base_missing)
+        {
+            schedule_base_tile_fetch(tile.z,
+                                     static_cast<int>(tile.x),
+                                     static_cast<int>(tile.y),
+                                     tile.map_source);
+        }
+
+        if (g_requested_contour_enabled && tile.has_png_file && !tile.contour_loaded)
+        {
+            schedule_contour_tile_fetch(tile.z,
+                                        static_cast<int>(tile.x),
+                                        static_cast<int>(tile.y));
         }
 
         int screen_x = 0;

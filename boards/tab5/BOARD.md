@@ -26,3 +26,7 @@ This record describes hardware facts only.
 - RS485 UART present: yes
 - LoRa present: yes
 - M5-Bus LoRa module routing present: yes
+- ESP32-C6 companion present: yes
+- ESP32-C6 SDIO2 reference: CMD=13, CLK=12, D0=11, D1=10, D2=9, D3=8
+- ESP32-C6 reset reference: GPIO54, requires validation before runtime use
+- motion sensors present: yes, BMI270+BMM150

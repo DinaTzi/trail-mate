@@ -7,18 +7,26 @@
 
 #include "app/app_config.h"
 #include "app/app_facade_access.h"
-#include "ble/ble_manager.h"
+#if !defined(TRAIL_MATE_FINAL_IDF_NO_APP_FACADE)
 #include "chat/usecase/chat_service.h"
+#endif
 #include "platform/ui/tracker_runtime.h"
 #include "platform/ui/wifi_runtime.h"
 #include "sys/clock.h"
 #if !defined(GAT562_NO_TEAM) || !GAT562_NO_TEAM
 #include "platform/ui/team_ui_snapshot_store.h"
 #endif
-#include "ui/presentation_sources/legacy_gps_status_source.h"
+#include "ui/presentation_sources/runtime_gps_status_source.h"
 #include "ui_presentation/gps/gps_status_model.h"
 
 #include <cstdio>
+
+#if __has_include("ble/ble_manager.h")
+#include "ble/ble_manager.h"
+#define TRAIL_MATE_UI_STATUS_HAS_BLE_MANAGER_HEADER 1
+#else
+#define TRAIL_MATE_UI_STATUS_HAS_BLE_MANAGER_HEADER 0
+#endif
 
 extern "C"
 {
@@ -77,7 +85,7 @@ bool s_menu_active = true;
 ::ui::gps::GpsStatusModel& gpsStatusModel()
 {
     static ::ui::gps::GpsStatusModel model(
-        ::ui::presentation_sources::legacy_gps_status_source());
+        ::ui::presentation_sources::runtime_gps_status_source());
     return model;
 }
 
@@ -121,17 +129,26 @@ void refresh_team_cache(bool force = false)
 StatusSnapshot collect_status()
 {
     StatusSnapshot snap{};
-    const auto& cfg = app::configFacade().getConfig();
 
-    snap.route_active = cfg.route_enabled && (cfg.route_path[0] != '\0');
+    if (app::hasAppFacade())
+    {
+        const auto& cfg = app::configFacade().getConfig();
+        snap.route_active = cfg.route_enabled && (cfg.route_path[0] != '\0');
+#if !defined(TRAIL_MATE_FINAL_IDF_NO_APP_FACADE)
+        snap.ble_enabled = app::runtimeFacade().isBleEnabled();
+#if TRAIL_MATE_UI_STATUS_HAS_BLE_MANAGER_HEADER
+        if (auto* ble = app::runtimeFacade().getBleManager())
+        {
+            snap.ble_enabled = ble->isEnabled();
+        }
+#endif
+#endif
+    }
+
     snap.track_recording = platform::ui::tracker::is_recording();
     const auto gps = gpsStatusModel().snapshot();
     snap.gps_enabled = gps.header.valid && gps.receiver_enabled;
     snap.wifi_enabled = platform::ui::wifi::status().enabled;
-    if (auto* ble = app::runtimeFacade().getBleManager())
-    {
-        snap.ble_enabled = ble->isEnabled();
-    }
 
     refresh_team_cache();
     snap.team_active = s_team_cache.team_active;
@@ -292,8 +309,14 @@ void set_menu_active(bool active)
 
 int get_total_unread()
 {
-    chat::ChatService& chat = app::messagingFacade().getChatService();
-    int unread = chat.getTotalUnread();
+    int unread = 0;
+#if !defined(TRAIL_MATE_FINAL_IDF_NO_APP_FACADE)
+    if (app::hasAppFacade())
+    {
+        chat::ChatService& chat = app::messagingFacade().getChatService();
+        unread = chat.getTotalUnread();
+    }
+#endif
     refresh_team_cache();
     return unread + s_team_cache.team_unread;
 }

@@ -57,7 +57,7 @@ inline const lv_font_t* ui_chrome_font()
 {
     return ::ui::page_profile::current().large_touch_hitbox
                ? &lv_font_montserrat_18
-               : &lv_font_montserrat_16;
+               : ::ui::page_profile::resolve_title_font();
 }
 
 inline const lv_font_t* unwrap_localized_font(const lv_font_t* font)

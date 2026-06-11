@@ -2,6 +2,16 @@
 
 #include <algorithm>
 
+#if !defined(LV_FONT_MONTSERRAT_10) || !LV_FONT_MONTSERRAT_10
+#define lv_font_montserrat_10 lv_font_montserrat_12
+#endif
+#if !defined(LV_FONT_MONTSERRAT_12) || !LV_FONT_MONTSERRAT_12
+#define lv_font_montserrat_12 lv_font_montserrat_14
+#endif
+#if !defined(LV_FONT_MONTSERRAT_16) || !LV_FONT_MONTSERRAT_16
+#define lv_font_montserrat_16 lv_font_montserrat_14
+#endif
+
 namespace ui::page_profile
 {
 namespace
@@ -46,6 +56,10 @@ PageLayoutProfile make_pager_profile()
     profile.variant = LayoutVariant::EncoderCompact;
     profile.top_bar_height = 30;
     profile.top_content_gap = 3;
+    profile.title_font = &lv_font_montserrat_16;
+    profile.body_font = &lv_font_montserrat_14;
+    profile.caption_font = &lv_font_montserrat_14;
+    profile.tiny_font = &lv_font_montserrat_12;
     profile.filter_panel_width = 90;
     profile.filter_panel_pad_row = 2;
     profile.filter_button_height = 28;
@@ -79,6 +93,10 @@ PageLayoutProfile make_tdeck_profile()
     profile.variant = LayoutVariant::HybridCompact;
     profile.top_bar_height = 30;
     profile.top_content_gap = 3;
+    profile.title_font = &lv_font_montserrat_16;
+    profile.body_font = &lv_font_montserrat_14;
+    profile.caption_font = &lv_font_montserrat_14;
+    profile.tiny_font = &lv_font_montserrat_12;
     profile.filter_panel_width = 96;
     profile.filter_panel_pad_row = 2;
     profile.filter_button_height = 28;
@@ -112,6 +130,10 @@ PageLayoutProfile make_tab5_profile()
     profile.variant = LayoutVariant::HybridTouchLarge;
     profile.top_bar_height = 64;
     profile.top_content_gap = 12;
+    profile.title_font = &lv_font_montserrat_16;
+    profile.body_font = &lv_font_montserrat_16;
+    profile.caption_font = &lv_font_montserrat_14;
+    profile.tiny_font = &lv_font_montserrat_12;
     profile.content_pad_left = 16;
     profile.content_pad_right = 16;
     profile.content_pad_top = 6;
@@ -142,6 +164,48 @@ PageLayoutProfile make_tab5_profile()
     return profile;
 }
 
+PageLayoutProfile make_cardputer_zero_profile()
+{
+    PageLayoutProfile profile = make_pager_profile();
+    profile.name = "cardputer_zero";
+    profile.variant = LayoutVariant::HybridCompact;
+    profile.dense = true;
+    profile.top_bar_height = 22;
+    profile.top_content_gap = 1;
+    profile.title_font = &lv_font_montserrat_12;
+    profile.body_font = &lv_font_montserrat_12;
+    profile.caption_font = &lv_font_montserrat_10;
+    profile.tiny_font = &lv_font_montserrat_10;
+    profile.content_pad_left = 0;
+    profile.content_pad_right = 0;
+    profile.content_pad_top = 0;
+    profile.content_pad_bottom = 0;
+    profile.filter_panel_width = 78;
+    profile.filter_panel_pad_row = 1;
+    profile.filter_button_height = 24;
+    profile.list_panel_pad_row = 2;
+    profile.list_panel_pad_left = 0;
+    profile.list_panel_pad_right = 0;
+    profile.list_panel_margin_bottom = 1;
+    profile.list_item_height = 24;
+    profile.control_button_height = 24;
+    profile.control_button_min_width = 68;
+    profile.compact_button_min_width = 46;
+    profile.modal_min_width = 150;
+    profile.modal_min_height = 108;
+    profile.modal_margin = 6;
+    profile.modal_pad = 5;
+    profile.popup_title_height = 22;
+    profile.icon_picker_button_size = 44;
+    profile.ime_bar_height = 20;
+    profile.ime_toggle_width = 36;
+    profile.ime_toggle_height = 16;
+    profile.ime_candidate_button_height = 22;
+    profile.ime_keyboard_height = 0;
+    profile.large_touch_hitbox = false;
+    return profile;
+}
+
 PageLayoutProfile make_default_profile(lv_coord_t width, lv_coord_t height)
 {
     if (width >= 700 || height >= 700)
@@ -161,6 +225,8 @@ const PageLayoutProfile& current()
     {
 #if defined(TRAIL_MATE_ESP_BOARD_TAB5)
         return make_tab5_profile();
+#elif defined(TRAIL_MATE_CARDPUTER_ZERO_LINUX)
+        return make_cardputer_zero_profile();
 #elif defined(ARDUINO_T_LORA_PAGER)
         return make_pager_profile();
 #elif defined(ARDUINO_T_DECK) || defined(ARDUINO_T_DECK_PRO)
@@ -174,6 +240,11 @@ const PageLayoutProfile& current()
 #endif
     }();
     return profile;
+}
+
+bool is_dense()
+{
+    return current().dense;
 }
 
 ResolvedSize resolve_modal_size(lv_coord_t requested_width,
@@ -226,6 +297,26 @@ lv_coord_t resolve_popup_title_height()
 lv_coord_t resolve_icon_picker_button_size()
 {
     return current().icon_picker_button_size;
+}
+
+const lv_font_t* resolve_title_font()
+{
+    return current().title_font ? current().title_font : &lv_font_montserrat_14;
+}
+
+const lv_font_t* resolve_body_font()
+{
+    return current().body_font ? current().body_font : &lv_font_montserrat_14;
+}
+
+const lv_font_t* resolve_caption_font()
+{
+    return current().caption_font ? current().caption_font : resolve_body_font();
+}
+
+const lv_font_t* resolve_tiny_font()
+{
+    return current().tiny_font ? current().tiny_font : resolve_caption_font();
 }
 
 } // namespace ui::page_profile

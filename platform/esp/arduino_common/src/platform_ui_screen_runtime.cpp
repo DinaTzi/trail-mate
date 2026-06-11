@@ -35,6 +35,11 @@ uint16_t timeout_secs()
     return readScreenTimeoutSecs();
 }
 
+bool supports_app_timeout_setting()
+{
+    return true;
+}
+
 void set_timeout_ms(uint32_t timeout_ms)
 {
     setScreenSleepTimeout(timeout_ms);

@@ -58,11 +58,18 @@ constexpr TargetBuildBinding kTargetBuildBindings[] = {
         "linux_cmake",
     },
     {
-        "cardputerzero",
+        "linux_sim",
         "builds/linux_cmake",
         "apps/linux_sim_shell",
         nullptr,
-        "linux_fallback_shell",
+        "linux_simulator",
+    },
+    {
+        "cardputerzero",
+        "builds/linux_cmake",
+        "apps/linux_cardputer_zero",
+        nullptr,
+        "linux_device_shell",
     },
     {
         "gat562_mesh_evb_pro",

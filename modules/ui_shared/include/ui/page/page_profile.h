@@ -24,6 +24,11 @@ struct PageLayoutProfile
 
     lv_coord_t top_bar_height = 30;
     lv_coord_t top_content_gap = 3;
+    const lv_font_t* title_font = nullptr;
+    const lv_font_t* body_font = nullptr;
+    const lv_font_t* caption_font = nullptr;
+    const lv_font_t* tiny_font = nullptr;
+    bool dense = false;
 
     lv_coord_t content_pad_left = 0;
     lv_coord_t content_pad_right = 0;
@@ -69,8 +74,10 @@ struct ResolvedSize
 PageLayoutProfile make_pager_profile();
 PageLayoutProfile make_tdeck_profile();
 PageLayoutProfile make_tab5_profile();
+PageLayoutProfile make_cardputer_zero_profile();
 PageLayoutProfile make_default_profile(lv_coord_t width, lv_coord_t height);
 const PageLayoutProfile& current();
+bool is_dense();
 
 ResolvedSize resolve_modal_size(lv_coord_t requested_width,
                                 lv_coord_t requested_height,
@@ -81,5 +88,9 @@ lv_coord_t resolve_compact_button_min_width();
 lv_coord_t resolve_modal_pad();
 lv_coord_t resolve_popup_title_height();
 lv_coord_t resolve_icon_picker_button_size();
+const lv_font_t* resolve_title_font();
+const lv_font_t* resolve_body_font();
+const lv_font_t* resolve_caption_font();
+const lv_font_t* resolve_tiny_font();
 
 } // namespace ui::page_profile

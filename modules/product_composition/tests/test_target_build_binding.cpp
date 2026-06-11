@@ -8,7 +8,7 @@ int main()
     std::size_t count = 0;
     const auto* all = product_composition::allTargetBuildBindings(&count);
     assert(all != nullptr);
-    assert(count == 9);
+    assert(count == 10);
 
     const auto* bindings = product_composition::esp32LvglTargetBuildBindings(&count);
     assert(bindings != nullptr);
@@ -50,10 +50,17 @@ int main()
     assert(std::strcmp(uconsole->build_entrypoint, "builds/linux_cmake") == 0);
     assert(std::strcmp(uconsole->app_shell, "apps/linux_uconsole_gtk") == 0);
 
+    const auto* linux_sim = product_composition::findTargetBuildBinding("linux_sim");
+    assert(linux_sim != nullptr);
+    assert(std::strcmp(linux_sim->build_entrypoint, "builds/linux_cmake") == 0);
+    assert(std::strcmp(linux_sim->app_shell, "apps/linux_sim_shell") == 0);
+    assert(std::strcmp(linux_sim->status, "linux_simulator") == 0);
+
     const auto* cardputer = product_composition::findTargetBuildBinding("cardputerzero");
     assert(cardputer != nullptr);
     assert(std::strcmp(cardputer->build_entrypoint, "builds/linux_cmake") == 0);
-    assert(std::strcmp(cardputer->app_shell, "apps/linux_sim_shell") == 0);
+    assert(std::strcmp(cardputer->app_shell, "apps/linux_cardputer_zero") == 0);
+    assert(std::strcmp(cardputer->status, "linux_device_shell") == 0);
 
     const auto* gat562 = product_composition::findTargetBuildBinding("gat562_mesh_evb_pro");
     assert(gat562 != nullptr);

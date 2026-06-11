@@ -1,0 +1,56 @@
+include("${CMAKE_CURRENT_LIST_DIR}/../ESP_IDF_COMPONENT_SOURCES.cmake")
+
+set(TRAILMATE_ESP_IDF_PLATFORM_SOURCES
+    ${TRAILMATE_ESP_IDF_PLATFORM_COMMON_SOURCES})
+
+if(TRAIL_MATE_IDF_TARGET STREQUAL "tab5")
+    list(APPEND TRAILMATE_ESP_IDF_PLATFORM_SOURCES
+        ${TRAILMATE_ESP_IDF_TAB5_BOARD_SOURCES})
+elseif(TRAIL_MATE_IDF_TARGET STREQUAL "tdisplayp4_tft" OR TRAIL_MATE_IDF_TARGET STREQUAL "tdisplayp4_amoled")
+    list(APPEND TRAILMATE_ESP_IDF_PLATFORM_SOURCES
+        ${TRAILMATE_ESP_IDF_T_DISPLAY_P4_BOARD_SOURCES})
+endif()
+
+idf_component_register(
+    SRCS
+        "idf_entry.cpp"
+        ${TRAILMATE_ESP_IDF_APP_SHELL_SOURCES}
+        ${TRAILMATE_ESP_IDF_PRODUCT_COMPOSITION_SOURCES}
+        ${TRAILMATE_ESP_IDF_CORE_HOSTLINK_SOURCES}
+        ${TRAILMATE_ESP_IDF_CORE_SYS_SOURCES}
+        ${TRAILMATE_ESP_IDF_UI_SHARED_SOURCES}
+        ${TRAILMATE_ESP_IDF_UI_PRESENTATION_SOURCES}
+        ${TRAILMATE_ESP_IDF_UI_LVGL_UX_PACK_SOURCES}
+        ${TRAILMATE_ESP_IDF_PLATFORM_SOURCES}
+    INCLUDE_DIRS
+        ${TRAILMATE_ESP_IDF_FINAL_INCLUDE_DIRS}
+    REQUIRES
+        driver
+        esp_app_format
+        esp_lcd
+        esp_lvgl_port
+        esp_serial_slave_link
+        esp_timer
+        espcoredump
+        fatfs
+        m5stack_tab5
+        nvs_flash
+        sensor_bmi270
+        t_display_p4
+)
+
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    TRAIL_MATE_LORA_TX_POWER_MAX_DBM=22
+    TRAIL_MATE_FINAL_IDF_NO_APP_FACADE=1)
+
+if(TRAIL_MATE_IDF_TARGET STREQUAL "tab5")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE TRAIL_MATE_ESP_BOARD_TAB5=1)
+elseif(TRAIL_MATE_IDF_TARGET STREQUAL "tdisplayp4_tft")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE TRAIL_MATE_ESP_BOARD_T_DISPLAY_P4=1)
+elseif(TRAIL_MATE_IDF_TARGET STREQUAL "tdisplayp4_amoled")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE
+        TRAIL_MATE_ESP_BOARD_T_DISPLAY_P4=1
+        TRAIL_MATE_ESP_BOARD_T_DISPLAY_P4_AMOLED=1)
+endif()
+
+target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_17)

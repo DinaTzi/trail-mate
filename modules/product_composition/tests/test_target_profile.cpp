@@ -8,7 +8,7 @@ int main()
     std::size_t count = 0;
     const auto* all = product_composition::allTargetProfiles(&count);
     assert(all != nullptr);
-    assert(count == 9);
+    assert(count == 10);
 
     const auto* profiles = product_composition::esp32LvglTargetProfiles(&count);
     assert(profiles != nullptr);
@@ -31,25 +31,45 @@ int main()
     assert(tab5->has_lora);
     assert(tab5->has_gps);
     assert(tab5->has_audio);
+    assert(tab5->has_motion_sensor);
+    assert(tab5->has_wireless_companion);
+    assert(tab5->ble_backend == product_composition::BleBackend::C6Companion);
+    assert(tab5->wireless_companion ==
+           product_composition::WirelessCompanionKind::Esp32C6);
+    assert(tab5->display_orientation_policy ==
+           product_composition::DisplayOrientationPolicy::SensorLandscapeOnly);
 
     const auto* tft = product_composition::findTargetProfile("tdisplayp4_tft");
     assert(tft != nullptr);
     assert(std::strcmp(tft->board_id, "tdisplayp4") == 0);
+    assert(tft->has_motion_sensor);
+    assert(tft->has_wireless_companion);
+    assert(tft->ble_backend == product_composition::BleBackend::C6Companion);
+    assert(tft->display_orientation_policy ==
+           product_composition::DisplayOrientationPolicy::SensorLandscapeOnly);
 
     const auto* amoled = product_composition::findTargetProfile("tdisplayp4_amoled");
     assert(amoled != nullptr);
     assert(std::strcmp(amoled->board_id, "tdisplayp4") == 0);
+    assert(amoled->has_motion_sensor);
+    assert(amoled->has_wireless_companion);
+    assert(amoled->ble_backend == product_composition::BleBackend::C6Companion);
+    assert(amoled->display_orientation_policy ==
+           product_composition::DisplayOrientationPolicy::SensorLandscapeOnly);
 
     const auto* pager = product_composition::findTargetProfile("tlora_pager");
     assert(pager != nullptr);
     assert(pager->status == product_composition::TargetSupportStatus::PendingHardwareValidation);
     assert(pager->has_keyboard);
     assert(!pager->has_touch);
+    assert(!pager->has_wireless_companion);
+    assert(pager->ble_backend == product_composition::BleBackend::Local);
 
     const auto* deck = product_composition::findTargetProfile("tdeck");
     assert(deck != nullptr);
     assert(deck->has_keyboard);
     assert(deck->has_trackball);
+    assert(deck->ble_backend == product_composition::BleBackend::Local);
 
     const auto* watch = product_composition::findTargetProfile("twatch");
     assert(watch != nullptr);
@@ -61,9 +81,22 @@ int main()
     assert(uconsole->renderer == product_composition::TargetRenderer::Gtk);
     assert(uconsole->platform == product_composition::TargetPlatform::Linux);
 
+    const auto* linux_sim = product_composition::findTargetProfile("linux_sim");
+    assert(linux_sim != nullptr);
+    assert(linux_sim->renderer == product_composition::TargetRenderer::Ascii);
+    assert(linux_sim->platform == product_composition::TargetPlatform::Linux);
+    assert(std::strcmp(linux_sim->app_shell, "apps/linux_sim_shell") == 0);
+    assert(linux_sim->status == product_composition::TargetSupportStatus::Active);
+
     const auto* cardputer = product_composition::findTargetProfile("cardputerzero");
     assert(cardputer != nullptr);
     assert(cardputer->renderer == product_composition::TargetRenderer::Ascii);
+    assert(cardputer->platform == product_composition::TargetPlatform::Linux);
+    assert(std::strcmp(cardputer->app_shell, "apps/linux_cardputer_zero") == 0);
+    assert(cardputer->status ==
+           product_composition::TargetSupportStatus::PendingHardwareValidation);
+    assert(cardputer->has_lora);
+    assert(cardputer->has_gps);
 
     const auto* gat562 = product_composition::findTargetProfile("gat562_mesh_evb_pro");
     assert(gat562 != nullptr);

@@ -1,6 +1,7 @@
 #include "ui/screens/gps/gps_page_shell.h"
 
 #include "ui/screens/common/page_shell_fallback.h"
+#include "ui/screens/common/placeholder_page.h"
 #include "ui/screens/gps/gps_page_runtime.h"
 
 namespace
@@ -15,18 +16,33 @@ namespace gps::ui::shell
 
 void enter(void* user_data, lv_obj_t* parent)
 {
-    ::ui::page_shell_fallback::enter<Host>(
-        s_placeholder_state,
-        user_data,
-        parent,
-        runtime::is_available(),
-        [](const Host* host, lv_obj_t* shell_parent)
-        { runtime::enter(host, shell_parent); });
+    RouteSpec route{};
+    route.host = static_cast<const Host*>(user_data);
+    enter_route(&route, parent);
 }
 
 void exit(void* user_data, lv_obj_t* parent)
 {
     (void)user_data;
+    exit_route(nullptr, parent);
+}
+
+void enter_route(const RouteSpec* spec, lv_obj_t* parent)
+{
+    const RouteSpec route = spec ? *spec : RouteSpec{};
+    if (!runtime::is_available())
+    {
+        s_placeholder_state.host = route.host;
+        ::ui::placeholder_page::show(s_placeholder_state, parent);
+        return;
+    }
+
+    runtime::enter(route.host, parent, route.projection);
+}
+
+void exit_route(const RouteSpec* spec, lv_obj_t* parent)
+{
+    (void)spec;
     ::ui::page_shell_fallback::exit(
         s_placeholder_state,
         parent,

@@ -17,6 +17,7 @@ struct Hooks
 uint32_t clamp_timeout_ms(uint32_t timeout_ms);
 uint32_t timeout_ms();
 uint16_t timeout_secs();
+bool supports_app_timeout_setting();
 void set_timeout_ms(uint32_t timeout_ms);
 void init(const Hooks& hooks);
 bool is_sleeping();

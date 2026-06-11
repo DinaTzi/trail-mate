@@ -139,6 +139,7 @@ struct SkyPlotLayout
     const lv_font_t* table_row_font = &lv_font_montserrat_16;
     const lv_font_t* sat_dot_font = &lv_font_montserrat_12;
     const lv_font_t* use_tag_font = &lv_font_montserrat_12;
+    const lv_font_t* status_toggle_font = &lv_font_montserrat_14;
 
     int table_col_w[5] = {24, 38, 39, 38, 39};
 };
@@ -159,6 +160,111 @@ SkyPlotLayout make_classic_layout(bool compact, lv_coord_t parent_w, lv_coord_t 
     layout.status_panel_x = compact
                                 ? std::max<lv_coord_t>(0, layout.screen_w - layout.status_panel_w - layout.status_panel_right_margin)
                                 : 293;
+    return layout;
+}
+
+SkyPlotLayout make_dense_compact_layout(lv_coord_t parent_w, lv_coord_t parent_h, lv_coord_t top_bar_h)
+{
+    SkyPlotLayout layout{};
+    layout.compact_layout = true;
+    layout.screen_w = parent_w > 0 ? parent_w : kCompactMaxWidth;
+    layout.screen_h = parent_h > 0 ? parent_h : 170;
+
+    layout.root_radius = 0;
+    layout.panel_radius = 6;
+    layout.panel_border_width = 1;
+
+    const lv_coord_t side_margin = 4;
+    const lv_coord_t content_top = top_bar_h + 3;
+    const lv_coord_t content_bottom_margin = 2;
+    const lv_coord_t content_w = std::max<lv_coord_t>(240, layout.screen_w - (side_margin * 2));
+    const lv_coord_t content_h = std::max<lv_coord_t>(120, layout.screen_h - content_top - content_bottom_margin);
+
+    layout.sky_panel_x = side_margin;
+    layout.sky_panel_y = content_top;
+    layout.sky_panel_w = content_w;
+    layout.sky_panel_h = content_h;
+
+    layout.status_panel_x = side_margin;
+    layout.status_panel_y = content_top;
+    layout.status_panel_w = content_w;
+    layout.status_panel_h = content_h;
+    layout.status_panel_right_margin = side_margin;
+
+    layout.status_header_h = 15;
+    layout.table_header_y = layout.status_header_h;
+    layout.table_header_h = 12;
+    layout.table_row_start_y = layout.table_header_y + layout.table_header_h;
+    layout.table_row_h = 11;
+    layout.table_row_step = 12;
+
+    layout.status_toggle_btn_w = 52;
+    layout.status_toggle_btn_h = 17;
+    layout.status_toggle_btn_bottom_margin = 2;
+    layout.status_toggle_btn_radius = 4;
+
+    layout.sky_area_x = 5;
+    layout.sky_area_y = 7;
+    layout.sky_area_size = 126;
+    layout.sky_center = layout.sky_area_size / 2;
+    layout.sky_radius = 59;
+    layout.sky_radius60 = 39;
+    layout.sky_radius30 = 20;
+    layout.outer_ring_border_width = 1;
+    layout.inner_ring_border_width = 1;
+    layout.axis_line_width = 1;
+
+    layout.center_dot_size = 3;
+    layout.center_dot_radius = 2;
+
+    layout.dot_radius = 8;
+    layout.dot_size = 16;
+    layout.dot_border_width = 1;
+    layout.use_tag_anchor_dx = 9;
+    layout.use_tag_anchor_dy = 9;
+    layout.use_tag_radius = 5;
+    layout.use_tag_pad_h = 3;
+    layout.use_tag_pad_v = 1;
+
+    layout.label_n_top = 0;
+    layout.label_e_gap = 4;
+    layout.label_e_y_adjust = 8;
+    layout.label_w_x = 1;
+    layout.label_w_y_adjust = 8;
+    layout.horizon_offset_y = 8;
+
+    layout.legend_snr_x = std::min<lv_coord_t>(layout.sky_panel_w - 110,
+                                               layout.sky_area_x + layout.sky_area_size + 68);
+    layout.legend_snr_y = 5;
+    layout.legend_snr_row = 12;
+    layout.legend_sys_x = layout.legend_snr_x;
+    layout.legend_sys_y = 66;
+    layout.legend_sys_row = 12;
+    layout.legend_block_size = 7;
+    layout.legend_block_radius = 2;
+    layout.legend_block_y_offset = 3;
+    layout.legend_label_x_offset = 10;
+
+    const lv_font_t* title_font = ::ui::page_profile::resolve_title_font();
+    const lv_font_t* body_font = ::ui::page_profile::resolve_body_font();
+    const lv_font_t* tiny_font = ::ui::page_profile::resolve_tiny_font();
+    layout.top_bar_title_font = title_font;
+    layout.compass_font = body_font;
+    layout.ring_label_font = body_font;
+    layout.horizon_font = tiny_font;
+    layout.legend_font = tiny_font;
+    layout.status_header_font = body_font;
+    layout.table_header_font = tiny_font;
+    layout.table_row_font = tiny_font;
+    layout.sat_dot_font = tiny_font;
+    layout.use_tag_font = tiny_font;
+    layout.status_toggle_font = tiny_font;
+
+    layout.table_col_w[0] = 38;
+    layout.table_col_w[1] = 48;
+    layout.table_col_w[2] = 62;
+    layout.table_col_w[3] = 48;
+    layout.table_col_w[4] = std::max<lv_coord_t>(58, layout.status_panel_w - 196);
     return layout;
 }
 
@@ -260,6 +366,11 @@ SkyPlotLayout resolve_layout(lv_coord_t parent_w, lv_coord_t parent_h, lv_coord_
     if (is_wide_720_canvas(parent_w, parent_h))
     {
         return make_wide_720_layout(parent_w, parent_h, top_bar_h);
+    }
+
+    if (::ui::page_profile::is_dense() && parent_w > 0 && parent_w <= kCompactMaxWidth)
+    {
+        return make_dense_compact_layout(parent_w, parent_h, top_bar_h);
     }
 
     const bool compact_layout = (parent_w > 0 && parent_w <= kCompactMaxWidth);
@@ -1207,7 +1318,7 @@ lv_obj_t* ui_gnss_skyplot_create(lv_obj_t* parent)
 
         s_ui.status_toggle_label = lv_label_create(s_ui.status_toggle_btn);
         lv_obj_set_style_text_color(s_ui.status_toggle_label, lv_color_hex(0x2A1A05), 0);
-        lv_obj_set_style_text_font(s_ui.status_toggle_label, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(s_ui.status_toggle_label, s_layout.status_toggle_font, 0);
 
         set_status_overlay_visible(false);
     }

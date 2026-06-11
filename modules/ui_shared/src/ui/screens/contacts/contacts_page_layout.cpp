@@ -9,6 +9,7 @@
 #include "app/app_facade_access.h"
 #include "chat/domain/chat_types.h"
 
+#include "ui/assets/fonts/font_utils.h"
 #include "ui/components/air_status_footer.h"
 #include "ui/components/info_card.h"
 #include "ui/components/two_pane_layout.h"
@@ -27,6 +28,31 @@ namespace layout
 // Layout constants
 static constexpr int kButtonSpacing = 3;
 static constexpr int kPanelGap = 3; // Gap between filter and list columns
+
+bool is_dense_profile()
+{
+    return ::ui::page_profile::current().filter_button_height <= 24;
+}
+
+lv_coord_t dense_protocol_width()
+{
+    return 28;
+}
+
+lv_coord_t dense_status_width()
+{
+    return 52;
+}
+
+void apply_single_line(lv_obj_t* label)
+{
+    if (!label)
+    {
+        return;
+    }
+    lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_font(label, ::ui::page_profile::resolve_body_font(), 0);
+}
 
 const char* node_protocol_short_label(chat::contacts::NodeProtocolType protocol)
 {
@@ -108,7 +134,7 @@ void create_filter_panel(lv_obj_t* parent)
     panel_spec.width = profile.filter_panel_width;
     panel_spec.pad_row = profile.filter_panel_pad_row > 0 ? profile.filter_panel_pad_row : kButtonSpacing;
     panel_spec.margin_left = 0;
-    panel_spec.margin_right = kPanelGap;
+    panel_spec.margin_right = is_dense_profile() ? 1 : kPanelGap;
     g_contacts_state.filter_panel = ::ui::components::two_pane_layout::create_side_panel(parent, panel_spec);
 
     style::apply_panel_side(g_contacts_state.filter_panel);
@@ -205,7 +231,7 @@ void ensure_list_subcontainers()
         lv_obj_set_flex_grow(g_contacts_state.sub_container, 1);
 
         lv_obj_set_flex_flow(g_contacts_state.sub_container, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(g_contacts_state.sub_container, 2, LV_PART_MAIN);
+        lv_obj_set_style_pad_row(g_contacts_state.sub_container, is_dense_profile() ? 1 : 2, LV_PART_MAIN);
     }
 
     if (g_contacts_state.bottom_container == nullptr)
@@ -258,14 +284,8 @@ lv_obj_t* create_list_item(lv_obj_t* parent,
     {
         display_name = node.short_name;
     }
-    if (should_prefix_node_protocol(mode, node.protocol))
-    {
-        const char* proto = node_protocol_short_label(node.protocol);
-        if (proto[0] != '\0')
-        {
-            display_name = "[" + std::string(proto) + "] " + display_name;
-        }
-    }
+    const bool show_protocol = should_prefix_node_protocol(mode, node.protocol);
+    const char* proto = show_protocol ? node_protocol_short_label(node.protocol) : "";
 
     if (::ui::components::info_card::use_tdeck_layout())
     {
@@ -278,15 +298,59 @@ lv_obj_t* create_list_item(lv_obj_t* parent,
     }
     else
     {
-        lv_obj_t* name_label = lv_label_create(item);
-        ::ui::i18n::set_content_label_text_raw(name_label, display_name.c_str());
-        lv_obj_align(name_label, LV_ALIGN_LEFT_MID, 10, 0);
-        style::apply_label_primary(name_label);
+        if (is_dense_profile())
+        {
+            lv_obj_set_flex_flow(item, LV_FLEX_FLOW_ROW);
+            lv_obj_set_flex_align(item,
+                                  LV_FLEX_ALIGN_START,
+                                  LV_FLEX_ALIGN_CENTER,
+                                  LV_FLEX_ALIGN_CENTER);
+            lv_obj_set_style_pad_left(item, 4, LV_PART_MAIN);
+            lv_obj_set_style_pad_right(item, 4, LV_PART_MAIN);
+            lv_obj_set_style_pad_column(item, 3, LV_PART_MAIN);
 
-        lv_obj_t* status_label = lv_label_create(item);
-        ::ui::i18n::set_label_text(status_label, status_text);
-        lv_obj_align(status_label, LV_ALIGN_RIGHT_MID, -10, 0);
-        style::apply_label_muted(status_label);
+            if (proto[0] != '\0')
+            {
+                lv_obj_t* proto_label = lv_label_create(item);
+                std::string proto_text = "[" + std::string(proto) + "]";
+                ::ui::i18n::set_label_text_raw(proto_label, proto_text.c_str());
+                style::apply_label_muted(proto_label);
+                lv_obj_set_width(proto_label, dense_protocol_width());
+                lv_obj_set_style_text_align(proto_label, LV_TEXT_ALIGN_LEFT, 0);
+                lv_obj_set_style_text_font(proto_label, ::ui::page_profile::resolve_caption_font(), 0);
+            }
+
+            lv_obj_t* name_label = lv_label_create(item);
+            ::ui::i18n::set_content_label_text_raw(name_label, display_name.c_str());
+            lv_obj_set_width(name_label, 0);
+            lv_obj_set_flex_grow(name_label, 1);
+            style::apply_label_primary(name_label);
+            apply_single_line(name_label);
+
+            lv_obj_t* status_label = lv_label_create(item);
+            ::ui::i18n::set_label_text(status_label, status_text);
+            lv_obj_set_width(status_label, dense_status_width());
+            lv_obj_set_style_text_align(status_label, LV_TEXT_ALIGN_RIGHT, 0);
+            style::apply_label_muted(status_label);
+            lv_obj_set_style_text_font(status_label, ::ui::page_profile::resolve_caption_font(), 0);
+        }
+        else
+        {
+            if (proto[0] != '\0')
+            {
+                display_name = "[" + std::string(proto) + "] " + display_name;
+            }
+
+            lv_obj_t* name_label = lv_label_create(item);
+            ::ui::i18n::set_content_label_text_raw(name_label, display_name.c_str());
+            lv_obj_align(name_label, LV_ALIGN_LEFT_MID, 10, 0);
+            style::apply_label_primary(name_label);
+
+            lv_obj_t* status_label = lv_label_create(item);
+            ::ui::i18n::set_label_text(status_label, status_text);
+            lv_obj_align(status_label, LV_ALIGN_RIGHT_MID, -10, 0);
+            style::apply_label_muted(status_label);
+        }
     }
 
     g_contacts_state.list_items.push_back(item);

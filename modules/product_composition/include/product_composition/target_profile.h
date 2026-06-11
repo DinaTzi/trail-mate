@@ -28,6 +28,26 @@ enum class TargetSupportStatus
     Headless,
 };
 
+enum class BleBackend
+{
+    None,
+    Local,
+    C6Companion,
+};
+
+enum class WirelessCompanionKind
+{
+    None,
+    Esp32C6,
+};
+
+enum class DisplayOrientationPolicy
+{
+    LandscapeLocked,
+    SensorLandscapeOnly,
+    SensorAuto,
+};
+
 struct TargetProfile
 {
     const char* target_id;
@@ -48,6 +68,11 @@ struct TargetProfile
     bool has_lora;
     bool has_gps;
     bool has_audio;
+    bool has_motion_sensor;
+    bool has_wireless_companion;
+    BleBackend ble_backend;
+    WirelessCompanionKind wireless_companion;
+    DisplayOrientationPolicy display_orientation_policy;
 };
 
 const TargetProfile* findTargetProfile(const char* target_id);

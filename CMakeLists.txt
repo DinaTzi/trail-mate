@@ -24,6 +24,7 @@ set(SDKCONFIG_DEFAULTS "${TRAIL_MATE_IDF_TARGET_DIR}/sdkconfig.defaults")
 message(STATUS "trail-mate IDF target: ${TRAIL_MATE_IDF_TARGET}")
 message(STATUS "trail-mate SDKCONFIG path: ${SDKCONFIG}")
 set(EXTRA_COMPONENT_DIRS
+    builds/esp_idf/main
     platform/esp/idf_components
 )
 

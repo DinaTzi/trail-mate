@@ -40,6 +40,16 @@ void test_contour_paths()
 
     assert(resolver.resolveDirectory(ref.layer, dir, sizeof(dir)));
     assert(std::strcmp(dir, "A:/maps/contour/major-50") == 0);
+
+    ref.layer = ui::map_tiles::MapTileLayer::ContourMinor20;
+    ref.z = 14;
+    ref.x = 8190;
+    ref.y = 5450;
+    assert(resolver.resolvePath(ref, path, sizeof(path)));
+    assert(std::strcmp(path, "A:/maps/contour/minor-20/14/8190/5450.png") == 0);
+
+    assert(resolver.resolveDirectory(ref.layer, dir, sizeof(dir)));
+    assert(std::strcmp(dir, "A:/maps/contour/minor-20") == 0);
 }
 
 void test_layer_helpers()

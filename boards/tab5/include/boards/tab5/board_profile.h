@@ -33,6 +33,16 @@ struct BoardProfile
         int clk = -1;
     };
 
+    struct CompanionSdioPins
+    {
+        int clk = -1;
+        int cmd = -1;
+        int d0 = -1;
+        int d1 = -1;
+        int d2 = -1;
+        int d3 = -1;
+    };
+
     struct AudioI2sPins
     {
         int bclk = -1;
@@ -72,10 +82,13 @@ struct BoardProfile
     UartPort gps_uart{};
     UartPort rs485_uart{};
     SdmmcPins sdmmc{};
+    CompanionSdioPins c6_sdio{};
     AudioI2sPins audio_i2s{};
     LoRaModulePins lora_module{};
     int lcd_backlight = -1;
     int touch_int = -1;
+    int c6_reset_gpio = -1;
+    bool c6_reset_gpio_requires_validation = false;
     bool has_display = false;
     bool has_touch = false;
     bool has_audio = false;
@@ -84,6 +97,9 @@ struct BoardProfile
     bool has_rs485_uart = false;
     bool has_lora = false;
     bool has_m5bus_lora_module_routing = false;
+    bool has_c6_companion = false;
+    bool has_motion_sensor = false;
+    const char* motion_sensor = nullptr;
     ProductIdentity identity{};
 };
 
@@ -93,10 +109,12 @@ inline constexpr BoardProfile kBoardProfile{
     {2, 6, 7, -1, 38400},
     {1, 20, 21, 34, 0},
     {39, 40, 41, 42, 44, 43},
+    {12, 13, 11, 10, 9, 8},
     {27, 30, 29, 26, 28},
     {{2, 5, 19, 18}, 35, 45, 16, -1, -1},
     22,
     23,
+    54,
     true,
     true,
     true,
@@ -105,6 +123,10 @@ inline constexpr BoardProfile kBoardProfile{
     true,
     true,
     true,
+    true,
+    true,
+    true,
+    "BMI270+BMM150",
     {"Trail Mate Tab5", "TAB5", "TrailMate-Tab5"},
 };
 

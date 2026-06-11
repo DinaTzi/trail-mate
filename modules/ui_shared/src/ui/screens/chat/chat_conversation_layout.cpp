@@ -42,6 +42,7 @@
  */
 
 #include "ui/screens/chat/chat_conversation_layout.h"
+#include "ui/page/page_profile.h"
 
 namespace chat::ui::layout
 {
@@ -55,6 +56,7 @@ static void make_non_scrollable(lv_obj_t* obj)
 ConversationWidgets create_conversation_base(lv_obj_t* parent)
 {
     ConversationWidgets w{};
+    const auto& profile = ::ui::page_profile::current();
 
     // Root container (full screen, column)
     w.root = lv_obj_create(parent);
@@ -75,7 +77,9 @@ ConversationWidgets create_conversation_base(lv_obj_t* parent)
 
     // Action bar (fixed height)
     w.action_bar = lv_obj_create(w.root);
-    lv_obj_set_size(w.action_bar, LV_PCT(100), 30);
+    lv_obj_set_size(w.action_bar, LV_PCT(100),
+                    ::ui::page_profile::resolve_control_button_height() +
+                        (profile.dense ? 2 : 2));
     lv_obj_set_flex_grow(w.action_bar, 0);
     lv_obj_set_flex_flow(w.action_bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(w.action_bar,
@@ -86,7 +90,9 @@ ConversationWidgets create_conversation_base(lv_obj_t* parent)
 
     // Reply button
     w.reply_btn = lv_btn_create(w.action_bar);
-    lv_obj_set_size(w.reply_btn, 120, 28);
+    lv_obj_set_size(w.reply_btn,
+                    profile.dense ? 92 : 120,
+                    ::ui::page_profile::resolve_control_button_height());
     make_non_scrollable(w.reply_btn);
 
     w.reply_label = lv_label_create(w.reply_btn);

@@ -49,6 +49,9 @@ class LinuxRawLoraMeshAdapter final : public ::chat::IMeshAdapter
                      bool want_response = false) override;
     bool pollIncomingData(::chat::MeshIncomingData* out) override;
     bool requestNodeInfo(::chat::NodeId dest, bool want_response) override;
+    bool triggerDiscoveryAction(::chat::MeshDiscoveryAction action) override;
+    ::chat::MeshActionResult triggerDiscoveryActionDetailed(
+        ::chat::MeshDiscoveryAction action) override;
     bool startKeyVerification(::chat::NodeId node_id) override;
     bool submitKeyVerificationNumber(::chat::NodeId node_id,
                                      std::uint64_t nonce,
@@ -190,6 +193,7 @@ class LinuxRawLoraMeshAdapter final : public ::chat::IMeshAdapter
     std::array<std::uint8_t, 32> kv_hash1_{};
     std::array<std::uint8_t, 32> kv_hash2_{};
     bool started_ = false;
+    bool pki_initialized_ = false;
     bool tx_enabled_ = true;
     std::string long_name_{};
     std::string short_name_{};

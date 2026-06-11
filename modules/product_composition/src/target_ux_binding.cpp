@@ -15,7 +15,8 @@ constexpr TargetUxBinding kTargetUxBindings[] = {
     {"tdeck", "deck_full", "compatibility", "compatibility", false},
     {"twatch", "watch_compact", "compatibility", "compatibility", false},
     {"uconsole", "uconsole_desktop", "uconsole_desktop", nullptr, true},
-    {"cardputerzero", "cardputer_compact", "simulator_full", "simulator_full", false},
+    {"linux_sim", "simulator_full", "simulator_full", nullptr, true},
+    {"cardputerzero", "cardputer_compact", "cardputer_compact", nullptr, true},
     {"gat562_mesh_evb_pro", "node_headless", "tiny_node_status", "tiny_node_status", false},
 };
 

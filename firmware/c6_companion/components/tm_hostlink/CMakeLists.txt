@@ -1,0 +1,17 @@
+idf_component_register(
+    SRCS
+        "tm_hostlink.c"
+        "tm_hostlink_sdio.c"
+        "../../../../modules/core_hostlink/src/c6_frame_codec_c.c"
+    INCLUDE_DIRS
+        "include"
+        "../../../../modules/core_hostlink/include"
+    PRIV_REQUIRES
+        esp_driver_sdio
+        esp_timer
+        heap
+        tm_ble
+        tm_espnow
+        tm_services
+        tm_wifi
+)

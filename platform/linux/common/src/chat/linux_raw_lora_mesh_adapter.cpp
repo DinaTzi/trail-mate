@@ -1016,9 +1016,6 @@ LinuxRawLoraMeshAdapter::LinuxRawLoraMeshAdapter(::chat::NodeId self_node_id)
     : radio_(::platform::linux_runtime::Sx126xRadio::instance()),
       self_node_id_(self_node_id)
 {
-    next_msg_id_ = random_packet_id_seed();
-    (void)initPkiKeys();
-    loadPkiNodeKeys();
 }
 
 bool LinuxRawLoraMeshAdapter::hardwareCandidatePresent()
@@ -1096,7 +1093,8 @@ bool LinuxRawLoraMeshAdapter::takePendingSendResult(::chat::MessageId& out_msg_i
         .provides_appdata_sender = true,
         .supports_node_info = true,
         .supports_pki = pki_ready_,
-        .supports_discovery_actions = false,
+        .supports_discovery_actions =
+            active_protocol_ == ::chat::MeshProtocol::Meshtastic,
     };
 }
 
@@ -1248,6 +1246,64 @@ bool LinuxRawLoraMeshAdapter::requestNodeInfo(::chat::NodeId dest,
     return sendMeshtasticNodeInfoTo(target,
                                     want_response,
                                     ::chat::ChannelId::PRIMARY);
+}
+
+bool LinuxRawLoraMeshAdapter::triggerDiscoveryAction(
+    ::chat::MeshDiscoveryAction action)
+{
+    return triggerDiscoveryActionDetailed(action).ok;
+}
+
+::chat::MeshActionResult LinuxRawLoraMeshAdapter::triggerDiscoveryActionDetailed(
+    ::chat::MeshDiscoveryAction action)
+{
+    if (active_protocol_ != ::chat::MeshProtocol::Meshtastic)
+    {
+        append_lora_system_log(
+            "Discovery action unsupported",
+            "Linux raw LoRa discovery actions are currently Meshtastic NodeInfo only.");
+        return ::chat::MeshActionResult::fail(
+            ::chat::MeshOperationFailure::Unsupported);
+    }
+
+    if (!tx_enabled_)
+    {
+        append_lora_system_log("Meshtastic discovery blocked",
+                               "LoRa TX is disabled by mesh settings.");
+        return ::chat::MeshActionResult::fail(
+            ::chat::MeshOperationFailure::TxDisabled);
+    }
+    if (!ensureRadioReady())
+    {
+        append_lora_system_log("Meshtastic discovery blocked",
+                               "LoRa radio is not ready.");
+        return ::chat::MeshActionResult::fail(
+            ::chat::MeshOperationFailure::RadioOffline);
+    }
+
+    bool ok = false;
+    switch (action)
+    {
+    case ::chat::MeshDiscoveryAction::ScanLocal:
+    case ::chat::MeshDiscoveryAction::SendIdLocal:
+        ok = requestNodeInfo(0, true);
+        break;
+    case ::chat::MeshDiscoveryAction::SendIdBroadcast:
+        ok = sendMeshtasticNodeInfoTo(kBroadcastNodeId,
+                                      false,
+                                      ::chat::ChannelId::PRIMARY);
+        break;
+    }
+
+    append_lora_system_log(
+        ok ? "Meshtastic discovery queued"
+           : "Meshtastic discovery failed",
+        action == ::chat::MeshDiscoveryAction::SendIdBroadcast
+            ? "Broadcast local NodeInfo."
+            : "Request local NodeInfo responses from nearby nodes.");
+    return ok ? ::chat::MeshActionResult::success()
+              : ::chat::MeshActionResult::fail(
+                    ::chat::MeshOperationFailure::RadioTxFailed);
 }
 
 bool LinuxRawLoraMeshAdapter::startKeyVerification(::chat::NodeId node_id)
@@ -1560,6 +1616,12 @@ bool LinuxRawLoraMeshAdapter::ensureRadioReady()
         last_status_ = "No Linux LoRa SPI endpoint is present.";
         logStatusIfChanged("LoRa endpoint missing", last_status_);
         return false;
+    }
+    if (!pki_initialized_)
+    {
+        (void)initPkiKeys();
+        loadPkiNodeKeys();
+        pki_initialized_ = true;
     }
     if (!radio_.acquire())
     {

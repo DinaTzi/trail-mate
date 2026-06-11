@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Trail Mate Cardputer Zero
+Comment=Trail Mate shell for the Cardputer Zero portable Linux device
+Exec=/usr/lib/trailmate-cardputer-zero/trailmate-cardputer-zero-applaunch
+Icon=share/images/trailmate-cardputer-zero.png
+Terminal=false
+Categories=Utility;Network;
+StartupNotify=false
+X-Zero-AppId=io.github.vicliu624.trailmate
+X-Zero-Display=wayland

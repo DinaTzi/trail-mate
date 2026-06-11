@@ -9,6 +9,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <limits>
 #include <mutex>
 #include <string>
@@ -34,6 +35,8 @@ constexpr double kEquatorResolution = 156543.03392;
 constexpr size_t kMaxFields = 24;
 constexpr size_t kLineBufferSize = 160;
 constexpr uint32_t kExternalSourceStaleMs = 15000U;
+constexpr uint32_t kServicePollIntervalMs = 250U;
+constexpr uint32_t kRecentTrafficWindowMs = 10000U;
 
 constexpr const char* kGpsValidEnv = "TRAIL_MATE_GPS_VALID";
 constexpr const char* kGpsEnabledEnv = "TRAIL_MATE_GPS_ENABLED";
@@ -47,9 +50,14 @@ constexpr const char* kGpsSatCountEnv = "TRAIL_MATE_GPS_SATS";
 constexpr const char* kGpsHdopEnv = "TRAIL_MATE_GPS_HDOP";
 constexpr const char* kGpsFixEnv = "TRAIL_MATE_GPS_FIX";
 constexpr const char* kGpsDeviceEnv = "TRAIL_MATE_GPS_DEVICE";
+constexpr const char* kGpsDeviceCandidatesEnv = "TRAIL_MATE_GPS_DEVICE_CANDIDATES";
 constexpr const char* kGpsBaudEnv = "TRAIL_MATE_GPS_BAUD";
 constexpr const char* kGpsNmeaFileEnv = "TRAIL_MATE_GPS_NMEA_FILE";
 constexpr const char* kGpsAutoSerialEnv = "TRAIL_MATE_GPS_AUTO_SERIAL";
+constexpr const char* kGpsDemoDefaultsEnv = "TRAIL_MATE_GPS_DEMO_DEFAULTS";
+constexpr const char* kDefaultGpsDeviceCandidates =
+    "/dev/serial0:/dev/ttyAMA1:/dev/ttyAMA0:/dev/ttyS0:/dev/ttyS1";
+constexpr uint32_t kAutoSerialNoNmeaFailoverMs = 4000U;
 
 constexpr double kDefaultLat = 25.0389;
 constexpr double kDefaultLng = 102.7183;
@@ -90,9 +98,23 @@ struct RuntimeState
 
     std::string source_path{};
     bool source_is_serial = false;
+    bool source_is_auto_candidate = false;
     std::size_t file_offset = 0;
     std::array<char, kLineBufferSize> line_buffer{};
     std::size_t line_length = 0;
+    std::string last_open_failure_path{};
+    uint32_t last_open_failure_log_ms = 0;
+    uint32_t source_opened_ms = 0;
+    uint32_t last_serial_byte_ms = 0;
+    uint32_t last_service_poll_ms = 0;
+    uint32_t chars_recent_window_ms = 0;
+    uint32_t chars_total = 0;
+    uint32_t chars_recent = 0;
+    bool waiting_log_emitted = false;
+    bool no_source_log_emitted = false;
+    std::vector<std::string> auto_candidate_paths{};
+    std::string auto_candidate_signature{};
+    std::size_t auto_candidate_index = 0;
 
 #if defined(__linux__)
     int serial_fd = -1;
@@ -109,8 +131,16 @@ uint8_t s_external_nmea_output_hz = 0;
 uint8_t s_external_nmea_sentence_mask = 0;
 uint32_t s_motion_idle_timeout_ms = 30000;
 uint8_t s_motion_sensor_id = 0;
+FallbackMode s_fallback_mode = FallbackMode::LiveOnly;
+GpsReceiverInitConfig s_receiver_init_config{};
 RuntimeState s_runtime{};
 std::mutex s_mutex;
+
+void reset_source_locked();
+void append_gps_system_log_locked(
+    const char* title,
+    const std::string& summary,
+    const std::vector<::platform::linux_runtime::PacketLogSegment>& segments);
 
 uint32_t now_ms()
 {
@@ -172,6 +202,56 @@ bool env_configured(const char* name)
     return value != nullptr && value[0] != '\0';
 }
 
+std::string effective_receiver_init_source()
+{
+    return s_receiver_init_config.baud != 0 ? "settings" : "runtime";
+}
+
+bool supported_baud(int baud)
+{
+    switch (baud)
+    {
+    case 4800:
+    case 9600:
+    case 19200:
+    case 38400:
+    case 57600:
+    case 115200:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool demo_defaults_enabled()
+{
+    return s_fallback_mode == FallbackMode::DemoDefaults ||
+           env_flag_or_default(kGpsDemoDefaultsEnv, false);
+}
+
+void update_recent_traffic_window_locked(uint32_t ts)
+{
+    if (s_runtime.chars_recent_window_ms == 0 ||
+        (ts - s_runtime.chars_recent_window_ms) >= kRecentTrafficWindowMs)
+    {
+        s_runtime.chars_recent_window_ms = ts;
+        s_runtime.chars_recent = 0;
+    }
+}
+
+bool env_state_configured()
+{
+    return env_configured(kGpsValidEnv) ||
+           env_configured(kGpsLatEnv) ||
+           env_configured(kGpsLngEnv) ||
+           env_configured(kGpsAltEnv) ||
+           env_configured(kGpsSpeedEnv) ||
+           env_configured(kGpsCourseEnv) ||
+           env_configured(kGpsSatCountEnv) ||
+           env_configured(kGpsHdopEnv) ||
+           env_configured(kGpsFixEnv);
+}
+
 bool auto_serial_probe_enabled()
 {
     if (env_configured(kGpsAutoSerialEnv))
@@ -186,6 +266,161 @@ bool auto_serial_probe_enabled()
     return false;
 #endif
 }
+
+std::vector<std::string> split_device_candidates(const char* text)
+{
+    std::vector<std::string> out;
+    if (!text || text[0] == '\0')
+    {
+        return out;
+    }
+
+    const char* cursor = text;
+    while (*cursor)
+    {
+        while (*cursor == ':' || *cursor == ';' || *cursor == ',' ||
+               *cursor == ' ' || *cursor == '\t' || *cursor == '\n')
+        {
+            ++cursor;
+        }
+
+        const char* start = cursor;
+        while (*cursor && *cursor != ':' && *cursor != ';' && *cursor != ',' &&
+               *cursor != ' ' && *cursor != '\t' && *cursor != '\n')
+        {
+            ++cursor;
+        }
+
+        if (cursor > start)
+        {
+            out.emplace_back(start, static_cast<std::size_t>(cursor - start));
+        }
+    }
+    return out;
+}
+
+#if defined(__linux__)
+std::string gps_candidate_identity(const std::string& path)
+{
+    std::error_code ec;
+    const auto canonical = std::filesystem::weakly_canonical(path, ec);
+    if (!ec && !canonical.empty())
+    {
+        return canonical.string();
+    }
+    ec.clear();
+    const auto absolute = std::filesystem::absolute(path, ec);
+    if (!ec && !absolute.empty())
+    {
+        return absolute.lexically_normal().string();
+    }
+    return path;
+}
+
+std::vector<std::string> deduplicate_auto_serial_candidates(
+    const std::vector<std::string>& candidates)
+{
+    std::vector<std::string> out;
+    std::vector<std::string> identities;
+    out.reserve(candidates.size());
+    identities.reserve(candidates.size());
+
+    for (const auto& candidate : candidates)
+    {
+        const std::string identity = gps_candidate_identity(candidate);
+        if (std::find(identities.begin(), identities.end(), identity) !=
+            identities.end())
+        {
+            continue;
+        }
+        identities.push_back(identity);
+        out.push_back(candidate);
+    }
+    return out;
+}
+
+const std::vector<std::string>& auto_serial_candidates_locked()
+{
+    const char* env = std::getenv(kGpsDeviceCandidatesEnv);
+    const std::string signature =
+        env && env[0] != '\0' ? std::string(env) : std::string(kDefaultGpsDeviceCandidates);
+    if (signature != s_runtime.auto_candidate_signature)
+    {
+        s_runtime.auto_candidate_signature = signature;
+        s_runtime.auto_candidate_paths = deduplicate_auto_serial_candidates(
+            split_device_candidates(signature.c_str()));
+        s_runtime.auto_candidate_index = 0;
+        if (s_runtime.source_is_auto_candidate)
+        {
+            reset_source_locked();
+        }
+    }
+    return s_runtime.auto_candidate_paths;
+}
+
+std::string select_auto_serial_candidate_locked()
+{
+    const auto& candidates = auto_serial_candidates_locked();
+    if (candidates.empty())
+    {
+        return {};
+    }
+
+    std::error_code ec;
+    for (std::size_t attempts = 0; attempts < candidates.size(); ++attempts)
+    {
+        const std::size_t index =
+            (s_runtime.auto_candidate_index + attempts) % candidates.size();
+        const auto& candidate = candidates[index];
+        if (std::filesystem::exists(candidate, ec) && !ec)
+        {
+            s_runtime.auto_candidate_index = index;
+            return candidate;
+        }
+        ec.clear();
+    }
+
+    return {};
+}
+
+std::string next_auto_serial_candidate_locked(const std::string& current)
+{
+    const auto& candidates = auto_serial_candidates_locked();
+    if (candidates.empty())
+    {
+        return {};
+    }
+
+    std::size_t current_index = s_runtime.auto_candidate_index;
+    for (std::size_t i = 0; i < candidates.size(); ++i)
+    {
+        if (candidates[i] == current)
+        {
+            current_index = i;
+            break;
+        }
+    }
+
+    std::error_code ec;
+    for (std::size_t step = 1; step <= candidates.size(); ++step)
+    {
+        const std::size_t index = (current_index + step) % candidates.size();
+        const auto& candidate = candidates[index];
+        if (candidate == current)
+        {
+            continue;
+        }
+        if (std::filesystem::exists(candidate, ec) && !ec)
+        {
+            s_runtime.auto_candidate_index = index;
+            return candidate;
+        }
+        ec.clear();
+    }
+
+    return {};
+}
+#endif
 
 ::gps::GnssFix env_fix_or_default()
 {
@@ -241,6 +476,28 @@ GpsState make_default_state()
     return state;
 }
 
+GpsState make_env_state()
+{
+    GpsState state{};
+    const bool has_lat = env_configured(kGpsLatEnv);
+    const bool has_lng = env_configured(kGpsLngEnv);
+
+    state.lat = env_double_or_default(kGpsLatEnv, 0.0);
+    state.lng = env_double_or_default(kGpsLngEnv, 0.0);
+    state.valid = env_flag_or_default(kGpsValidEnv, has_lat && has_lng) &&
+                  has_lat && has_lng;
+    state.alt_m = env_double_or_default(kGpsAltEnv, 0.0);
+    state.speed_mps = env_double_or_default(kGpsSpeedEnv, 0.0);
+    state.course_deg = env_double_or_default(kGpsCourseEnv, 0.0);
+    state.satellites = static_cast<uint8_t>(
+        std::clamp(env_int_or_default(kGpsSatCountEnv, 0), 0, 32));
+    state.has_alt = env_configured(kGpsAltEnv);
+    state.has_speed = env_configured(kGpsSpeedEnv);
+    state.has_course = env_configured(kGpsCourseEnv);
+    state.age = 0;
+    return state;
+}
+
 GnssStatus make_default_status()
 {
     GnssStatus status{};
@@ -249,6 +506,26 @@ GnssStatus make_default_status()
     status.sats_in_view = static_cast<uint8_t>(default_satellites().size());
     status.hdop = static_cast<float>(env_double_or_default(kGpsHdopEnv, kDefaultHdop));
     status.fix = env_fix_or_default();
+    return status;
+}
+
+GnssStatus make_env_status()
+{
+    GnssStatus status{};
+    const GpsState state = make_env_state();
+    status.sats_in_use = static_cast<uint8_t>(
+        std::clamp(env_int_or_default(kGpsSatCountEnv, 0), 0, 32));
+    status.sats_in_view = status.sats_in_use;
+    status.hdop = static_cast<float>(env_double_or_default(kGpsHdopEnv, 0.0));
+    status.fix = env_configured(kGpsFixEnv)
+                     ? env_fix_or_default()
+                     : (state.valid ? ::gps::GnssFix::FIX3D
+                                    : ::gps::GnssFix::NOFIX);
+    if (env_configured(kGpsValidEnv) &&
+        !env_flag_or_default(kGpsValidEnv, false))
+    {
+        status.fix = ::gps::GnssFix::NOFIX;
+    }
     return status;
 }
 
@@ -469,6 +746,30 @@ void append_nmea_log_locked(const char* sentence, bool checksum_ok)
             .text = checksum,
         });
     }
+    ::platform::linux_runtime::append_packet_log(std::move(entry));
+}
+
+void append_gps_system_log_locked(
+    const char* title,
+    const std::string& summary,
+    std::initializer_list<::platform::linux_runtime::PacketLogSegment> segments = {})
+{
+    std::vector<::platform::linux_runtime::PacketLogSegment> vector_segments;
+    vector_segments.insert(vector_segments.end(), segments.begin(), segments.end());
+    append_gps_system_log_locked(title, summary, vector_segments);
+}
+
+void append_gps_system_log_locked(
+    const char* title,
+    const std::string& summary,
+    const std::vector<::platform::linux_runtime::PacketLogSegment>& segments)
+{
+    ::platform::linux_runtime::PacketLogEntry entry{};
+    entry.source = ::platform::linux_runtime::PacketLogSource::Gps;
+    entry.direction = ::platform::linux_runtime::PacketLogDirection::System;
+    entry.title = title ? title : "GPS";
+    entry.summary = summary;
+    entry.segments.insert(entry.segments.end(), segments.begin(), segments.end());
     ::platform::linux_runtime::append_packet_log(std::move(entry));
 }
 
@@ -759,6 +1060,13 @@ void append_bytes_and_process_locked(const char* buffer, std::size_t length)
         return;
     }
 
+    const uint32_t ts = now_ms();
+    s_runtime.chars_total += static_cast<uint32_t>(
+        std::min<std::size_t>(length, std::numeric_limits<uint32_t>::max()));
+    update_recent_traffic_window_locked(ts);
+    s_runtime.chars_recent += static_cast<uint32_t>(
+        std::min<std::size_t>(length, std::numeric_limits<uint32_t>::max()));
+
     for (std::size_t i = 0; i < length; ++i)
     {
         const char ch = buffer[i];
@@ -789,11 +1097,16 @@ void append_bytes_and_process_locked(const char* buffer, std::size_t length)
     }
 }
 
-std::string requested_source_path(bool* out_is_serial)
+std::string requested_source_path(bool* out_is_serial,
+                                  bool* out_is_auto_candidate = nullptr)
 {
     if (out_is_serial)
     {
         *out_is_serial = false;
+    }
+    if (out_is_auto_candidate)
+    {
+        *out_is_auto_candidate = false;
     }
 
     const char* device = std::getenv(kGpsDeviceEnv);
@@ -818,22 +1131,18 @@ std::string requested_source_path(bool* out_is_serial)
         return {};
     }
 
-    std::error_code ec;
-    if (std::filesystem::exists("/dev/ttyS0", ec) && !ec)
+    const std::string candidate = select_auto_serial_candidate_locked();
+    if (!candidate.empty())
     {
         if (out_is_serial)
         {
             *out_is_serial = true;
         }
-        return "/dev/ttyS0";
-    }
-    if (std::filesystem::exists("/dev/serial0", ec) && !ec)
-    {
-        if (out_is_serial)
+        if (out_is_auto_candidate)
         {
-            *out_is_serial = true;
+            *out_is_auto_candidate = true;
         }
-        return "/dev/serial0";
+        return candidate;
     }
 #endif
 
@@ -841,6 +1150,23 @@ std::string requested_source_path(bool* out_is_serial)
 }
 
 #if defined(__linux__)
+int serial_baud_for_path(const std::string& path)
+{
+    if (s_receiver_init_config.baud != 0 &&
+        supported_baud(static_cast<int>(s_receiver_init_config.baud)))
+    {
+        return static_cast<int>(s_receiver_init_config.baud);
+    }
+
+    const int default_baud =
+        (!env_configured(kGpsBaudEnv) &&
+         (path == "/dev/ttyS0" || path == "/dev/serial0"))
+            ? 9600
+            : 38400;
+    const int env_baud = env_int_or_default(kGpsBaudEnv, default_baud);
+    return supported_baud(env_baud) ? env_baud : default_baud;
+}
+
 speed_t baud_to_termios(int baud)
 {
     switch (baud)
@@ -868,40 +1194,52 @@ void close_serial_locked()
     }
 }
 
-bool open_serial_locked(const std::string& path)
+bool open_serial_locked(const std::string& path, int* out_error)
 {
     close_serial_locked();
 
     const int fd = open(path.c_str(), O_RDONLY | O_NOCTTY | O_NONBLOCK);
     if (fd < 0)
     {
+        if (out_error)
+        {
+            *out_error = errno;
+        }
         return false;
     }
 
     termios tio{};
     if (tcgetattr(fd, &tio) != 0)
     {
+        if (out_error)
+        {
+            *out_error = errno;
+        }
         close(fd);
         return false;
     }
 
     cfmakeraw(&tio);
-    const int default_baud =
-        (!env_configured(kGpsBaudEnv) &&
-         (path == "/dev/ttyS0" || path == "/dev/serial0"))
-            ? 9600
-            : 38400;
-    const speed_t baud = baud_to_termios(env_int_or_default(kGpsBaudEnv, default_baud));
+    const int configured_baud = serial_baud_for_path(path);
+    const speed_t baud = baud_to_termios(configured_baud);
     cfsetispeed(&tio, baud);
     cfsetospeed(&tio, baud);
     tio.c_cflag |= (CLOCAL | CREAD);
     if (tcsetattr(fd, TCSANOW, &tio) != 0)
     {
+        if (out_error)
+        {
+            *out_error = errno;
+        }
         close(fd);
         return false;
     }
 
     s_runtime.serial_fd = fd;
+    if (out_error)
+    {
+        *out_error = 0;
+    }
     return true;
 }
 #endif
@@ -915,13 +1253,59 @@ void reset_source_locked()
     s_runtime.line_length = 0;
     s_runtime.source_path.clear();
     s_runtime.source_is_serial = false;
+    s_runtime.source_is_auto_candidate = false;
+    s_runtime.source_opened_ms = 0;
+    s_runtime.last_serial_byte_ms = 0;
+    s_runtime.waiting_log_emitted = false;
     clear_payload_locked();
+}
+
+void rotate_auto_candidate_after_no_traffic_locked(uint32_t now)
+{
+#if defined(__linux__)
+    if (!s_runtime.source_is_serial || !s_runtime.source_is_auto_candidate ||
+        s_runtime.source_opened_ms == 0 || s_runtime.last_serial_byte_ms != 0 ||
+        s_runtime.last_rx_ms != 0 ||
+        (now - s_runtime.source_opened_ms) < kAutoSerialNoNmeaFailoverMs)
+    {
+        return;
+    }
+
+    const std::string failed_path = s_runtime.source_path;
+    const std::string next_path = next_auto_serial_candidate_locked(failed_path);
+    const auto& candidates = auto_serial_candidates_locked();
+    append_gps_system_log_locked(
+        "GPS serial no traffic",
+        next_path.empty()
+            ? "Serial source had no NMEA bytes; no alternate candidate is available"
+            : "Serial source had no NMEA bytes; trying next candidate",
+        {
+            {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+             .label = "path",
+             .text = failed_path},
+            {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+             .label = "next_path",
+             .text = next_path.empty() ? "none" : next_path},
+            {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+             .label = "candidate_index",
+             .text = std::to_string(s_runtime.auto_candidate_index)},
+            {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+             .label = "candidate_count",
+             .text = std::to_string(candidates.size())},
+        });
+
+    reset_source_locked();
+#else
+    (void)now;
+#endif
 }
 
 void ensure_source_open_locked()
 {
     bool requested_serial = false;
-    const std::string requested_path = requested_source_path(&requested_serial);
+    bool requested_auto_candidate = false;
+    const std::string requested_path =
+        requested_source_path(&requested_serial, &requested_auto_candidate);
     if (requested_path.empty())
     {
         if (!s_runtime.source_path.empty())
@@ -932,28 +1316,114 @@ void ensure_source_open_locked()
     }
 
     const bool source_changed =
-        requested_path != s_runtime.source_path || requested_serial != s_runtime.source_is_serial;
+        requested_path != s_runtime.source_path ||
+        requested_serial != s_runtime.source_is_serial ||
+        requested_auto_candidate != s_runtime.source_is_auto_candidate;
     if (source_changed)
     {
         reset_source_locked();
         s_runtime.source_path = requested_path;
         s_runtime.source_is_serial = requested_serial;
+        s_runtime.source_is_auto_candidate = requested_auto_candidate;
 #if defined(__linux__)
         if (requested_serial)
         {
-            if (!open_serial_locked(requested_path))
+            int open_error = 0;
+            if (!open_serial_locked(requested_path, &open_error))
             {
+                const uint32_t now = now_ms();
+                const bool should_log =
+                    s_runtime.last_open_failure_path != requested_path ||
+                    s_runtime.last_open_failure_log_ms == 0 ||
+                    (now - s_runtime.last_open_failure_log_ms) > 5000U;
+                if (should_log)
+                {
+                    append_gps_system_log_locked(
+                        "GPS source open failed",
+                        "Serial source could not be opened",
+                        {
+                            {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                             .label = "path",
+                             .text = requested_path},
+                            {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                             .label = "baud",
+                             .text = std::to_string(serial_baud_for_path(requested_path))},
+                            {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Error,
+                             .label = "errno",
+                             .text = std::to_string(open_error)},
+                        });
+                    s_runtime.last_open_failure_path = requested_path;
+                    s_runtime.last_open_failure_log_ms = now;
+                }
                 s_runtime.source_path.clear();
                 s_runtime.source_is_serial = false;
+                s_runtime.source_is_auto_candidate = false;
+                if (requested_auto_candidate)
+                {
+                    (void)next_auto_serial_candidate_locked(requested_path);
+                }
+            }
+            else
+            {
+                s_runtime.source_opened_ms = now_ms();
+                s_runtime.last_serial_byte_ms = 0;
+                s_runtime.waiting_log_emitted = false;
+                auto segments = std::vector<::platform::linux_runtime::PacketLogSegment>{
+                    {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                     .label = "path",
+                     .text = requested_path},
+                    {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                     .label = "baud",
+                     .text = std::to_string(serial_baud_for_path(requested_path))},
+                    {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                     .label = "baud_source",
+                     .text = effective_receiver_init_source()},
+                };
+                if (requested_auto_candidate)
+                {
+                    const auto& candidates = auto_serial_candidates_locked();
+                    segments.push_back(
+                        {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                         .label = "candidate_index",
+                         .text = std::to_string(s_runtime.auto_candidate_index)});
+                    segments.push_back(
+                        {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                         .label = "candidate_count",
+                         .text = std::to_string(candidates.size())});
+                }
+                append_gps_system_log_locked(
+                    "GPS source opened",
+                    "Serial source opened for NMEA input",
+                    segments);
             }
         }
 #else
         if (requested_serial)
         {
+            append_gps_system_log_locked(
+                "GPS source unsupported",
+                "Serial GPS source requested on a non-Linux runtime",
+                {
+                    {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                     .label = "path",
+                     .text = requested_path},
+                });
             s_runtime.source_path.clear();
             s_runtime.source_is_serial = false;
+            s_runtime.source_is_auto_candidate = false;
         }
 #endif
+        if (!requested_serial && !s_runtime.source_path.empty())
+        {
+            append_gps_system_log_locked(
+                "GPS source opened",
+                "NMEA file source opened",
+                {
+                    {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                     .label = "path",
+                     .text = requested_path},
+                });
+        }
     }
 }
 
@@ -1010,6 +1480,7 @@ void poll_serial_source_locked()
         const ssize_t got = read(s_runtime.serial_fd, buffer, sizeof(buffer));
         if (got > 0)
         {
+            s_runtime.last_serial_byte_ms = now_ms();
             append_bytes_and_process_locked(buffer, static_cast<std::size_t>(got));
             continue;
         }
@@ -1021,8 +1492,45 @@ void poll_serial_source_locked()
         {
             break;
         }
-        close_serial_locked();
+        const int read_error = errno;
+        const std::string failed_path = s_runtime.source_path;
+        append_gps_system_log_locked(
+            "GPS serial read failed",
+            "Serial source read returned an error; closing source",
+            {
+                {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                 .label = "path",
+                 .text = failed_path},
+                {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Error,
+                 .label = "errno",
+                 .text = std::to_string(read_error)},
+            });
+        reset_source_locked();
         break;
+    }
+
+    const uint32_t now = now_ms();
+    if (!s_runtime.waiting_log_emitted &&
+        s_runtime.source_opened_ms != 0 &&
+        s_runtime.last_rx_ms == 0 &&
+        (now - s_runtime.source_opened_ms) >= 1000U)
+    {
+        append_gps_system_log_locked(
+            "GPS serial waiting for NMEA",
+            s_runtime.last_serial_byte_ms == 0
+                ? "Serial source is open; no NMEA bytes have arrived yet"
+                : "Serial bytes have arrived; waiting for a complete NMEA sentence",
+            {
+                {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                 .label = "path",
+                 .text = s_runtime.source_path},
+                {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                 .label = "last_byte_age_ms",
+                 .text = s_runtime.last_serial_byte_ms == 0
+                             ? "none"
+                             : std::to_string(now - s_runtime.last_serial_byte_ms)},
+            });
+        s_runtime.waiting_log_emitted = true;
     }
 }
 #endif
@@ -1039,11 +1547,35 @@ void poll_external_source_locked()
     {
 #if defined(__linux__)
         poll_serial_source_locked();
+        rotate_auto_candidate_after_no_traffic_locked(now_ms());
 #endif
         return;
     }
 
     poll_file_source_locked();
+}
+
+void log_missing_source_once_locked()
+{
+    if (s_runtime.no_source_log_emitted)
+    {
+        return;
+    }
+    if (!requested_source_path(nullptr).empty() || env_state_configured() ||
+        demo_defaults_enabled())
+    {
+        return;
+    }
+
+    append_gps_system_log_locked(
+        "GPS source missing",
+        "GPS service is running, but no live serial or NMEA file source is configured",
+        {
+            {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+             .label = "auto_serial",
+             .text = auto_serial_probe_enabled() ? "1" : "0"},
+        });
+    s_runtime.no_source_log_emitted = true;
 }
 
 bool external_source_active_locked()
@@ -1078,13 +1610,22 @@ GpsState get_data()
     bool requested_serial = false;
     const bool source_requested =
         !requested_source_path(&requested_serial).empty();
-    poll_external_source_locked();
 
     if (external_source_active_locked())
     {
         return make_external_state_locked();
     }
     if (source_requested)
+    {
+        return {};
+    }
+
+    if (env_state_configured())
+    {
+        return make_env_state();
+    }
+
+    if (!demo_defaults_enabled())
     {
         return {};
     }
@@ -1115,7 +1656,6 @@ bool get_gnss_snapshot(GnssSatInfo* out, std::size_t max, std::size_t* out_count
     bool requested_serial = false;
     const bool source_requested =
         !requested_source_path(&requested_serial).empty();
-    poll_external_source_locked();
 
     if (external_source_active_locked())
     {
@@ -1154,6 +1694,32 @@ bool get_gnss_snapshot(GnssSatInfo* out, std::size_t max, std::size_t* out_count
         return true;
     }
     if (source_requested)
+    {
+        if (out_count)
+        {
+            *out_count = 0;
+        }
+        if (status)
+        {
+            *status = GnssStatus{};
+        }
+        return false;
+    }
+
+    if (env_state_configured())
+    {
+        if (out_count)
+        {
+            *out_count = 0;
+        }
+        if (status)
+        {
+            *status = make_env_status();
+        }
+        return true;
+    }
+
+    if (!demo_defaults_enabled())
     {
         if (out_count)
         {
@@ -1216,7 +1782,6 @@ GpsDiagnosticsSnapshot diagnostics()
     bool requested_serial = false;
     const bool source_requested =
         !requested_source_path(&requested_serial).empty();
-    poll_external_source_locked();
 
     if (external_source_active_locked())
     {
@@ -1227,7 +1792,18 @@ GpsDiagnosticsSnapshot diagnostics()
         snapshot.sats_in_use = s_runtime.status.sats_in_use;
         snapshot.last_rx_age_ms = s_runtime.last_rx_ms ? (now_ms() - s_runtime.last_rx_ms) : 0xFFFFFFFFUL;
     }
-    else if (!source_requested)
+    else if (env_state_configured())
+    {
+        const auto state = make_env_state();
+        const auto status = make_env_status();
+        snapshot.ready = true;
+        snapshot.has_fix = state.valid;
+        snapshot.satellites = state.satellites;
+        snapshot.sats_in_view = status.sats_in_view;
+        snapshot.sats_in_use = status.sats_in_use;
+        snapshot.last_rx_age_ms = 0;
+    }
+    else if (!source_requested && demo_defaults_enabled())
     {
         const auto state = make_default_state();
         const auto status = make_default_status();
@@ -1272,7 +1848,6 @@ uint32_t last_motion_ms()
     std::lock_guard<std::mutex> lock(s_mutex);
     if (external_source_active_locked())
     {
-        poll_external_source_locked();
         return s_runtime.last_motion_ms;
     }
 
@@ -1281,6 +1856,64 @@ uint32_t last_motion_ms()
         s_runtime.last_motion_ms = now_ms();
     }
     return s_runtime.last_motion_ms;
+}
+
+void tick_service()
+{
+    const uint32_t now = now_ms();
+    std::lock_guard<std::mutex> lock(s_mutex);
+    update_recent_traffic_window_locked(now);
+
+    if (!runtime_active())
+    {
+        reset_source_locked();
+        return;
+    }
+
+    if (s_runtime.last_service_poll_ms != 0 &&
+        (now - s_runtime.last_service_poll_ms) < kServicePollIntervalMs)
+    {
+        return;
+    }
+    s_runtime.last_service_poll_ms = now;
+
+    poll_external_source_locked();
+    log_missing_source_once_locked();
+}
+
+bool supports_receiver_baud_setting()
+{
+    return true;
+}
+
+bool supports_receiver_init_policy_settings()
+{
+    return false;
+}
+
+bool supports_gnss_runtime_settings()
+{
+    return false;
+}
+
+bool supports_collection_interval_setting()
+{
+    return false;
+}
+
+bool supports_external_nmea_output_setting()
+{
+    return false;
+}
+
+bool supports_altitude_reference_setting()
+{
+    return false;
+}
+
+bool supports_coordinate_format_setting()
+{
+    return false;
 }
 
 bool is_enabled()
@@ -1327,7 +1960,32 @@ void set_external_nmea_config(uint8_t output_hz, uint8_t sentence_mask)
 
 void set_receiver_init_config(const GpsReceiverInitConfig& config)
 {
-    (void)config;
+    std::lock_guard<std::mutex> lock(s_mutex);
+    const bool baud_changed = s_receiver_init_config.baud != config.baud;
+    s_receiver_init_config = config;
+    if (baud_changed)
+    {
+        append_gps_system_log_locked(
+            "GPS receiver config updated",
+            "Receiver serial configuration changed; reopening source on next service tick",
+            {
+                {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                 .label = "baud",
+                 .text = std::to_string(config.baud)},
+                {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                 .label = "probe_ms",
+                 .text = std::to_string(config.probe_ms)},
+                {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
+                 .label = "profile",
+                 .text = std::to_string(config.profile)},
+            });
+        reset_source_locked();
+    }
+}
+
+void set_fallback_mode(FallbackMode mode)
+{
+    s_fallback_mode = mode;
 }
 
 void set_motion_idle_timeout(uint32_t timeout_ms)

@@ -592,11 +592,14 @@ Trail Mate values **judgment quality and real-world feedback** over lines of cod
 
 Trail Mate has benefited from real support from the community and hardware vendors.
 
-Special thanks to **LILYGO** for providing development hardware.
-Their open hardware ecosystem and stable ESP32 product line have enabled continuous iteration and validation in real devices.
+- Special thanks to **LILYGO** for providing development hardware.
+  Their open hardware ecosystem and stable ESP32 product line have enabled continuous iteration and validation in real devices.
 
-Special thanks to **Shenzhen GAT-IOT Technology Co., Ltd.** (https://github.com/gat-iot) for providing hardware support to this project.
-The real devices they supplied have helped Trail Mate carry out development, debugging, and validation on actual hardware, further advancing the implementation and refinement of related features.
+- Special thanks to **M5Stack** for supporting the Cardputer Zero adaptation with hardware support.
+  Their support helped validate the Cardputer Zero environment against real device constraints and move Trail Mate's Linux portable-device path forward.
+
+- Special thanks to **Shenzhen GAT-IOT Technology Co., Ltd.** (https://github.com/gat-iot) for providing hardware support to this project.
+  The real devices they supplied have helped Trail Mate carry out development, debugging, and validation on actual hardware, further advancing the implementation and refinement of related features.
 
 These contributions lowered the barrier to prototyping and allowed Trail Mate to receive real-world feedback much earlier.
 

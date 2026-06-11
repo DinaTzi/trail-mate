@@ -119,21 +119,34 @@ Build entrypoint starts host runtime
 
 The app shell owns the product startup boundary, not the low-level build host.
 
-## AppShellCompatibilityAdapter
+## Historical Entrypoint Burn-Down
 
-`AppShellCompatibilityAdapter` is a temporary adapter from current historical
-entrypoints to future app shell semantics.
+Historical app entrypoint roots are not product architecture. Once a target has
+a final app shell and build entrypoint, new runtime or build work must land in
+the final owner and must not extend the historical root.
 
-Examples:
+Current burn-down posture:
 
-- `apps/esp_idf` may act as compatibility source for `apps/esp32_lvgl`.
-- `apps/esp_pio` may act as compatibility source for `apps/nrf52_node`.
-- `apps/linux_uconsole` may act as compatibility source for
-  `apps/linux_uconsole_gtk`.
-- `apps/linux_sim` may act as compatibility source for `apps/linux_sim_shell`.
+- ESP-IDF work must land in `builds/esp_idf`, `apps/esp32_lvgl`, `platform/`,
+  `boards/`, or `modules/` according to ownership.
+- Restoring `apps/esp_idf` as a compatibility source is forbidden.
+- Restoring root `legacy/` or `legacy/app_implementations/` is forbidden.
+- Historical names may appear only in documentation that explains removed
+  history or in explicitly scoped deletion-readiness audits.
 
-The adapter exists to describe migration. It must not become the new product
-architecture.
+The purpose of any remaining compatibility reference is deletion planning, not
+feature delivery.
+
+## Phase App Registry Rule
+
+A final app shell may expose a narrow diagnostic app for a bring-up phase when
+the full settings/app catalog runtime has not yet been migrated into that final
+entrypoint.
+
+For ESP32-P4 C6 Phase 1, `apps/esp32_lvgl` may register a lightweight
+`C6 Companion` diagnostics app that reads `platform::ui::wireless_companion`.
+That app must not pull historical settings shells, old USB/CDC HostLink
+services, or legacy entrypoint roots into the final ESP-IDF build.
 
 ## Skeleton App Shells
 
@@ -190,12 +203,9 @@ These names are placeholders until a later phase creates real source files.
 
 Phase 8.3 does not:
 
-- move `apps/esp_idf`
-- move `apps/esp_pio`
-- move `apps/linux_uconsole` source
-- modify ESP-IDF CMake
-- modify `platformio.ini`
-- modify Linux CMake
+- restore historical app entrypoint roots
+- add new runtime behavior to historical app paths
+- modify build entrypoints outside the phase scope
 - split `ui_shared`
 - implement UX Pack classes
 - change runtime behavior

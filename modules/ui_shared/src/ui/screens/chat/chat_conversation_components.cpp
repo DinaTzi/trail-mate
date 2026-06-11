@@ -10,6 +10,7 @@
 #include "chat/usecase/contact_service.h"
 #include "ui/assets/fonts/font_utils.h"
 #include "ui/localization.h"
+#include "ui/page/page_profile.h"
 #include "ui/screens/chat/chat_conversation_input.h"
 #include "ui/screens/chat/chat_conversation_layout.h"
 #include "ui/screens/chat/chat_conversation_styles.h"
@@ -49,6 +50,11 @@ constexpr uint32_t kSecondsPerMonth = 30U * kSecondsPerDay;
 constexpr uint32_t kSecondsPerYear = 365U * kSecondsPerDay;
 constexpr uint32_t kMinValidEpochSeconds = 1577836800U; // 2020-01-01
 constexpr size_t kMaxPrefixedSenderLen = 20;
+
+lv_coord_t bubble_pad_x()
+{
+    return ::ui::page_profile::is_dense() ? 6 : kBubblePadX;
+}
 
 ::ui::chat::MessageDeliveryState delivery_from_message_status(
     chat::MessageStatus status)
@@ -138,14 +144,6 @@ std::string format_team_rich_payload_text(
 static bool is_valid_epoch_ts(uint32_t ts)
 {
     return ts >= kMinValidEpochSeconds;
-}
-
-static void format_hms(char* out, size_t out_len, uint32_t seconds)
-{
-    unsigned h = static_cast<unsigned>(seconds / 3600U);
-    unsigned m = static_cast<unsigned>((seconds / 60U) % 60U);
-    unsigned s = static_cast<unsigned>(seconds % 60U);
-    snprintf(out, out_len, "%02u:%02u:%02u", h, m, s);
 }
 
 static void format_message_time(char* out, size_t out_len, uint32_t ts)
@@ -541,7 +539,7 @@ void ChatConversationScreen::createMessageItem(const ::ui::chat::MessageRow& row
     {
         // original: candidate = (list_w - 2 * kPadX) * 7 / 10
         // kPadX lives in styles; but for behavior parity we replicate formula using known 8px.
-        constexpr lv_coord_t kPadX = 8;
+        const lv_coord_t kPadX = ::ui::page_profile::is_dense() ? 4 : 8;
         lv_coord_t candidate = (list_w - 2 * kPadX) * 7 / 10;
         if (candidate > 0 && candidate < max_bubble_w)
         {
@@ -622,7 +620,7 @@ void ChatConversationScreen::createMessageItem(const ::ui::chat::MessageRow& row
             lv_label_get_text(badge_label),
             ::ui::fonts::ui_chrome_font());
         const lv_coord_t max_badge_w =
-            std::max<lv_coord_t>(max_bubble_w - 2 * kBubblePadX, 24);
+            std::max<lv_coord_t>(max_bubble_w - 2 * bubble_pad_x(), 24);
         lv_obj_set_width(badge_label, max_badge_w);
 
         if (!row.team_rich_payload.title.empty())
@@ -640,7 +638,7 @@ void ChatConversationScreen::createMessageItem(const ::ui::chat::MessageRow& row
     lv_label_set_text(item.text_label, display_text.c_str());
     ::ui::fonts::apply_chat_content_font(item.text_label, display_text.c_str());
 
-    const lv_coord_t max_text_w = std::max<lv_coord_t>(max_bubble_w - 2 * kBubblePadX, 24);
+    const lv_coord_t max_text_w = std::max<lv_coord_t>(max_bubble_w - 2 * bubble_pad_x(), 24);
     lv_obj_update_layout(item.text_label);
     const lv_coord_t natural_text_w = lv_obj_get_width(item.text_label);
     if (natural_text_w > max_text_w)
