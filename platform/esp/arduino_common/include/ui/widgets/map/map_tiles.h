@@ -47,7 +47,7 @@ struct DecodedTileCache
     uint8_t map_source;      // Base map source (OSM/Terrain/Satellite)
     lv_image_dsc_t* img_dsc; // Decoded image descriptor (RGB565 data in RAM)
     uint32_t last_used_ms;   // For LRU eviction
-    bool in_use;             // True if currently used by a visible tile
+    bool bound_to_lvgl_object; // True while referenced by a live LVGL image object
 };
 
 // Map tile structure
@@ -69,7 +69,7 @@ struct MapTile
     bool base_missing;            // True if the base tile file was confirmed missing for this render state
     bool contour_checked;         // True if contour file lookup was attempted for this tile
     bool contour_loaded;          // True if contour overlay object is present
-    DecodedTileCache* cached_img; // Pointer to decoded image cache entry (NULL if not cached)
+    DecodedTileCache* cached_img; // Decoded image entry currently bound to img_obj (NULL if not cached)
 };
 
 // Tile management context (passed to functions instead of using global state)
