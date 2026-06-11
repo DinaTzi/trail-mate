@@ -56,6 +56,11 @@ jobs:
         working-directory: builds/linux_cmake
         run: cmake --preset linux-cardputer-zero-release
 
+      - name: Set up QEMU for arm64 Docker package build
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - name: Build Cardputer Zero Debian package
         run: bash apps/linux_cardputer_zero/tools/build_cardputer_zero_deb.sh
 
