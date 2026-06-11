@@ -28,6 +28,7 @@
 #include "platform/ui/timezone_profile.h"
 #include "platform/ui/tracker_runtime.h"
 #include "platform/ui/wifi_runtime.h"
+#include "platform/ui/wireless_companion_runtime.h"
 #include "ui/app_runtime.h"
 #include "ui/assets/fonts/font_utils.h"
 #include "ui/components/info_card.h"
@@ -67,6 +68,7 @@ namespace screen_runtime = ::platform::ui::screen;
 namespace settings_backup_runtime = ::platform::ui::settings_backup;
 namespace settings_store = ::platform::ui::settings_store;
 namespace tracker_runtime = ::platform::ui::tracker;
+namespace wireless_companion_runtime = ::platform::ui::wireless_companion;
 namespace wifi_runtime = ::platform::ui::wifi;
 
 constexpr size_t kMaxItems = 32;
@@ -361,6 +363,23 @@ static void refresh_settings_backup_state_from_runtime()
     copy_bounded(g_settings.settings_backup_status,
                  sizeof(g_settings.settings_backup_status),
                  ::ui::i18n::tr(message));
+}
+
+static void refresh_wireless_companion_state_from_runtime()
+{
+    const wireless_companion_runtime::Status status = wireless_companion_runtime::status();
+    if (status.detail[0] != '\0')
+    {
+        std::snprintf(g_settings.c6_companion_status,
+                      sizeof(g_settings.c6_companion_status),
+                      "%s (%s)",
+                      status.message,
+                      status.detail);
+        return;
+    }
+    copy_bounded(g_settings.c6_companion_status,
+                 sizeof(g_settings.c6_companion_status),
+                 status.message);
 }
 
 static void refresh_visible_item_values()
@@ -1175,6 +1194,7 @@ static void settings_load()
     refresh_wifi_state_from_runtime();
     refresh_firmware_update_state_from_runtime();
     refresh_settings_backup_state_from_runtime();
+    refresh_wireless_companion_state_from_runtime();
 
     g_settings.advanced_debug_logs = prefs_get_bool("adv_debug", false);
 
@@ -3078,6 +3098,8 @@ static settings::ui::SettingItem kScreenItems[] = {
      sizeof(kSpeakerVolumeOptions) / sizeof(kSpeakerVolumeOptions[0]), &g_settings.speaker_volume, nullptr, nullptr, 0, false, "speaker_volume"},
     {"Vibration", settings::ui::SettingType::Toggle, nullptr, 0, nullptr, &g_settings.vibration_enabled, nullptr, 0, false, "vibration_enabled"},
     {"Bluetooth", settings::ui::SettingType::Toggle, nullptr, 0, nullptr, &g_settings.ble_enabled, nullptr, 0, false, "ble_enabled"},
+    {"C6 Companion", settings::ui::SettingType::Info, nullptr, 0, nullptr, nullptr,
+     g_settings.c6_companion_status, sizeof(g_settings.c6_companion_status), false, "c6_companion_status"},
     {"Time Zone", settings::ui::SettingType::Enum, kTimeZoneOptions, 0, &g_settings.timezone_profile_id, nullptr, nullptr, 0, false, "timezone_profile"},
     {"Gauge Design (mAh)", settings::ui::SettingType::Text, nullptr, 0, nullptr, nullptr,
      g_settings.gauge_design_mah, sizeof(g_settings.gauge_design_mah), false, "gauge_design_mah"},
@@ -3266,6 +3288,11 @@ static bool should_show_item(const settings::ui::SettingItem& item)
          has_pref_key(item, "settings_backup") ||
          has_pref_key(item, "settings_restore")) &&
         !settings_backup_runtime::is_supported())
+    {
+        return false;
+    }
+    if (has_pref_key(item, "c6_companion_status") &&
+        !wireless_companion_runtime::is_supported())
     {
         return false;
     }
@@ -3907,6 +3934,18 @@ static void settings_back_cb(void* /*user_data*/)
     ui_request_exit_to_menu();
 }
 
+static void refresh_timezone_option_count()
+{
+    for (settings::ui::SettingItem& item : kScreenItems)
+    {
+        if (has_pref_key(item, "timezone_profile"))
+        {
+            item.option_count = kTimeZoneOptionCount;
+            return;
+        }
+    }
+}
+
 } // namespace
 
 void create(lv_obj_t* parent)
@@ -3915,7 +3954,7 @@ void create(lv_obj_t* parent)
     ESP_LOGI(kLogTag, "create begin");
 #endif
     refresh_timezone_options();
-    kScreenItems[7].option_count = kTimeZoneOptionCount;
+    refresh_timezone_option_count();
     settings_load();
 
     // Avoid auto-adding widgets to the current default group during creation.

@@ -9,10 +9,10 @@
 #include "app/app_facade_access.h"
 #include "chat/domain/chat_types.h"
 
+#include "ui/assets/fonts/font_utils.h"
 #include "ui/components/air_status_footer.h"
 #include "ui/components/info_card.h"
 #include "ui/components/two_pane_layout.h"
-#include "ui/assets/fonts/font_utils.h"
 #include "ui/localization.h"
 #include "ui/page/page_profile.h"
 

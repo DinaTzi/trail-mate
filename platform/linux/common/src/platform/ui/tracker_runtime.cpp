@@ -12,8 +12,8 @@
 #include <string>
 #include <vector>
 
-#include "platform/ui/gps_runtime.h"
 #include "platform/linux/runtime_paths.h"
+#include "platform/ui/gps_runtime.h"
 #include "sys/clock.h"
 
 namespace platform::ui::tracker

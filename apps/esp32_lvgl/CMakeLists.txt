@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(TrailMateEsp32LvglAppShell LANGUAGES CXX)
+project(TrailMateEsp32LvglAppShell LANGUAGES C CXX)
 
 set(TRAIL_MATE_REPO_ROOT
     "${CMAKE_CURRENT_LIST_DIR}/../.."
@@ -11,6 +11,7 @@ trailmate_add_ui_lvgl_ux_packs(trailmate_ui_lvgl_ux_packs)
 include(CTest)
 
 add_library(trailmate_esp32_lvgl_app_shell
+    src/esp32_lvgl_idf_app_runtime_access.cpp
     src/esp32_lvgl_app_shell.cpp
     src/esp32_lvgl_historical_source_descriptor.cpp
     src/esp32_lvgl_startup_runtime.cpp
@@ -81,6 +82,18 @@ if(BUILD_TESTING)
         PRIVATE trailmate_esp32_lvgl_app_shell)
     add_test(NAME trailmate_product_target_profile_smoke
              COMMAND trailmate_product_target_profile_smoke)
+
+    add_executable(trailmate_c6_hostlink_frame_codec_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_hostlink/tests/test_c6_frame_codec.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_hostlink/src/c6_frame_codec.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_hostlink/src/c6_frame_codec_c.c")
+    target_include_directories(trailmate_c6_hostlink_frame_codec_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_hostlink/include")
+    target_compile_features(trailmate_c6_hostlink_frame_codec_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_c6_hostlink_frame_codec_smoke
+             COMMAND trailmate_c6_hostlink_frame_codec_smoke)
 
     add_executable(trailmate_product_target_build_binding_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/product_composition/tests/test_target_build_binding.cpp")

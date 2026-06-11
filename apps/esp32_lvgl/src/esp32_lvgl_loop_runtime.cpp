@@ -1,8 +1,8 @@
 #include "esp32_lvgl_loop_runtime.h"
 
-#if defined(ESP_PLATFORM)
-#include "apps/esp_idf/app_runtime_access.h"
+#include "esp32_lvgl_idf_app_runtime_access.h"
 
+#if defined(ESP_PLATFORM)
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -34,7 +34,7 @@ void loopTask(void* parameter)
         return static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
     };
     hooks.update_runtime = []()
-    { apps::esp_idf::app_runtime_access::tick(); };
+    { idf_app_runtime_access::tick(); };
     hooks.yield_now = []()
     { taskYIELD(); };
     hooks.sleep_ms = [](uint32_t ms)

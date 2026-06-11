@@ -234,7 +234,7 @@ SkyPlotLayout make_dense_compact_layout(lv_coord_t parent_w, lv_coord_t parent_h
     layout.horizon_offset_y = 8;
 
     layout.legend_snr_x = std::min<lv_coord_t>(layout.sky_panel_w - 110,
-                                                layout.sky_area_x + layout.sky_area_size + 68);
+                                               layout.sky_area_x + layout.sky_area_size + 68);
     layout.legend_snr_y = 5;
     layout.legend_snr_row = 12;
     layout.legend_sys_x = layout.legend_snr_x;

@@ -5,12 +5,12 @@
 Phase 8 normalizes Trail Mate repository semantics before any directory move.
 
 This specification defines what each top-level architecture directory means,
-what dependency directions are allowed, and which historical shapes must remain
-transitional until they can be renamed or moved safely.
+what dependency directions are allowed, and which historical shapes must be
+burned down instead of extended.
 
-Phase 8.1 is documentation and checker work only. It must not move build
-entrypoints, change PlatformIO or ESP-IDF layout, split `ui_shared`, or rename
-legacy adapters.
+Phase 8.1 was documentation and checker work only. New work after the freeze
+must not restore historical roots or add new implementation to legacy-named
+surfaces.
 
 ## Core Rule
 
@@ -37,6 +37,7 @@ Renderer draws.
 | `modules/` | Reusable modules | portable cores, presentation models, runtime helpers, renderers, adapters with explicit ports | build entrypoints, app shell startup, board-specific product selection |
 | `platform/` | OS / SDK / HAL / runtime adapters | ESP, nRF, Linux, and shared platform integration, SDK/HAL bindings, driver hosts | product behavior, UX feature decisions, app shell composition |
 | `boards/` | Board hardware facts | pins, buses, displays, storage devices, power rails, electrical capabilities | product features, UI page sets, protocol policy, app services |
+| `firmware/` | Peer firmware projects for secondary execution hosts | companion MCU firmware projects, companion-local components, companion build wrappers | P4 app shell composition, Trail Mate business services, board facts for the main target |
 | `docs/targets/` | Target product selection documentation | target profiles, selected board/platform/app shell/UX pack/capability intent | runtime configuration sprawl, generated build state |
 | `docs/ux_profiles/` | Device UX profile documents | device-specific UX declarations, feature-set decisions, screen sets, input bindings | board facts, SDK details, renderer internals |
 
@@ -53,6 +54,7 @@ apps -> modules + platform + boards
 modules -> modules only
 platform -> SDK/HAL/runtime only
 boards -> facts only
+firmware -> modules/shared protocol headers only
 docs -> specification/audit only
 ```
 
@@ -63,6 +65,9 @@ Expanded reading:
 - `modules/` may depend on other modules through declared public contracts.
 - `platform/` may depend on SDK, HAL, OS, and runtime host APIs.
 - `boards/` may provide static facts and manifests only.
+- `firmware/` may contain independent firmware projects for secondary execution
+  hosts such as the ESP32-C6 companion. Such projects may consume shared
+  protocol headers, but must not become the P4 product app shell.
 - `docs/` may describe specifications, audits, target decisions, and UX profile
   decisions.
 
@@ -76,6 +81,8 @@ boards -> apps
 ui_presentation -> platform
 ui_presentation -> LVGL
 ui_presentation -> filesystem
+firmware/c6_companion -> apps
+firmware/c6_companion -> boards
 ```
 
 These directions are forbidden because they make portable code depend on
@@ -215,11 +222,42 @@ Board facts include:
 - radio and GPS peripherals
 - power and battery facts
 
+For dual-MCU boards, board facts may also describe the companion MCU identity,
+pins, reset/wake lines, and data link wiring. These facts do not decide whether
+the product enables a wireless facade or any UX surface.
+
 Board facts must not select product features. A board may say that a display is
 320x240 and has touch. It must not decide whether the target has a full map
 workflow, compact map workflow, team chat, or status-only UX.
 
 `boards cannot decide UX.`
+
+## Companion Firmware
+
+`firmware/` contains firmware projects for secondary execution hosts that are
+versioned with Trail Mate because their protocols evolve with the main product.
+
+Current companion project:
+
+```text
+firmware/c6_companion
+```
+
+The ESP32-C6 companion firmware is a peer project. It is not an app shell, not
+a P4 build entrypoint, and not a board package. It may include shared protocol
+definitions from `modules/core_hostlink/include/hostlink/c6`, but it must not
+include P4 app shells, board packages, UI pages, or Trail Mate business
+services.
+
+Companion-local components such as C6 HostLink, BLE, ESP-NOW, Wi-Fi, services,
+and diagnostics belong under `firmware/c6_companion/components`. They may adapt
+ESP-IDF C6 drivers and consume shared C6 protocol headers. They must not grow
+historical `legacy/` roots, depend on `apps/`, depend on `boards/`, or become
+owners of Trail Mate product meaning.
+
+The C6 companion project may own its own ESP-IDF `sdkconfig.defaults`,
+partition table, build directory, and flash instructions because it targets a
+secondary MCU. These files do not make C6 a P4 build entrypoint.
 
 ## Target Documents
 
@@ -232,6 +270,7 @@ A target document may say:
 - which app shell is selected
 - which UX profile or UX pack is selected
 - which capabilities are enabled, disabled, proxied, or hidden
+- which BLE backend and display orientation policy are selected
 
 It must not become an unbounded runtime configuration system.
 
@@ -249,13 +288,12 @@ A UX profile document may say:
 
 It must not restate board pin facts or build-system mechanics.
 
-## Transitional Historical Layout
+## Historical Layout Burn-Down
 
-Current `legacy/app_implementations/esp_idf` and
-`legacy/app_implementations/esp_pio` are transitional build entrypoint shapes.
-They may remain while the build entrypoint migration is planned, but Phase 8
-must treat them as legacy build entrypoint directories, not final app shell
-names.
+Root `legacy/`, `legacy/app_implementations/esp_idf`, and
+`legacy/app_implementations/esp_pio` are removed historical shapes. They must
+not be restored as compatibility roots, build entrypoints, source owners, or
+places for new feature work.
 
 Current `modules/ui_shared` is a transitional mixed UI module. It may remain in
 place while the split is planned, but new Phase 8 work must classify additions
@@ -274,8 +312,10 @@ nRF52 -> builds/pio_nrf52
 Linux -> builds/linux_cmake
 ```
 
-`legacy/app_implementations/esp_idf` and `legacy/app_implementations/esp_pio` remain transitional
-until wrapper migration.
+Historical `legacy/app_implementations/esp_idf` and
+`legacy/app_implementations/esp_pio` are no longer valid wrapper locations.
+Future wrapper migration must move toward final `builds/` and `apps/` owners,
+not back toward removed roots.
 
 `builds/esp_idf`, `builds/pio_nrf52`, and `builds/linux_cmake` are thin wrapper
 slots. They must not assemble Chat, Map, Team, or GPS runtime, choose UX packs,

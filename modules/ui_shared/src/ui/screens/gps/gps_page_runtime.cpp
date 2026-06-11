@@ -730,8 +730,8 @@ using Projection = gps::ui::shell::Projection;
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 #if !defined(LV_FONT_MONTSERRAT_10) || !LV_FONT_MONTSERRAT_10
@@ -1091,7 +1091,7 @@ void sync_map_context_buttons(const ::ui::map::MapWorkspaceSnapshot& snapshot)
     const bool show_route = route_context_available();
     const bool show_team = snapshot.team.available && snapshot.team.visible_members > 0;
     const uint8_t next_mask = static_cast<uint8_t>((show_route ? 0x01 : 0x00) |
-                                                  (show_team ? 0x02 : 0x00));
+                                                   (show_team ? 0x02 : 0x00));
 
     set_hidden(s_map_route_btn, !show_route);
     set_hidden(s_map_team_btn, !show_team);

@@ -124,8 +124,14 @@ They may select:
 - shell profile
 - capabilities
 - authority sources
+- BLE backend selection, including local, C6 companion, or none
+- display orientation policy
 
 They must not become arbitrary runtime configuration systems in Phase 6.
+
+For ESP32-P4 plus ESP32-C6 products, the target selects the C6 wireless
+companion as a capability binding. The board only describes the C6 hardware
+facts. P4 remains the authority for Trail Mate business state.
 
 ## AppContext Bridge
 

@@ -152,7 +152,7 @@ struct BoardProfile
     bool power_5v_active_high = true;
     bool p4_vcca_active_high = false;
     bool gps_wake_active_high = true;
-    bool c6_enable_active_high = false;
+    bool c6_enable_active_high = true;
     bool c6_wake_active_high = true;
     bool screen_reset_active_low = true;
     bool touch_reset_active_low = true;
@@ -166,6 +166,9 @@ struct BoardProfile
     bool has_sdcard = false;
     bool has_gps_uart = false;
     bool has_lora = false;
+    bool has_c6_companion = false;
+    bool has_motion_sensor = false;
+    const char* motion_sensor = nullptr;
     bool uses_io_expander_for_lora = false;
 };
 
@@ -253,7 +256,7 @@ inline constexpr BoardProfile makeBoardProfile()
     profile.power_5v_active_high = true;
     profile.p4_vcca_active_high = false;
     profile.gps_wake_active_high = true;
-    profile.c6_enable_active_high = false;
+    profile.c6_enable_active_high = true;
     profile.c6_wake_active_high = true;
     profile.screen_reset_active_low = true;
     profile.touch_reset_active_low = true;
@@ -267,6 +270,9 @@ inline constexpr BoardProfile makeBoardProfile()
     profile.has_sdcard = true;
     profile.has_gps_uart = true;
     profile.has_lora = true;
+    profile.has_c6_companion = true;
+    profile.has_motion_sensor = true;
+    profile.motion_sensor = "ICM20948";
     profile.uses_io_expander_for_lora = true;
 
     return profile;

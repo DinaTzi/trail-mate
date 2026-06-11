@@ -10,4 +10,4 @@ Current responsibilities:
 Longer-term role:
 
 - provide shared ESP-IDF glue for multiple IDF targets, not only Tab5
-- sit below `apps/esp_idf` and above `platform/esp/boards/<board>` in the dependency graph
+- sit below `apps/esp32_lvgl` and above `platform/esp/boards/<board>` in the dependency graph

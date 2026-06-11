@@ -16,7 +16,33 @@ struct HeadingState
     uint32_t last_update_ms = 0;
 };
 
+enum class ScreenOrientation
+{
+    Landscape,
+    Portrait,
+};
+
+enum class ScreenOrientationPolicy
+{
+    LandscapeLocked,
+    SensorLandscapeOnly,
+    SensorAuto,
+};
+
+struct ScreenOrientationState
+{
+    ScreenOrientationPolicy policy = ScreenOrientationPolicy::LandscapeLocked;
+    ScreenOrientation active_orientation = ScreenOrientation::Landscape;
+    ScreenOrientation sensor_requested_orientation = ScreenOrientation::Landscape;
+    bool sensor_available = false;
+    bool sensor_ready = false;
+    bool portrait_supported = false;
+    bool sensor_request_ignored = false;
+};
+
 HeadingState get_heading();
 void ensure_heading_runtime();
+ScreenOrientationState get_screen_orientation();
+void ensure_screen_orientation_runtime();
 
 } // namespace platform::ui::orientation

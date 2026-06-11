@@ -10,8 +10,8 @@ Current migrated source:
 
 Evidence:
 
-- migrated from `removed root esp_idf/include/apps/esp_idf/meshtastic_radio_adapter.h`
-- migrated from `removed root esp_idf/src/meshtastic_radio_adapter.cpp`
+- migrated from the removed historical ESP-IDF app implementation root
+- active source ownership now lives under final platform ownership
 
 Rules:
 

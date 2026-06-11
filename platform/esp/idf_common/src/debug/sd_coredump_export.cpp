@@ -1,8 +1,8 @@
 #include "platform/esp/idf_common/debug/sd_coredump_export.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <sys/stat.h>
 #include <sys/types.h>

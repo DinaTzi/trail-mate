@@ -121,6 +121,7 @@ struct SettingsData
     int timezone_profile_id = 0;
     int speaker_volume = 45;
     int display_locale_index = 0;
+    char c6_companion_status[96] = "";
     bool ble_enabled = true;
     bool vibration_enabled = true;
 

@@ -89,6 +89,11 @@ bool resolveDisplayLocalTime(struct tm* out_tm)
     return true;
 }
 
+uint32_t selfNodeId()
+{
+    return app::hasAppFacade() ? app::messagingFacade().getSelfNodeId() : 0;
+}
+
 std::size_t used_bytes(std::size_t total_bytes, std::size_t free_bytes)
 {
     return total_bytes > free_bytes ? (total_bytes - free_bytes) : 0;
@@ -126,7 +131,7 @@ void format_memory_value(std::size_t bytes, char* out, std::size_t out_len)
 void refreshBottomBar()
 {
     char node_text[24];
-    const uint32_t self_id = app::messagingFacade().getSelfNodeId();
+    const uint32_t self_id = selfNodeId();
     if (self_id != 0)
     {
         std::snprintf(node_text, sizeof(node_text), "!%08lX", static_cast<unsigned long>(self_id));
@@ -213,7 +218,7 @@ void updateWatchFaceTime()
         return;
     }
 
-    const uint32_t self_id = app::messagingFacade().getSelfNodeId();
+    const uint32_t self_id = selfNodeId();
     watchFaceSetNodeId(self_id);
     const int battery = s_runtime.watch_face_battery >= 0 ? s_runtime.watch_face_battery : -1;
     struct tm info

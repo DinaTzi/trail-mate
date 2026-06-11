@@ -285,7 +285,8 @@ std::string chat_notification_summary(const ::chat::ChatMessage& msg)
 void send_desktop_notification_async(std::string summary, std::string body)
 {
 #if defined(__linux__)
-    std::thread([summary = std::move(summary), body = std::move(body)]() mutable {
+    std::thread([summary = std::move(summary), body = std::move(body)]() mutable
+                {
         const char* urgency = "normal";
         const char* category = "im.received";
         char* const argv[] = {
@@ -310,8 +311,8 @@ void send_desktop_notification_async(std::string summary, std::string body)
         int status = 0;
         while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
         {
-        }
-    }).detach();
+        } })
+        .detach();
 #else
     (void)summary;
     (void)body;

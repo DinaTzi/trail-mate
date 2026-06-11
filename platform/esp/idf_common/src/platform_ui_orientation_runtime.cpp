@@ -23,4 +23,33 @@ void ensure_heading_runtime()
 #endif
 }
 
+ScreenOrientationState get_screen_orientation()
+{
+    ScreenOrientationState state{};
+#if defined(TRAIL_MATE_ESP_BOARD_TAB5)
+    const HeadingState heading = get_heading();
+    state.policy = ScreenOrientationPolicy::SensorLandscapeOnly;
+    state.sensor_available = true;
+    state.sensor_ready = heading.sensor_ready;
+    state.sensor_requested_orientation = ScreenOrientation::Landscape;
+    state.sensor_request_ignored = false;
+#elif defined(TRAIL_MATE_ESP_BOARD_T_DISPLAY_P4)
+    state.policy = ScreenOrientationPolicy::SensorLandscapeOnly;
+    state.sensor_available = true;
+    state.sensor_ready = false;
+    state.sensor_requested_orientation = ScreenOrientation::Landscape;
+    state.sensor_request_ignored = false;
+#endif
+    state.active_orientation = ScreenOrientation::Landscape;
+    state.portrait_supported = false;
+    return state;
+}
+
+void ensure_screen_orientation_runtime()
+{
+#if defined(TRAIL_MATE_ESP_BOARD_TAB5)
+    ::boards::tab5::heading_runtime::ensure_started();
+#endif
+}
+
 } // namespace platform::ui::orientation

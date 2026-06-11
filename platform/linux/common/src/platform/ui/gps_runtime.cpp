@@ -1407,7 +1407,7 @@ void ensure_source_open_locked()
                     {.kind = ::platform::linux_runtime::PacketLogSegmentKind::Meta,
                      .label = "path",
                      .text = requested_path},
-            });
+                });
             s_runtime.source_path.clear();
             s_runtime.source_is_serial = false;
             s_runtime.source_is_auto_candidate = false;
