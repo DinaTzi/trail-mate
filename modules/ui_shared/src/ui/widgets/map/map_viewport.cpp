@@ -46,7 +46,18 @@ struct RuntimeImpl
 namespace
 {
 
+#ifndef MAP_VIEWPORT_DEBUG
+#define MAP_VIEWPORT_DEBUG 0
+#endif
+
+#if MAP_VIEWPORT_DEBUG
 #define MAP_VIEWPORT_LOG(...) std::printf("[MapViewport] " __VA_ARGS__)
+#else
+#define MAP_VIEWPORT_LOG(...) \
+    do                        \
+    {                         \
+    } while (0)
+#endif
 
 constexpr double kCoordPi = 3.14159265358979323846;
 constexpr double kCoordA = 6378245.0;
@@ -343,7 +354,7 @@ GeoPoint transformed_focus(const Model& model)
     return out;
 }
 
-void refresh_tiles(RuntimeImpl& impl, const char* reason)
+void refresh_tiles(RuntimeImpl& impl, const char* reason, bool prime_visible)
 {
     if (!is_runtime_alive(impl))
     {
@@ -383,7 +394,10 @@ void refresh_tiles(RuntimeImpl& impl, const char* reason)
                              impl.model.pan_x,
                              impl.model.pan_y,
                              true);
-    prime_visible_tiles(impl, reason);
+    if (prime_visible)
+    {
+        prime_visible_tiles(impl, reason);
+    }
     MAP_VIEWPORT_LOG("refresh_tiles reason=%s zoom=%d pan=%d,%d src=%u contour=%d anchor=%d size=%dx%d map_data=%d visible_map=%d\n",
                      reason ? reason : "<none>",
                      impl.model.zoom,
@@ -718,7 +732,31 @@ void apply_model(Runtime& runtime, const Model& model)
                      static_cast<unsigned>(impl->model.map_source),
                      impl->model.contour_enabled ? 1 : 0,
                      static_cast<unsigned>(impl->model.coord_system));
-    refresh_tiles(*impl, "apply_model");
+    refresh_tiles(*impl, "apply_model", true);
+    render_overlay(*impl);
+}
+
+void apply_model_lightweight(Runtime& runtime, const Model& model)
+{
+    if (!runtime.impl_)
+    {
+        runtime.impl_ = new RuntimeImpl();
+        runtime.impl_->tiles.reserve(TILE_RECORD_LIMIT);
+    }
+    RuntimeImpl* impl = runtime.impl_;
+    impl->model = model;
+    impl->model.map_source = sanitize_map_source(impl->model.map_source);
+    MAP_VIEWPORT_LOG("apply_model_lightweight focus_valid=%d lat=%.7f lon=%.7f zoom=%d pan=%d,%d src=%u contour=%d coord=%u\n",
+                     impl->model.focus_point.valid ? 1 : 0,
+                     impl->model.focus_point.lat,
+                     impl->model.focus_point.lon,
+                     impl->model.zoom,
+                     impl->model.pan_x,
+                     impl->model.pan_y,
+                     static_cast<unsigned>(impl->model.map_source),
+                     impl->model.contour_enabled ? 1 : 0,
+                     static_cast<unsigned>(impl->model.coord_system));
+    refresh_tiles(*impl, "apply_model_lightweight", false);
     render_overlay(*impl);
 }
 
