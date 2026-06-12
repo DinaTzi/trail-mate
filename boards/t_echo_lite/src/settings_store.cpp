@@ -22,9 +22,10 @@ constexpr const char* kSettingsPath = "/t_echo_lite_settings.bin";
 constexpr const char* kSettingsCorruptPath = "/t_echo_lite_settings.bin.corrupt";
 constexpr const char* kLogTag = "[t-echo-lite][settings]";
 constexpr uint32_t kSettingsMagic = 0x54454C54UL; // TLET
-constexpr uint16_t kSettingsVersion = 3;
+constexpr uint16_t kSettingsVersion = 4;
+constexpr uint16_t kSettingsVersionStatusLedDefaultWasBlue = 3;
 constexpr uint8_t kDefaultToneVolume = 45;
-constexpr uint8_t kDefaultStatusLedColor = 3;
+constexpr uint8_t kDefaultStatusLedColor = 0;
 constexpr uint8_t kDefaultKeyboardLightEnabled = 0;
 constexpr uint32_t kDeferredSaveDebounceMs = 1500UL;
 constexpr uint32_t kImmediateSaveRetryDelayMs = 20UL;
@@ -393,6 +394,59 @@ bool loadFromFs()
                           static_cast<unsigned>(s_cache.tone_volume),
                           static_cast<unsigned>(s_cache.config.ble_enabled ? 1 : 0),
                           static_cast<unsigned>(s_cache.config.mesh_protocol));
+            return true;
+        }
+
+        if (header.version == kSettingsVersionStatusLedDefaultWasBlue)
+        {
+            if (header.payload_size != sizeof(PersistedPayload) ||
+                actual_size != static_cast<uint32_t>(sizeof(FileHeader) + sizeof(PersistedPayload)))
+            {
+                file.close();
+                s_last_load_status = StoreStatus::PayloadSizeMismatch;
+                (void)quarantineCorruptFile(s_last_load_status);
+                Serial.printf("[T-Echo Lite][settings] v3 payload size mismatch got=%lu expected=%lu actual=%lu\n",
+                              static_cast<unsigned long>(header.payload_size),
+                              static_cast<unsigned long>(sizeof(PersistedPayload)),
+                              static_cast<unsigned long>(actual_size));
+                return false;
+            }
+
+            auto& payload = s_payload_scratch;
+            std::memset(&payload, 0, sizeof(payload));
+            if (file.read(&payload, sizeof(payload)) != sizeof(payload))
+            {
+                file.close();
+                s_last_load_status = StoreStatus::ReadFailed;
+                Serial.printf("[T-Echo Lite][settings] v3 payload read failed\n");
+                return false;
+            }
+            file.close();
+
+            const uint32_t actual_crc = crc32(reinterpret_cast<const uint8_t*>(&payload), sizeof(payload));
+            if (actual_crc != header.crc32)
+            {
+                s_last_load_status = StoreStatus::CrcMismatch;
+                (void)quarantineCorruptFile(s_last_load_status);
+                Serial.printf("[T-Echo Lite][settings] v3 crc mismatch got=0x%08lX expected=0x%08lX\n",
+                              static_cast<unsigned long>(actual_crc),
+                              static_cast<unsigned long>(header.crc32));
+                return false;
+            }
+
+            s_cache.config = payload.config;
+            normalizeConfig(s_cache.config);
+            s_cache.tone_volume = clampToneVolume(payload.tone_volume);
+            s_cache.status_led_color = kDefaultStatusLedColor;
+            s_cache.keyboard_light_enabled = payload.keyboard_light_enabled != 0;
+            s_deferred_save_pending = true;
+            s_last_dirty_ms = millis();
+            s_last_load_status = StoreStatus::Ok;
+            Serial.printf("[T-Echo Lite][settings] load migrated tone=%u ble=%u proto=%u version=3->%u status_led=off\n",
+                          static_cast<unsigned>(s_cache.tone_volume),
+                          static_cast<unsigned>(s_cache.config.ble_enabled ? 1 : 0),
+                          static_cast<unsigned>(s_cache.config.mesh_protocol),
+                          static_cast<unsigned>(kSettingsVersion));
             return true;
         }
 
