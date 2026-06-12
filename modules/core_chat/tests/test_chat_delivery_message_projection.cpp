@@ -1,4 +1,4 @@
-#include "chat/delivery/legacy_chat_delivery_bridge.h"
+#include "chat/delivery/chat_delivery_message_projection.h"
 
 #include <cassert>
 
@@ -35,8 +35,8 @@ int main()
     assert(failed.state == chat::delivery::DeliveryState::Failed);
     assert(failed.failure == chat::delivery::DeliveryFailureKind::Unknown);
 
-    const auto incoming = chat::delivery::toDeliveryRecord(
-        message(chat::MessageStatus::Incoming, 13));
+    const auto incoming =
+        chat::delivery::toDeliveryRecord(message(chat::MessageStatus::Incoming, 13));
     assert(incoming.state == chat::delivery::DeliveryState::Received);
 
     chat::delivery::ChatDeliveryRef ref{};

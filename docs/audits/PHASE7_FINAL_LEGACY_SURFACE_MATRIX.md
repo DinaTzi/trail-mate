@@ -2,7 +2,7 @@
 
 | Surface | Current owner | New owner | Status | Removal condition | Blocking reason | Future phase |
 | --- | --- | --- | --- | --- | --- | --- |
-| Chat delivery send-result bridge | `LegacyChatDeliveryEventBridge` | `ChatDeliveryEventProjector` / `IChatDeliveryEventPort` | contained | EventBus publishes structured delivery events directly | EventBus schema still carries coarse send-result fields | Phase 8 delivery event schema |
+| Chat delivery send-result bridge | `ChatDeliveryEventProjectionAdapter` | `ChatDeliveryEventProjector` / `IChatDeliveryEventPort` / `ChatDeliverySendResultProjection` | burned-down | EventBus publishes structured delivery events directly | EventBus schema still carries coarse send-result fields | Phase 8 delivery event schema |
 | Chat delivery action bridge | `LegacyChatDeliveryActionBridge` | `ChatDeliveryActionService` | contained | UI submits `ChatDeliveryActionRequest` to official action sink | Visible message-menu action surface is still compatibility-driven | Phase 8 chat action surface |
 | Team action bridge | `TeamActionRuntimeSink` | `TeamActionRequest` / `ITeamActionSink` | burned-down | legacy bridge name removed from active code; runtime sink owns Team action sends | Team command runtime port is adapter-backed, not controller-owned | closed in Team legacy burn-down |
 | Key verification source | `LegacyKeyVerificationSource` | `KeyVerificationModel` / presentation source | contained | Protocol-specific key verification sources are renamed or split | MeshCore/Meshtastic adapters still share compatibility session | Phase 8 key verification adapters |
@@ -27,4 +27,4 @@
 | GPS page refresh cadence | `GpsPageRuntimePump` | Runtime scheduler / UI refresh sink | contained | Page-local refresh adapters are replaced by GPS presentation refresh model | ESP GPS page workflow remains large compatibility surface | Phase 8 GPS page runtime |
 | GNSS skyplot timer | GNSS page runtime | Deferred GNSS runtime pump | explicitly deferred | GNSS page cadence uses a runtime pump and skyplot renderer consumes snapshots | GNSS skyplot was outside Phase 7 map/GPS final scope | Phase 8 GNSS scheduling |
 | ACK timeout projection | Adapter hook | Delivery event source | explicitly deferred | Unified ACK source emits structured timeout event | Radio/EventBus source remains protocol-specific | Phase 8 delivery telemetry |
-| Key missing/radio failure projection | Delivery mapper | Delivery event source | explicitly deferred | EventBus carries structured failure kind | Current EventBus send-result schema is coarse | Phase 8 delivery telemetry |
+| Key missing/radio failure projection | `ChatDeliverySendResultProjection` | Delivery event source | explicitly deferred | EventBus carries structured failure kind | Current EventBus send-result schema is coarse | Phase 8 delivery telemetry |

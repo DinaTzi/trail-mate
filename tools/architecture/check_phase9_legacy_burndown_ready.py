@@ -70,13 +70,11 @@ def is_allowed_legacy_chat_include(path: Path) -> bool:
     name = path.name
     allowed = {
         "modules/ui_legacy_adapters/tests/test_legacy_chat_delivery_action_bridge_legacy_alias.cpp",
-        "modules/ui_legacy_adapters/tests/test_legacy_chat_delivery_event_bridge_legacy_alias.cpp",
     }
     if rel in allowed:
         return True
     if rel in {
         "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_chat_delivery_action_bridge.h",
-        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_chat_delivery_event_bridge.h",
     }:
         return True
     return (
@@ -148,12 +146,6 @@ def check_legacy_headers_are_aliases(failures: list[str]) -> None:
             "ui_chat_runtime/chat_delivery_action_port_adapter.h",
             "using LegacyChatDeliveryActionBridge",
             "ChatDeliveryActionPortAdapter",
-            "[[deprecated",
-        ],
-        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_chat_delivery_event_bridge.h": [
-            "ui_chat_runtime/chat_delivery_event_projection_adapter.h",
-            "using LegacyChatDeliveryEventBridge",
-            "ChatDeliveryEventProjectionAdapter",
             "[[deprecated",
         ],
     }
@@ -318,7 +310,6 @@ def main() -> int:
         "modules/ui_chat_runtime/tests/test_chat_delivery_action_port_adapter.cpp",
         "modules/ui_chat_runtime/tests/test_chat_delivery_event_projection_adapter.cpp",
         "modules/ui_legacy_adapters/tests/test_legacy_chat_delivery_action_bridge_legacy_alias.cpp",
-        "modules/ui_legacy_adapters/tests/test_legacy_chat_delivery_event_bridge_legacy_alias.cpp",
         "modules/ui_key_verification_runtime/README.md",
         "modules/ui_key_verification_runtime/library.json",
         "modules/ui_key_verification_runtime/include/ui_key_verification_runtime/key_verification_session_adapter.h",
@@ -405,9 +396,7 @@ def main() -> int:
             rel,
             [
                 "LegacyChatDeliveryActionBridge",
-                "LegacyChatDeliveryEventBridge",
                 "ui_legacy_adapters/legacy_chat_delivery_action_bridge.h",
-                "ui_legacy_adapters/legacy_chat_delivery_event_bridge.h",
             ],
             failures,
         )

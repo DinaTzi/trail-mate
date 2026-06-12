@@ -768,37 +768,6 @@ Delete condition:
 Risk:
 - low-medium; alias may be used by external or untracked downstream code.
 
-## Surface: LegacyChatDeliveryEventBridge
-
-Category:
-- deprecated aliases
-
-Current location:
-- `modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_chat_delivery_event_bridge.h`
-- `modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_event_bridge.h`
-
-Current callers:
-- `modules/ui_legacy_adapters/tests/test_legacy_chat_delivery_event_bridge_legacy_alias.cpp`
-- docs and checker policy
-
-Current responsibility:
-- deprecated alias to `ui_chat_runtime::ChatDeliveryEventProjectionAdapter`.
-
-Is this final architecture?
-- No.
-
-Final owner:
-- `modules/ui_chat_runtime`.
-
-Disposition:
-- Keep as Deprecated Alias Temporarily.
-
-Delete condition:
-- no downstream includes of either alias header remain.
-
-Risk:
-- low-medium; alias may be used by external or untracked downstream code.
-
 ## Surface: LegacyKeyVerificationSource
 
 Category:

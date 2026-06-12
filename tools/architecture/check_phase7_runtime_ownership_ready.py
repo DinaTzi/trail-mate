@@ -12,8 +12,6 @@ PATH_ALIASES = {
         "modules/ui_chat_runtime/src/chat_delivery_action_port_adapter.cpp",
     "modules/ui_shared/tests/test_legacy_chat_delivery_action_bridge.cpp":
         "modules/ui_chat_runtime/tests/test_chat_delivery_action_port_adapter.cpp",
-    "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_event_bridge.h":
-        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_chat_delivery_event_bridge.h",
     "modules/ui_shared/src/ui/presentation_sources/legacy_chat_delivery_event_bridge.cpp":
         "modules/ui_chat_runtime/src/chat_delivery_event_projection_adapter.cpp",
     "modules/ui_shared/tests/test_legacy_chat_delivery_event_bridge.cpp":
@@ -175,26 +173,23 @@ def check_required_files() -> int:
         "modules/core_chat/include/chat/delivery/chat_delivery_action_types.h",
         "modules/core_chat/include/chat/delivery/chat_delivery_action_sink.h",
         "modules/core_chat/include/chat/delivery/chat_delivery_action_service.h",
-        "modules/core_chat/include/chat/delivery/legacy_chat_delivery_bridge.h",
-        "modules/core_chat/include/chat/delivery/legacy_chat_send_result_mapper.h",
+        "modules/core_chat/include/chat/delivery/chat_delivery_message_projection.h",
+        "modules/core_chat/include/chat/delivery/chat_delivery_send_result_projection.h",
         "modules/core_chat/src/delivery/chat_delivery_read_model.cpp",
         "modules/core_chat/src/delivery/chat_delivery_event_projector.cpp",
         "modules/core_chat/src/delivery/chat_delivery_event_port.cpp",
         "modules/core_chat/src/delivery/chat_delivery_action_service.cpp",
-        "modules/core_chat/src/delivery/legacy_chat_delivery_bridge.cpp",
-        "modules/core_chat/src/delivery/legacy_chat_send_result_mapper.cpp",
+        "modules/core_chat/src/delivery/chat_delivery_message_projection.cpp",
+        "modules/core_chat/src/delivery/chat_delivery_send_result_projection.cpp",
         "modules/core_chat/tests/test_chat_delivery_read_model.cpp",
         "modules/core_chat/tests/test_chat_delivery_event_projector.cpp",
         "modules/core_chat/tests/test_chat_delivery_event_port.cpp",
         "modules/core_chat/tests/test_chat_delivery_action_service.cpp",
-        "modules/core_chat/tests/test_legacy_chat_delivery_bridge.cpp",
-        "modules/core_chat/tests/test_legacy_chat_send_result_mapper.cpp",
+        "modules/core_chat/tests/test_chat_delivery_message_projection.cpp",
+        "modules/core_chat/tests/test_chat_delivery_send_result_projection.cpp",
         "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_action_bridge.h",
         "modules/ui_shared/src/ui/presentation_sources/legacy_chat_delivery_action_bridge.cpp",
         "modules/ui_shared/tests/test_legacy_chat_delivery_action_bridge.cpp",
-        "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_event_bridge.h",
-        "modules/ui_shared/src/ui/presentation_sources/legacy_chat_delivery_event_bridge.cpp",
-        "modules/ui_shared/tests/test_legacy_chat_delivery_event_bridge.cpp",
         "modules/ui_shared/include/ui/team_actions/team_action_types.h",
         "modules/ui_shared/include/ui/team_actions/team_action_sink.h",
         "modules/ui_shared/include/ui/team_actions/team_action_runtime_sink.h",
@@ -388,7 +383,7 @@ def check_docs() -> int:
             "ChatDeliveryReadModel",
             "IChatDeliveryEventPort",
             "ProjectingChatDeliveryEventPort",
-            "LegacyChatDeliveryEventBridge",
+            "ChatDeliveryEventProjectionAdapter",
             "ChatPresentationSource",
             "Phase 7.1 does not make `ChatWorkspaceModel` own delivery state",
         ],
@@ -415,7 +410,8 @@ def check_docs() -> int:
             "`success`",
             "success=false",
             "AckTimeout",
-            "LegacyChatDeliveryEventBridge",
+            "ChatDeliveryEventProjectionAdapter",
+            "ChatDeliverySendResultProjection",
         ],
         "docs/audits/PHASE7_RUNTIME_OWNERSHIP_REGISTER.md": [
             "Chat delivery / pending / failure",
@@ -472,7 +468,7 @@ def check_docs() -> int:
         "docs/audits/CHAT_RUNTIME_EVENT_PUMP_AUDIT.md": [
             "Phase 7.7 moves Chat runtime scheduling and event projection out of `ChatUiController`",
             "ChatSendResultEvent",
-            "LegacyChatDeliveryEventBridge",
+            "ChatDeliveryEventProjectionAdapter",
             "LegacyKeyVerificationSource",
             "ChatService::processIncoming()",
             "ChatService::flushStore()",
@@ -539,7 +535,6 @@ def check_docs() -> int:
             "Removal condition",
             "Target phase",
             "Status",
-            "LegacyChatDeliveryEventBridge",
             "LegacyChatDeliveryActionBridge",
             "LegacyKeyVerificationSource",
             "LegacyKeyVerificationActionSink",
@@ -703,7 +698,6 @@ def check_legacy_burndown_register() -> int:
         failures += fail("LEGACY_BURNDOWN_REGISTER.md missing required table header")
 
     required_surfaces = [
-        "LegacyChatDeliveryEventBridge",
         "LegacyChatDeliveryActionBridge",
         "TeamActionRuntimeSink",
         "LegacyKeyVerificationSource",
@@ -914,22 +908,21 @@ def check_delivery_type_shape() -> int:
             if token not in text:
                 failures += fail(f"ChatDeliveryActionService source missing token: {token}")
 
-    mapper = "modules/core_chat/include/chat/delivery/legacy_chat_send_result_mapper.h"
-    if exists(mapper):
-        text = read_text(mapper)
+    send_result_projection = (
+        "modules/core_chat/include/chat/delivery/chat_delivery_send_result_projection.h"
+    )
+    if exists(send_result_projection):
+        text = read_text(send_result_projection)
         for token in [
-            "LegacyChatSendFailure",
-            "PeerKeyMissing",
-            "LocalIdentityMissing",
-            "RadioSendFailed",
-            "AckTimeout",
-            "UnsupportedProtocol",
-            "Rejected",
-            "mapLegacyChatSendResult",
+            "makeChatSendResultDeliveryEvent",
             "makeAckTimeoutDeliveryEvent",
+            "ChatDeliveryEvent",
+            "SendFailureKind",
         ]:
             if token not in text:
-                failures += fail(f"LegacyChatSendResultMapper missing token: {token}")
+                failures += fail(
+                    f"ChatDeliverySendResultProjection missing token: {token}"
+                )
 
     return failures
 
@@ -1072,7 +1065,6 @@ def check_ui_presentation_and_renderers_do_not_own_delivery() -> int:
 def check_delivery_event_bridge_boundary() -> int:
     failures = 0
     bridge_files = [
-        "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_event_bridge.h",
         "modules/ui_chat_runtime/src/chat_delivery_event_projection_adapter.cpp",
     ]
     for path in bridge_files:
@@ -1099,13 +1091,13 @@ def check_delivery_event_bridge_boundary() -> int:
         for token in [
             "onChatSendResult",
             "onAckTimeout",
-            "mapLegacyChatSendResult",
+            "makeChatSendResultDeliveryEvent",
             "publishDeliveryEvent",
             "toDeliveryRef",
             "getMessage",
         ]:
             if token not in text:
-                failures += fail(f"LegacyChatDeliveryEventBridge missing token: {token}")
+                failures += fail(f"ChatDeliveryEventProjectionAdapter missing token: {token}")
 
     controller = "modules/ui_shared/src/ui/screens/chat/chat_ui_controller.cpp"
     if exists(controller):

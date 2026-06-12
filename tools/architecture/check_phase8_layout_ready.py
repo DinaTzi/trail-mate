@@ -169,7 +169,6 @@ def check_required_files() -> int:
         "modules/ui_key_verification_runtime/tests/test_key_verification_runtime_adapters.cpp",
         "modules/ui_legacy_adapters/README.md",
         "modules/ui_legacy_adapters/library.json",
-        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_chat_delivery_event_bridge.h",
         "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_chat_delivery_action_bridge.h",
         "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_key_verification_session.h",
         "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_key_verification_source.h",
@@ -177,7 +176,6 @@ def check_required_files() -> int:
         "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_map_overlay_source.h",
         "modules/ui_chat_runtime/tests/test_chat_delivery_event_projection_adapter.cpp",
         "modules/ui_chat_runtime/tests/test_chat_delivery_action_port_adapter.cpp",
-        "modules/ui_legacy_adapters/tests/test_legacy_chat_delivery_event_bridge_legacy_alias.cpp",
         "modules/ui_legacy_adapters/tests/test_legacy_chat_delivery_action_bridge_legacy_alias.cpp",
         "modules/ui_legacy_adapters/tests/test_legacy_key_verification_adapters_legacy_alias.cpp",
         "modules/ui_legacy_adapters/tests/test_legacy_map_overlay_source_legacy_alias.cpp",
@@ -2062,8 +2060,6 @@ def check_forwarding_headers() -> int:
             "ui_map_runtime/map_tiles/filesystem_map_tile_source.h",
         "modules/ui_shared/include/ui/map_overlay/map_overlay_projector.h":
             "ui_map_runtime/map_overlay/map_overlay_projector.h",
-        "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_event_bridge.h":
-            "ui_chat_runtime/chat_delivery_event_projection_adapter.h",
         "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_action_bridge.h":
             "ui_chat_runtime/chat_delivery_action_port_adapter.h",
         "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_session.h":
@@ -2089,7 +2085,6 @@ def check_forwarding_headers() -> int:
         if include_token not in text:
             failures += fail(f"{path} does not forward to {include_token}")
         if path in {
-            "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_event_bridge.h",
             "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_action_bridge.h",
             "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_session.h",
             "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_source.h",
@@ -2152,8 +2147,6 @@ def check_authoritative_include_paths() -> int:
             "ui_map_runtime/map_tiles/filesystem_map_tile_source.h",
         "ui/map_overlay/map_overlay_projector.h":
             "ui_map_runtime/map_overlay/map_overlay_projector.h",
-        "ui/presentation_sources/legacy_chat_delivery_event_bridge.h":
-            "ui_chat_runtime/chat_delivery_event_projection_adapter.h",
         "ui/presentation_sources/legacy_chat_delivery_action_bridge.h":
             "ui_chat_runtime/chat_delivery_action_port_adapter.h",
         "ui/presentation_sources/legacy_key_verification_session.h":
@@ -2183,7 +2176,6 @@ def check_authoritative_include_paths() -> int:
         "modules/ui_shared/include/ui/map_tiles/map_tile_render_queue.h",
         "modules/ui_shared/include/ui/map_tiles/legacy_filesystem_map_tile_source.h",
         "modules/ui_shared/include/ui/map_overlay/map_overlay_projector.h",
-        "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_event_bridge.h",
         "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_action_bridge.h",
         "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_session.h",
         "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_source.h",

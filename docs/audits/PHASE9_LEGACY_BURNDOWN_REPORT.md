@@ -18,16 +18,18 @@ surfaces:
 ## Burned Down In Phase 9.4
 
 Phase 9.4 burns down the Chat delivery bridge pair from real implementation
-ownership into stable `ui_chat_runtime` ports and adapters.
+ownership into stable `ui_chat_runtime` ports and adapters. The event-side
+compatibility alias has since been deleted completely.
 
 | Surface | Previous owner | New owner | Status |
 | --- | --- | --- | --- |
 | `LegacyChatDeliveryActionBridge` | `modules/ui_legacy_adapters` real bridge implementation | `ChatDeliveryActionPortAdapter` and `IChatDeliveryActionPort` in `modules/ui_chat_runtime` | main runtime callers removed; old headers are deprecated aliases |
-| `LegacyChatDeliveryEventBridge` | `modules/ui_legacy_adapters` real bridge implementation | `ChatDeliveryEventProjectionAdapter` and `IChatDeliveryEventPort` in `modules/ui_chat_runtime` | main runtime callers removed; old headers are deprecated aliases |
+| `LegacyChatDeliveryEventBridge` | `modules/ui_legacy_adapters` real bridge implementation | `ChatDeliveryEventProjectionAdapter` and `IChatDeliveryEventPort` in `modules/ui_chat_runtime` | implementation, forwarding headers, and alias tests removed |
 
 The former `modules/ui_legacy_adapters/src/legacy_chat_delivery_*_bridge.cpp`
-implementation files are removed from the build. Compatibility headers remain
-only as forwarding aliases for downstream includes.
+implementation files are removed from the build. The action compatibility
+headers remain only as forwarding aliases for downstream includes; the event
+compatibility headers are removed.
 
 ## Burned Down In Phase 9.5
 
@@ -62,7 +64,8 @@ burn-down and is no longer a remaining Phase 9 target.
 The next Phase 9 legacy burn-down target should be selected from the remaining
 non-Chat, non-KeyVerification, non-MapOverlay compatibility surfaces in the
 register. Chat delivery, KeyVerification, and MapOverlay are no longer main
-runtime fallbacks; their remaining work is compatibility alias deletion.
+runtime fallbacks; remaining work is compatibility alias deletion where an
+alias still exists.
 
 ## Rule
 

@@ -187,6 +187,7 @@ set(TRAIL_MATE_LINUX_COMMON_SOURCES
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/delivery/chat_delivery_event_projector.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/delivery/chat_delivery_read_model.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/delivery/chat_delivery_message_projection.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/delivery/chat_delivery_send_result_projection.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/contact_store_core.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/mesh_protocol_utils.cpp"
     "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/mc_region_presets.cpp"
@@ -555,11 +556,6 @@ set(TRAIL_MATE_LINUX_UI_LEGACY_PRESENTATION_SOURCES
     "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/presentation_sources/legacy_map_action_sink.cpp"
 )
 
-set(TRAIL_MATE_LINUX_LEGACY_CHAT_DELIVERY_SOURCES
-    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/delivery/legacy_chat_delivery_bridge.cpp"
-    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/delivery/legacy_chat_send_result_mapper.cpp"
-)
-
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
@@ -574,21 +570,12 @@ function(trailmate_apply_linux_common_warnings target_name)
 endfunction()
 
 function(trailmate_add_linux_common target_name)
-    set(options NO_LEGACY_CHAT_DELIVERY)
-    cmake_parse_arguments(ARG "${options}" "" "" ${ARGN})
-
     find_package(CURL REQUIRED)
     find_package(SQLite3 REQUIRED)
     find_package(OpenSSL QUIET)
 
     set(linux_common_sources ${TRAIL_MATE_LINUX_COMMON_SOURCES})
     set(linux_common_includes ${TRAIL_MATE_LINUX_COMMON_INCLUDES})
-    if(NOT ARG_NO_LEGACY_CHAT_DELIVERY)
-        list(APPEND linux_common_sources
-            ${TRAIL_MATE_LINUX_LEGACY_CHAT_DELIVERY_SOURCES})
-        list(APPEND linux_common_includes
-            "${TRAIL_MATE_UI_LEGACY_ADAPTERS_INCLUDE_ROOT}")
-    endif()
 
     add_library(${target_name}
         ${linux_common_sources}

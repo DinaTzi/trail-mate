@@ -459,7 +459,7 @@ def main() -> int:
         [
             "moved out of legacy",
             "LegacyChatDeliveryActionBridge",
-            "LegacyChatDeliveryEventBridge",
+            "ChatDeliveryEventProjectionAdapter",
             "Compilation",
         ],
         failures,

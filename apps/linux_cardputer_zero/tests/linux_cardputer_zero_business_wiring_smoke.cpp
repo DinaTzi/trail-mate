@@ -84,7 +84,6 @@ int main(int argc, char** argv)
     const std::string cardputer_cmake = read_file(
         repo_root / "apps/linux_cardputer_zero/CMakeLists.txt");
     assert(contains(cardputer_cmake, "NO_LEGACY_PRESENTATION"));
-    assert(contains(cardputer_cmake, "NO_LEGACY_CHAT_DELIVERY"));
     assert(not_contains(cardputer_cmake, "ui_legacy_adapters"));
 
     const std::string board_facts = read_file(
@@ -143,7 +142,6 @@ int main(int argc, char** argv)
         "set(TRAIL_MATE_LINUX_UI_LEGACY_PRESENTATION_SOURCES");
     assert(not_contains(common_includes, "TRAIL_MATE_UI_LEGACY_ADAPTERS_INCLUDE_ROOT"));
     assert(not_contains(shell_includes, "TRAIL_MATE_UI_LEGACY_ADAPTERS_INCLUDE_ROOT"));
-    assert(contains(linux_sources_cmake, "if(NOT ARG_NO_LEGACY_CHAT_DELIVERY)"));
     assert(contains(linux_sources_cmake, "if(NOT ARG_NO_LEGACY_PRESENTATION)"));
     assert(contains(linux_sources_cmake, "TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/ui_status.cpp"));
     assert(contains(linux_sources_cmake, "TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/assets/gps_topbar.c"));
@@ -168,7 +166,9 @@ int main(int argc, char** argv)
     assert(contains(gps_runtime, "show_team_overlay_notice"));
     assert(contains(gps_runtime, "route_context_available"));
     assert(contains(gps_runtime, "config.route_enabled && config.route_path[0] != '\\0'"));
-    assert(contains(gps_runtime, "snapshot.team.available && snapshot.team.visible_members > 0"));
+    assert(contains(gps_runtime, "load_team_snapshot(team_snapshot) && !team_snapshot.members.empty()"));
+    assert(contains(gps_runtime, "create_member_button(member)"));
+    assert(contains(gps_runtime, "select_member(member_id)"));
     assert(contains(gps_runtime, "lv_obj_align(s_map_notice_panel, LV_ALIGN_TOP_LEFT"));
     assert(contains(gps_runtime, "lv_obj_set_style_bg_opa(s_map_notice_panel, LV_OPA_70"));
     assert(contains(gps_runtime, "set_hidden(s_map_context_rail, next_mask == 0)"));
@@ -183,7 +183,7 @@ int main(int argc, char** argv)
     assert(contains(gps_runtime, "sync_workspace_center_from_screen"));
     assert(contains(gps_runtime, "screen_center(s_map_runtime, center)"));
     assert(contains(gps_runtime, "commit_pending_map_pan_from_screen"));
-    assert(contains(gps_runtime, "if (commit_pending_map_pan_from_screen())"));
+    assert(contains(gps_runtime, "if (!s_map_drag_active && commit_pending_map_pan_from_screen())"));
     assert(contains(gps_runtime, "lv_group_add_obj(group, s_map_zoom_in_btn)"));
     assert(contains(gps_runtime, "lv_group_add_obj(group, s_map_layer_btn)"));
     assert(contains(gps_runtime, "set_layer_map_source"));
@@ -201,8 +201,10 @@ int main(int argc, char** argv)
     assert(contains(gps_runtime, "case 'S':"));
     assert(contains(gps_runtime, "case 'd':"));
     assert(contains(gps_runtime, "case 'D':"));
-    assert(contains(gps_runtime, "case LV_KEY_LEFT:\n        s_map_pan_x += gps_ui::kMapPanStep;"));
-    assert(contains(gps_runtime, "case LV_KEY_RIGHT:\n        s_map_pan_x -= gps_ui::kMapPanStep;"));
+    assert(contains(gps_runtime, "case LV_KEY_LEFT:"));
+    assert(contains(gps_runtime, "s_map_pan_x += gps_ui::kMapPanStep;"));
+    assert(contains(gps_runtime, "case LV_KEY_RIGHT:"));
+    assert(contains(gps_runtime, "s_map_pan_x -= gps_ui::kMapPanStep;"));
     assert(contains(gps_runtime, "take_missing_tile_notice"));
     assert(contains(gps_runtime, "s_map_refresh_pending"));
     assert(contains(gps_runtime, "refresh_view_async"));
@@ -215,13 +217,14 @@ int main(int argc, char** argv)
     assert(contains(gps_runtime, "add_help_row(\"WASD\", nullptr, \"Move map\")"));
     assert(contains(gps_runtime, "add_help_row(\"-\", \"+\", \"Zoom map\")"));
     assert(contains(gps_runtime, "add_help_row(\"P\", \"Pos\", \"Center current position\")"));
+    assert(contains(gps_runtime, "add_help_row(\"T\", \"Track\", \"Select track file\")"));
     assert(contains(gps_runtime, "add_help_row(\"O\", \"Contour\", \"Toggle contour overlay\")"));
     assert(contains(gps_runtime, "add_help_row(\"Route\", nullptr, \"Shown when route active\")"));
-    assert(contains(gps_runtime, "add_help_row(\"Team\", nullptr, \"Shown when team active\")"));
-    assert(contains(gps_runtime, "add_help_row(\"F1\", \"Back\", \"Close help\")"));
+    assert(contains(gps_runtime, "add_help_row(\"Members\", nullptr, \"Shown when team active\")"));
+    assert(contains(gps_runtime, "add_help_row(help_key_label(), \"Back\", \"Close help\")"));
     assert(not_contains(gps_runtime, "\"Topo\""));
-    assert(not_contains(gps_runtime, "case 't':"));
-    assert(not_contains(gps_runtime, "case 'T':"));
+    assert(contains(gps_runtime, "case 't':"));
+    assert(contains(gps_runtime, "case 'T':"));
     assert(not_contains(gps_runtime, "case kLvglFunctionKeyF1:\n        open_map_help_modal();"));
     assert(not_contains(gps_runtime, "lv_indev_stop_processing(indev);"));
     assert(contains(gps_runtime, "if (snapshot.header.valid)"));

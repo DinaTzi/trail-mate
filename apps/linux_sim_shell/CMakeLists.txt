@@ -110,18 +110,6 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_legacy_chat_delivery_action_bridge_alias_smoke
              COMMAND trailmate_legacy_chat_delivery_action_bridge_alias_smoke)
 
-    add_executable(trailmate_legacy_chat_delivery_event_bridge_alias_smoke
-        "${TRAIL_MATE_REPO_ROOT}/modules/ui_legacy_adapters/tests/test_legacy_chat_delivery_event_bridge_legacy_alias.cpp")
-    target_include_directories(trailmate_legacy_chat_delivery_event_bridge_alias_smoke
-        PRIVATE
-            "${TRAIL_MATE_REPO_ROOT}/modules/ui_legacy_adapters/include"
-            "${TRAIL_MATE_REPO_ROOT}/modules/ui_chat_runtime/include"
-            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
-    target_compile_features(trailmate_legacy_chat_delivery_event_bridge_alias_smoke
-        PRIVATE cxx_std_17)
-    add_test(NAME trailmate_legacy_chat_delivery_event_bridge_alias_smoke
-             COMMAND trailmate_legacy_chat_delivery_event_bridge_alias_smoke)
-
     add_executable(trailmate_chat_presentation_source_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_chat_presentation_source.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/domain/chat_model.cpp"
@@ -130,7 +118,6 @@ if(BUILD_TESTING)
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/delivery/chat_delivery_read_model.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/delivery/chat_delivery_event_projector.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/delivery/chat_delivery_message_projection.cpp"
-        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/delivery/legacy_chat_delivery_bridge.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/usecase/contact_service.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/src/sys/clock.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/presentation_sources/chat_presentation_source.cpp"

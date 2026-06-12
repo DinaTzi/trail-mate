@@ -196,7 +196,6 @@ def check_phase12_docs(failures: list[str]) -> None:
         "docs/audits/PHASE12_DEPRECATED_ALIAS_CLEANUP_PLAN.md",
         [
             "LegacyChatDeliveryActionBridge",
-            "LegacyChatDeliveryEventBridge",
             "LegacyKeyVerificationSource",
             "LegacyKeyVerificationActionSink",
             "LegacyKeyVerificationSession",

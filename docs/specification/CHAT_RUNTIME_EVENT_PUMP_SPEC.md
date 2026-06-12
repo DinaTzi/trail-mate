@@ -42,7 +42,7 @@ It may:
 - call `ChatService::processIncoming()`
 - call `ChatService::flushStore()`
 - receive EventBus `sys::Event` objects
-- route `ChatSendResultEvent` to `LegacyChatDeliveryEventBridge`
+- route `ChatSendResultEvent` to `ChatDeliveryEventProjectionAdapter`
 - route key verification events to `LegacyKeyVerificationSource`
 - select the key verification peer on `KeyVerificationModel`
 - notify `IChatUiRefreshSink`
@@ -81,7 +81,7 @@ for EventBus events.
 
 ### `ChatSendResultEvent`
 
-1. `ChatPageRuntimeEventPump` calls `LegacyChatDeliveryEventBridge::onChatSendResult(...)`.
+1. `ChatPageRuntimeEventPump` calls `ChatDeliveryEventProjectionAdapter::onChatSendResult(...)`.
 2. `ChatPageRuntimeEventPump` calls `IChatUiRefreshSink::onRuntimeSendResult(...)`.
 
 ### `ChatNewMessageEvent`

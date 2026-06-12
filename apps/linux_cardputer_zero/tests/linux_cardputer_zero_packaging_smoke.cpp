@@ -88,7 +88,6 @@ int main(int argc, char** argv)
     assert(contains(cmake, "ca-certificates"));
     assert(contains(cmake, "CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF"));
     assert(contains(cmake, "NO_LEGACY_PRESENTATION"));
-    assert(contains(cmake, "NO_LEGACY_CHAT_DELIVERY"));
     assert(contains(cmake, "CMAKE_SYSTEM_PROCESSOR MATCHES \"^(aarch64|arm64|ARM64)$\""));
     assert(contains(cmake, "cardputer_zero_arm64_asset_sources"));
     assert(contains(cmake, "foreach(source_path IN LISTS TRAIL_MATE_LINUX_UI_SHELL_SOURCES)"));

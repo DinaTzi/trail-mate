@@ -79,8 +79,7 @@ if(TRAIL_MATE_CARDPUTER_ZERO_BUILD_SCREENSHOT_CAPTURE OR TRAIL_MATE_CARDPUTER_ZE
 
     include("${TRAIL_MATE_REPO_ROOT}/cmake/TrailMateLinuxSources.cmake")
     trailmate_add_linux_common(
-        trailmate_cardputer_zero_linux_common
-        NO_LEGACY_CHAT_DELIVERY)
+        trailmate_cardputer_zero_linux_common)
     trailmate_add_linux_ui_shell(
         trailmate_cardputer_zero_ui_shell
         trailmate_cardputer_zero_linux_common

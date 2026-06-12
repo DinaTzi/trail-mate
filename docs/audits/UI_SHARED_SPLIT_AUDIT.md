@@ -169,8 +169,11 @@ Examples to classify:
 - `LegacyFilesystemMapTileSource`
 - `LegacyMapOverlaySource`
 - `LegacyTeamActionBridge`
-- `LegacyChatDeliveryEventBridge`
 - `LegacyKeyVerificationSource`
+
+`LegacyChatDeliveryEventBridge` was classified as dead legacy after the chat
+delivery event adapter moved to `ui_chat_runtime`; its forwarding headers and
+alias tests have been deleted.
 
 ## Non-Goals
 
@@ -216,7 +219,6 @@ Moved to `ui_map_runtime`:
 
 Moved to `ui_legacy_adapters`:
 
-- `LegacyChatDeliveryEventBridge`
 - `LegacyChatDeliveryActionBridge`
 - `LegacyKeyVerificationSource`
 - `LegacyKeyVerificationActionSink`
