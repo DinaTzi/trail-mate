@@ -4,6 +4,7 @@
 #include "app/app_facades.h"
 #include "chat/runtime/self_identity_policy.h"
 #include "chat/runtime/self_identity_provider.h"
+#include "nrf52_node_target_board.h"
 #include "platform/nrf52/runtime/nrf52_runtime_apply_service.h"
 
 #include <memory>
@@ -33,11 +34,6 @@ class ContactService;
 namespace platform::nrf52::arduino_common
 {
 class SelfIdentityBridge;
-}
-
-namespace boards::gat562_mesh_evb_pro
-{
-class Gat562Board;
 }
 
 namespace trailmate::apps::nrf52_node
@@ -149,7 +145,7 @@ class AppFacadeRuntime final : public app::IAppBleFacade
     std::unique_ptr<ble::BleManager> ble_manager_;
 #endif
     std::unique_ptr<platform::nrf52::runtime::RuntimeApplyService> apply_service_;
-    boards::gat562_mesh_evb_pro::Gat562Board* board_ = nullptr;
+    target_board::Board* board_ = nullptr;
     chat::ui::IChatUiRuntime* chat_ui_runtime_ = nullptr;
     bool config_save_pending_ = false;
     uint8_t post_save_apply_skip_mask_ = 0;

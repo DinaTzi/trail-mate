@@ -1,8 +1,6 @@
 ﻿#include "nrf52_node_app_facade_runtime.h"
 
 #include "app/app_facade_access.h"
-#include "boards/gat562_mesh_evb_pro/gat562_board.h"
-#include "boards/gat562_mesh_evb_pro/settings_store.h"
 #include "chat/domain/chat_model.h"
 #include "chat/infra/mesh_adapter_router_core.h"
 #include "chat/infra/mesh_protocol_utils.h"
@@ -46,7 +44,7 @@ constexpr uint8_t kSkipApplyMaskAll = kSkipApplyMesh | kSkipApplyUser | kSkipApp
 class ScopedGpsSuspend
 {
   public:
-    explicit ScopedGpsSuspend(::boards::gat562_mesh_evb_pro::Gat562Board* board)
+    explicit ScopedGpsSuspend(target_board::Board* board)
         : board_(board),
           resume_(board_ && board_->gpsEnabled())
     {
@@ -68,7 +66,7 @@ class ScopedGpsSuspend
     ScopedGpsSuspend& operator=(const ScopedGpsSuspend&) = delete;
 
   private:
-    ::boards::gat562_mesh_evb_pro::Gat562Board* board_ = nullptr;
+    target_board::Board* board_ = nullptr;
     bool resume_ = false;
 };
 
@@ -145,13 +143,13 @@ bool AppFacadeRuntime::initialize()
         return true;
     }
 
-    board_ = &::boards::gat562_mesh_evb_pro::Gat562Board::instance();
+    board_ = &target_board::instance();
     if (board_)
     {
         (void)board_->begin();
     }
-    (void)::boards::gat562_mesh_evb_pro::settings_store::loadAppConfig(config_);
-    ::boards::gat562_mesh_evb_pro::settings_store::normalizeConfig(config_);
+    (void)target_board::settings_store::loadAppConfig(config_);
+    target_board::settings_store::normalizeConfig(config_);
 #if TRAILMATE_NRF52_BLE_DISABLED
     config_.ble_enabled = false;
 #endif
@@ -177,7 +175,8 @@ bool AppFacadeRuntime::initialize()
     }
 #endif
     initialized_ = true;
-    platform::nrf52::debug_console::printf("[gat562] app facade ready node=%08lX\n",
+    platform::nrf52::debug_console::printf("%s app facade ready node=%08lX\n",
+                                           target_board::kLogTag,
                                            static_cast<unsigned long>(effective_identity_.node_id));
     return true;
 }
@@ -316,32 +315,34 @@ void AppFacadeRuntime::saveConfig()
 #if TRAILMATE_NRF52_BLE_DISABLED
     config_.ble_enabled = false;
 #endif
-    platform::nrf52::debug_console::printf("[gat562][cfg] save start proto=%u ok_to_mqtt=%u ignore_mqtt=%u ble=%u\n",
+    platform::nrf52::debug_console::printf("%s[cfg] save start proto=%u ok_to_mqtt=%u ignore_mqtt=%u ble=%u\n",
+                                           target_board::kLogTag,
                                            static_cast<unsigned>(config_.mesh_protocol),
                                            config_.meshtastic_config.config_ok_to_mqtt ? 1U : 0U,
                                            config_.meshtastic_config.ignore_mqtt ? 1U : 0U,
                                            config_.ble_enabled ? 1U : 0U);
-    ::boards::gat562_mesh_evb_pro::settings_store::normalizeConfig(config_);
-    platform::nrf52::debug_console::printf("[gat562][cfg] save post-normalize ok_to_mqtt=%u ignore_mqtt=%u\n",
+    target_board::settings_store::normalizeConfig(config_);
+    platform::nrf52::debug_console::printf("%s[cfg] save post-normalize ok_to_mqtt=%u ignore_mqtt=%u\n",
+                                           target_board::kLogTag,
                                            config_.meshtastic_config.config_ok_to_mqtt ? 1U : 0U,
                                            config_.meshtastic_config.ignore_mqtt ? 1U : 0U);
     refreshEffectiveIdentity();
-    platform::nrf52::debug_console::printf("[gat562][cfg] save post-identity\n");
+    platform::nrf52::debug_console::printf("%s[cfg] save post-identity\n", target_board::kLogTag);
     applyMeshConfig();
-    platform::nrf52::debug_console::printf("[gat562][cfg] save post-applyMesh\n");
+    platform::nrf52::debug_console::printf("%s[cfg] save post-applyMesh\n", target_board::kLogTag);
     applyUserInfo();
-    platform::nrf52::debug_console::printf("[gat562][cfg] save post-applyUser\n");
+    platform::nrf52::debug_console::printf("%s[cfg] save post-applyUser\n", target_board::kLogTag);
     applyPositionConfig();
-    platform::nrf52::debug_console::printf("[gat562][cfg] save post-applyPos\n");
+    platform::nrf52::debug_console::printf("%s[cfg] save post-applyPos\n", target_board::kLogTag);
     applyNetworkLimits();
-    platform::nrf52::debug_console::printf("[gat562][cfg] save post-applyLimits\n");
+    platform::nrf52::debug_console::printf("%s[cfg] save post-applyLimits\n", target_board::kLogTag);
     applyPrivacyConfig();
-    platform::nrf52::debug_console::printf("[gat562][cfg] save post-applyPrivacy\n");
+    platform::nrf52::debug_console::printf("%s[cfg] save post-applyPrivacy\n", target_board::kLogTag);
     applyChatDefaults();
     markPostSaveApplySkips(kSkipApplyMaskAll);
-    ::boards::gat562_mesh_evb_pro::settings_store::queueSaveAppConfig(config_);
+    target_board::settings_store::queueSaveAppConfig(config_);
     config_save_pending_ = true;
-    platform::nrf52::debug_console::printf("[gat562][cfg] save deferred-store queued\n");
+    platform::nrf52::debug_console::printf("%s[cfg] save deferred-store queued\n", target_board::kLogTag);
 }
 
 void AppFacadeRuntime::applyMeshConfig()
@@ -470,33 +471,36 @@ bool AppFacadeRuntime::switchMeshProtocol(chat::MeshProtocol protocol, bool pers
 
     ScopedGpsSuspend suspend_gps(board_);
     const bool protocol_changed = (config_.mesh_protocol != protocol);
-    platform::nrf52::debug_console::printf("[gat562][cfg] switch proto=%u persist=%u changed=%u\n",
+    platform::nrf52::debug_console::printf("%s[cfg] switch proto=%u persist=%u changed=%u\n",
+                                           target_board::kLogTag,
                                            static_cast<unsigned>(protocol),
                                            persist ? 1U : 0U,
                                            protocol_changed ? 1U : 0U);
     config_.mesh_protocol = protocol;
-    ::boards::gat562_mesh_evb_pro::settings_store::cacheAppConfig(config_);
+    target_board::settings_store::cacheAppConfig(config_);
 
     if (persist)
     {
-        ::boards::gat562_mesh_evb_pro::settings_store::normalizeConfig(config_);
-        if (::boards::gat562_mesh_evb_pro::settings_store::saveAppConfig(config_))
+        target_board::settings_store::normalizeConfig(config_);
+        if (target_board::settings_store::saveAppConfig(config_))
         {
-            config_save_pending_ = ::boards::gat562_mesh_evb_pro::settings_store::hasDeferredSavePending();
-            platform::nrf52::debug_console::printf("[gat562][cfg] switch persist save=ok deferred=%u\n",
+            config_save_pending_ = target_board::settings_store::hasDeferredSavePending();
+            platform::nrf52::debug_console::printf("%s[cfg] switch persist save=ok deferred=%u\n",
+                                                   target_board::kLogTag,
                                                    config_save_pending_ ? 1U : 0U);
             if (protocol_changed)
             {
-                platform::nrf52::debug_console::printf("[gat562][cfg] switch persist rebooting for proto=%u\n",
+                platform::nrf52::debug_console::printf("%s[cfg] switch persist rebooting for proto=%u\n",
+                                                       target_board::kLogTag,
                                                        static_cast<unsigned>(protocol));
                 restartDevice();
             }
         }
         else
         {
-            ::boards::gat562_mesh_evb_pro::settings_store::queueSaveAppConfig(config_);
+            target_board::settings_store::queueSaveAppConfig(config_);
             config_save_pending_ = true;
-            platform::nrf52::debug_console::printf("[gat562][cfg] switch persist save=deferred\n");
+            platform::nrf52::debug_console::printf("%s[cfg] switch persist save=deferred\n", target_board::kLogTag);
         }
     }
 
@@ -627,7 +631,7 @@ void AppFacadeRuntime::setBleEnabled(bool enabled)
     if (config_.ble_enabled)
     {
         config_.ble_enabled = false;
-        ::boards::gat562_mesh_evb_pro::settings_store::queueSaveAppConfig(config_);
+        target_board::settings_store::queueSaveAppConfig(config_);
         config_save_pending_ = true;
     }
     return;
@@ -646,7 +650,7 @@ void AppFacadeRuntime::setBleEnabled(bool enabled)
     {
         ble_manager_->setEnabled(enabled);
     }
-    ::boards::gat562_mesh_evb_pro::settings_store::queueSaveAppConfig(config_);
+    target_board::settings_store::queueSaveAppConfig(config_);
     config_save_pending_ = true;
 #endif
 }
@@ -763,7 +767,8 @@ bool AppFacadeRuntime::consumePostSaveApplySkip(uint8_t bit, const char* label)
     }
 
     post_save_apply_skip_mask_ &= static_cast<uint8_t>(~bit);
-    platform::nrf52::debug_console::printf("[gat562][cfg] %s skipped: already applied in save\n",
+    platform::nrf52::debug_console::printf("%s[cfg] %s skipped: already applied in save\n",
+                                           target_board::kLogTag,
                                            label ? label : "apply");
     return true;
 }
@@ -811,18 +816,18 @@ void AppFacadeRuntime::tickEventRuntime()
         return;
     }
 
-    if (!::boards::gat562_mesh_evb_pro::settings_store::hasDeferredSavePending())
+    if (!target_board::settings_store::hasDeferredSavePending())
     {
         config_save_pending_ = false;
         return;
     }
 
-    const bool flushed = ::boards::gat562_mesh_evb_pro::settings_store::tickDeferredSave();
+    const bool flushed = target_board::settings_store::tickDeferredSave();
     if (flushed)
     {
-        platform::nrf52::debug_console::printf("[gat562][cfg] deferred-store flush ok\n");
+        platform::nrf52::debug_console::printf("%s[cfg] deferred-store flush ok\n", target_board::kLogTag);
     }
-    config_save_pending_ = ::boards::gat562_mesh_evb_pro::settings_store::hasDeferredSavePending();
+    config_save_pending_ = target_board::settings_store::hasDeferredSavePending();
 }
 
 void AppFacadeRuntime::dispatchPendingEvents(std::size_t max_events)

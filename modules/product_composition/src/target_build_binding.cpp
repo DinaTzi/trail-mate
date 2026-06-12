@@ -78,6 +78,13 @@ constexpr TargetBuildBinding kTargetBuildBindings[] = {
         nullptr,
         "platformio",
     },
+    {
+        "t-echo-lite",
+        "builds/pio_nrf52",
+        "apps/nrf52_node",
+        nullptr,
+        "platformio",
+    },
 };
 
 } // namespace

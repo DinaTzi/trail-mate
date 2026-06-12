@@ -3,8 +3,7 @@
 #if !TRAILMATE_NRF52_BLE_DISABLED
 #include "ble/ble_manager.h"
 #endif
-#include "boards/gat562_mesh_evb_pro/gat562_board.h"
-#include "boards/gat562_mesh_evb_pro/settings_store.h"
+#include "board/BoardBase.h"
 #include "chat/infra/mesh_adapter_router_core.h"
 #include "chat/infra/mesh_protocol_utils.h"
 #include "chat/usecase/chat_service.h"
@@ -28,13 +27,12 @@ void RuntimeApplyService::applyMesh(app::AppConfig& config,
                                     chat::IMeshAdapter* mesh_router,
                                     chat::ChatService* chat_service,
                                     ble::BleManager* ble_manager,
-                                    boards::gat562_mesh_evb_pro::Gat562Board* board) const
+                                    BoardBase* board) const
 {
-    platform::nrf52::debug_console::printf("[gat562][cfg] applyMesh start proto=%u ok_to_mqtt=%u ignore_mqtt=%u\n",
+    platform::nrf52::debug_console::printf("[nrf52][cfg] applyMesh start proto=%u ok_to_mqtt=%u ignore_mqtt=%u\n",
                                            static_cast<unsigned>(config.mesh_protocol),
                                            config.meshtastic_config.config_ok_to_mqtt ? 1U : 0U,
                                            config.meshtastic_config.ignore_mqtt ? 1U : 0U);
-    ::boards::gat562_mesh_evb_pro::settings_store::normalizeConfig(config);
 
     if (mesh_router)
     {
@@ -59,10 +57,10 @@ void RuntimeApplyService::applyMesh(app::AppConfig& config,
     (void)ble_manager;
 #endif
 
-    platform::nrf52::debug_console::printf("[gat562][cfg] applyMesh end\n");
+    platform::nrf52::debug_console::printf("[nrf52][cfg] applyMesh end\n");
 
     const chat::MeshConfig& mesh = config.activeMeshConfig();
-    platform::nrf52::debug_console::printf("[gat562] radio cfg %s region=%u preset=%u ch=%u tx=%d hop=%u\n",
+    platform::nrf52::debug_console::printf("[nrf52] radio cfg %s region=%u preset=%u ch=%u tx=%d hop=%u\n",
                                            protocolLabel(config.mesh_protocol),
                                            static_cast<unsigned>(mesh.region),
                                            static_cast<unsigned>(mesh.modem_preset),
@@ -97,7 +95,7 @@ void RuntimeApplyService::applyUserInfo(const chat::runtime::EffectiveSelfIdenti
 }
 
 void RuntimeApplyService::applyPosition(const app::AppConfig& config,
-                                        boards::gat562_mesh_evb_pro::Gat562Board* board) const
+                                        BoardBase* board) const
 {
     if (board)
     {

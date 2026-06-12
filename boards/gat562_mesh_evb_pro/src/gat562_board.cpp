@@ -6,7 +6,7 @@
 #include "boards/gat562_mesh_evb_pro/settings_store.h"
 #include "boards/gat562_mesh_evb_pro/sx1262_radio_packet_io.h"
 #include "platform/nrf52/arduino_common/chat/infra/radio_packet_io.h"
-#include "ui/mono_128x64/runtime.h"
+#include "ui/mono/runtime.h"
 
 #include ".pio/libdeps/gat562_mesh_evb_pro/Adafruit SSD1306/Adafruit_SSD1306.h"
 #include <Arduino.h>
@@ -393,7 +393,7 @@ namespace
 constexpr int kMonoScreenWidth = 128;
 constexpr int kMonoScreenHeight = 64;
 
-class Ssd1306MonoDisplay final : public ::ui::mono_128x64::MonoDisplay
+class Ssd1306MonoDisplay final : public ::ui::mono::MonoDisplay
 {
   public:
     Ssd1306MonoDisplay()
@@ -475,7 +475,7 @@ bool Ssd1306MonoDisplay::begin()
     {
         display_.clearDisplay();
         display_.setTextWrap(false);
-        // Mono UI text is rendered by ui::mono_128x64::TextRenderer. Keep the
+        // Mono UI text is rendered by ui::mono::TextRenderer. Keep the
         // panel implementation at raw-pixel level so NRF never falls back to
         // Adafruit_GFX's built-in ASCII font path.
         display_.display();
@@ -485,7 +485,7 @@ bool Ssd1306MonoDisplay::begin()
 
 } // namespace
 
-::ui::mono_128x64::MonoDisplay& Gat562Board::monoDisplay()
+::ui::mono::MonoDisplay& Gat562Board::monoDisplay()
 {
     static Ssd1306MonoDisplay display;
     return display;

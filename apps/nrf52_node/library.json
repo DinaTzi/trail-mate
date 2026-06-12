@@ -27,7 +27,7 @@
       "-I../../modules/core_gps/include",
       "-I../../modules/core_sys/include",
       "-I../../modules/core_mesh/include",
-      "-I../../modules/ui_mono_128x64/include",
+      "-I../../modules/ui_mono/include",
       "-I../../modules/ui_shared/include",
       "-I../../modules/chat_presentation_adapters/include",
       "-I../../platform/shared/include",
@@ -51,7 +51,7 @@
       "name": "core_sys"
     },
     {
-      "name": "ui_mono_128x64"
+      "name": "ui_mono"
     },
     {
       "name": "boards_gat562_mesh_evb_pro"

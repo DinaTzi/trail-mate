@@ -18,6 +18,7 @@ constexpr TargetUxBinding kTargetUxBindings[] = {
     {"linux_sim", "simulator_full", "simulator_full", nullptr, true},
     {"cardputerzero", "cardputer_compact", "cardputer_compact", nullptr, true},
     {"gat562_mesh_evb_pro", "node_headless", "tiny_node_status", "tiny_node_status", false},
+    {"t-echo-lite", "node_headless", "tiny_node_status", "tiny_node_status", false},
 };
 
 } // namespace

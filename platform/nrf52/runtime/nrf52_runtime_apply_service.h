@@ -18,10 +18,7 @@ class ChatService;
 class IMeshAdapter;
 } // namespace chat
 
-namespace boards::gat562_mesh_evb_pro
-{
-class Gat562Board;
-}
+class BoardBase;
 
 namespace platform::nrf52::runtime
 {
@@ -33,7 +30,7 @@ class RuntimeApplyService
                    chat::IMeshAdapter* mesh_router,
                    chat::ChatService* chat_service,
                    ble::BleManager* ble_manager,
-                   boards::gat562_mesh_evb_pro::Gat562Board* board) const;
+                   BoardBase* board) const;
 
     void applyUserInfo(const chat::runtime::EffectiveSelfIdentity& previous_identity,
                        const chat::runtime::EffectiveSelfIdentity& current_identity,
@@ -41,7 +38,7 @@ class RuntimeApplyService
                        ble::BleManager* ble_manager) const;
 
     void applyPosition(const app::AppConfig& config,
-                       boards::gat562_mesh_evb_pro::Gat562Board* board) const;
+                       BoardBase* board) const;
 };
 
 } // namespace platform::nrf52::runtime
