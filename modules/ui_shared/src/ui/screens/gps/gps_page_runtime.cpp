@@ -85,7 +85,6 @@ constexpr std::uint32_t kLvglFunctionKeyF1 = 0x110001U;
 constexpr std::uint32_t kInvalidMemberId = 0xFFFFFFFFU;
 constexpr std::size_t kMaxTrackOverlayPoints = 48;
 constexpr int kDefaultTrackerZoom = 16;
-constexpr std::uint32_t kMapDragPreviewIntervalMs = 16;
 
 struct TrackOverlayPoint
 {
@@ -147,7 +146,6 @@ char s_map_notice_text[64]{};
 uint32_t s_map_notice_until_ms = 0;
 int s_map_drag_start_pan_x = 0;
 int s_map_drag_start_pan_y = 0;
-std::uint32_t s_map_drag_last_preview_ms = 0;
 std::vector<TrackOverlayPoint> s_track_points;
 std::vector<std::string> s_track_modal_names;
 std::string s_track_file;
@@ -415,7 +413,6 @@ void clear_map_controls()
     s_member_button_ids.clear();
     s_member_list_hash = 0;
     s_member_panel_last_ms = 0;
-    s_map_drag_last_preview_ms = 0;
 }
 
 void set_hidden(lv_obj_t* obj, bool hidden)
@@ -1241,11 +1238,11 @@ void map_gesture_callback(const ::ui::widgets::map::GestureEvent& event, void*)
     case ::ui::widgets::map::GesturePhase::Pressed:
         s_map_drag_start_pan_x = s_map_pan_x;
         s_map_drag_start_pan_y = s_map_pan_y;
-        s_map_drag_last_preview_ms = 0;
         s_map_drag_active = false;
         break;
     case ::ui::widgets::map::GesturePhase::DragBegin:
         s_map_drag_active = true;
+        apply_map_drag_preview();
         break;
     case ::ui::widgets::map::GesturePhase::DragUpdate:
         s_map_drag_active = true;
@@ -1261,7 +1258,6 @@ void map_gesture_callback(const ::ui::widgets::map::GestureEvent& event, void*)
             s_map_pan_x = 0;
             s_map_pan_y = 0;
             sync_workspace_viewport_from_renderer();
-            s_map_drag_last_preview_ms = 0;
             request_refresh_view();
         }
         s_map_drag_active = false;
@@ -1275,14 +1271,6 @@ void apply_map_drag_preview()
     {
         return;
     }
-
-    const std::uint32_t now_ms = sys::millis_now();
-    if (s_map_drag_last_preview_ms != 0 &&
-        now_ms - s_map_drag_last_preview_ms < kMapDragPreviewIntervalMs)
-    {
-        return;
-    }
-    s_map_drag_last_preview_ms = now_ms;
 
     const auto snapshot = map_workspace_model().snapshot();
     if (!snapshot.header.valid)
@@ -1327,7 +1315,10 @@ void refresh_view()
             snapshot = map_workspace_model().snapshot();
             ::ui::widgets::map::apply_model(s_map_runtime, build_map_model(snapshot));
         }
-        ::ui::widgets::map::apply_overlay(s_map_runtime, s_overlay_snapshot);
+        if (!s_map_drag_active)
+        {
+            ::ui::widgets::map::apply_overlay(s_map_runtime, s_overlay_snapshot);
+        }
     }
     else
     {
@@ -1367,6 +1358,10 @@ class SharedGpsUiRefreshSink final : public ::ui::screens::gps::IGpsUiRefreshSin
         if (s_projection == Projection::GpsStatus)
         {
             refresh_gps_status_view();
+            return;
+        }
+        if (s_map_drag_active)
+        {
             return;
         }
         refresh_view();
