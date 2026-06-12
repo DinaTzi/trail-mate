@@ -8,8 +8,20 @@
 #include <cstdio>
 #include <cstring>
 
-// GPS task logs are release diagnostics while receiver bring-up is unstable.
+// GPS task loop diagnostics are high frequency and can stall touch/LVGL work on ESP.
+// Enable only while actively debugging receiver bring-up.
+#ifndef TRAIL_MATE_GPS_TASK_DEBUG
+#define TRAIL_MATE_GPS_TASK_DEBUG 0
+#endif
+
+#if TRAIL_MATE_GPS_TASK_DEBUG
 #define GPS_TASK_LOG(...) Serial.printf(__VA_ARGS__)
+#else
+#define GPS_TASK_LOG(...) \
+    do                    \
+    {                     \
+    } while (0)
+#endif
 
 namespace
 {
@@ -705,11 +717,11 @@ void GpsService::gpsTask(void* pvParameters)
             }
             if (uart_read_bytes != chars_this_loop && (uart_read_bytes > 0 || chars_this_loop > 0))
             {
-                Serial.printf("[GPS][COUNT_CHECK] loop=%lu read_bytes=%lu tinygps_delta=%lu total=%lu\n",
-                              static_cast<unsigned long>(loop_count),
-                              static_cast<unsigned long>(uart_read_bytes),
-                              static_cast<unsigned long>(chars_this_loop),
-                              static_cast<unsigned long>(total_chars));
+                GPS_TASK_LOG("[GPS][COUNT_CHECK] loop=%lu read_bytes=%lu tinygps_delta=%lu total=%lu\n",
+                             static_cast<unsigned long>(loop_count),
+                             static_cast<unsigned long>(uart_read_bytes),
+                             static_cast<unsigned long>(chars_this_loop),
+                             static_cast<unsigned long>(total_chars));
             }
 
             if (service->gps_data_mutex_ != NULL && xSemaphoreTake(service->gps_data_mutex_, portMAX_DELAY) == pdTRUE)

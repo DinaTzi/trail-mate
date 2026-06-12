@@ -34,12 +34,23 @@
 #define GPS_LOG(...)
 #endif
 
+#ifndef TRAIL_MATE_MAP_TILE_FLOW_LOG
+#define TRAIL_MATE_MAP_TILE_FLOW_LOG 0
+#endif
+
+#if TRAIL_MATE_MAP_TILE_FLOW_LOG
 #define GPS_FLOW_LOG(...)         \
     do                            \
     {                             \
         std::printf(__VA_ARGS__); \
         std::fflush(stdout);      \
     } while (0)
+#else
+#define GPS_FLOW_LOG(...) \
+    do                    \
+    {                     \
+    } while (0)
+#endif
 
 static uint32_t g_cache_full_log_ms = 0;
 static uint8_t g_requested_map_source = 0;

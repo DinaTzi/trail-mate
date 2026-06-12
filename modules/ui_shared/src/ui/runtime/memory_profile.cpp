@@ -26,7 +26,8 @@ MemoryProfile make_standard_profile()
     profile.max_locale_font_ram_bytes = 768U * 1024U;
     profile.max_content_supplement_ram_bytes = 640U * 1024U;
     profile.max_content_supplement_packs = 2;
-    profile.max_map_decode_tiles = 4;
+    // 320x240 touch map views need 6 visible 256px tiles plus pan cushion.
+    profile.max_map_decode_tiles = 9;
     profile.retain_map_decode_cache_on_page_exit = false;
     return profile;
 }
