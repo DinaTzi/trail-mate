@@ -147,8 +147,8 @@ struct BoardProfile
         bool supports_team = false;
         bool supports_hostlink = false;
         bool supports_sdcard = false;
-        bool supports_cjk_input = false;
-        bool supports_pinyin_ime = false;
+        bool supports_cjk_input = true;
+        bool supports_pinyin_ime = true;
         bool supports_touch = false;
         bool supports_keyboard = true;
         bool supports_audio = true;

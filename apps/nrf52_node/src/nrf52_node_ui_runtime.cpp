@@ -9,8 +9,9 @@
 #include "sys/clock.h"
 #if defined(TRAILMATE_TARGET_T_ECHO_LITE)
 #include "ui/fonts/fusion_pixel_10_font.h"
-#endif
+#else
 #include "ui/fonts/fusion_pixel_8_font.h"
+#endif
 #include "ui/mono/runtime.h"
 
 #include <Arduino.h>
@@ -277,9 +278,10 @@ bool initialize()
     static ui::mono::HostCallbacks callbacks{};
     callbacks.app = &AppFacadeRuntime::instance();
     callbacks.app_ready_fn = app_ready;
-    callbacks.ui_font = &platform::nrf52::ui::fonts::fusion_pixel_8_font();
 #if defined(TRAILMATE_TARGET_T_ECHO_LITE)
-    callbacks.accent_font = &platform::nrf52::ui::fonts::fusion_pixel_10_font();
+    callbacks.ui_font = &platform::nrf52::ui::fonts::fusion_pixel_10_font();
+#else
+    callbacks.ui_font = &platform::nrf52::ui::fonts::fusion_pixel_8_font();
 #endif
     callbacks.millis_fn = now_ms;
     callbacks.utc_now_fn = utc_now;
@@ -357,6 +359,10 @@ void tick(const BoardInputEvent* event)
         if (event && event->pressed && event->text != '\0')
         {
             s_runtime->typeText(event->text);
+            if (action == ui::mono::InputAction::None)
+            {
+                return;
+            }
         }
 #endif
         s_runtime->tick(action);
@@ -376,7 +382,11 @@ void showDisplayProbe()
     }
 
     auto& display = target_board::instance().monoDisplay();
+#if defined(TRAILMATE_TARGET_T_ECHO_LITE)
+    drawProbePattern(display, platform::nrf52::ui::fonts::fusion_pixel_10_font());
+#else
     drawProbePattern(display, platform::nrf52::ui::fonts::fusion_pixel_8_font());
+#endif
     s_probe_drawn = true;
     platform::nrf52::debug_console::printf("%s display probe rendered\n", target_board::kLogTag);
     delay(kProbeHoldMs);

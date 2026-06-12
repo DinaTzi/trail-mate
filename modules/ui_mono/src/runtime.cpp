@@ -12,6 +12,7 @@
 #include "generated/meshtastic/portnums.pb.h"
 #include "pb_encode.h"
 #include "platform/ui/screen_runtime.h"
+#include "ui/mono/assets/trailmate_sleep_logo.h"
 #include "ui/mono/screens/screensaver_layout.h"
 #include <algorithm>
 #include <array>
@@ -58,6 +59,32 @@ const char* inputActionName(InputAction action)
         return "Secondary";
     default:
         return "?";
+    }
+}
+
+void drawBitmap1bpp(MonoDisplay& display,
+                    int x,
+                    int y,
+                    int width,
+                    int height,
+                    int stride,
+                    const uint8_t* bitmap)
+{
+    if (!bitmap || width <= 0 || height <= 0 || stride <= 0)
+    {
+        return;
+    }
+
+    for (int row = 0; row < height; ++row)
+    {
+        for (int col = 0; col < width; ++col)
+        {
+            const uint8_t byte = bitmap[row * stride + col / 8];
+            if ((byte & (0x80U >> (col % 8))) != 0)
+            {
+                display.drawPixel(x + col, y + row, true);
+            }
+        }
     }
 }
 
@@ -196,6 +223,12 @@ constexpr const char* kComposeAbcKeys = " ETAOINSHRDLUCMFWYPVBGKQJXZ";
 constexpr const char* kComposeNumKeys = "0123456789";
 constexpr const char* kComposeSymKeys = " .,!?/-:@#()[]+=";
 constexpr const char* kComposeActionLabels[] = {"ABC", "SP", "BACK", "DEL", "SEND"};
+
+struct PinyinCandidateEntry
+{
+    const char* pinyin;
+    const char* words[7];
+};
 constexpr uint32_t kConversationScrollStartPauseMs = 500;
 constexpr uint32_t kConversationScrollStepMs = 250;
 constexpr uint32_t kConversationScrollEndPauseMs = 800;
@@ -218,15 +251,8 @@ constexpr ComposeGroupDef kComposeAbcGroups[] = {
     {".,?", ".,?"},
 };
 constexpr uint32_t kBootMinMs = 1800;
-constexpr uint32_t kComposeMultiTapWindowMs = 700;
+constexpr uint32_t kComposeMultiTapWindowMs = 1500;
 constexpr uint32_t kLargeScreensaverRefreshMs = 60000;
-constexpr size_t kChatListPageSize = 6;
-constexpr size_t kNodeListPageSize = 6;
-constexpr size_t kMessageInfoPageSize = 6;
-constexpr size_t kNodeInfoPageSize = 6;
-constexpr size_t kInfoPageSize = 6;
-constexpr size_t kGnssSummaryPageSize = 6;
-constexpr size_t kGnssSatPageSize = 5;
 constexpr uint32_t kGnssSnapshotRefreshMs = 5000;
 constexpr int kTimezoneMin = -12 * 60;
 constexpr int kTimezoneMax = 14 * 60;
@@ -323,6 +349,64 @@ constexpr const char* kHamTerms[] = {
     "YANKEE",
     "YL",
     "ZULU",
+};
+
+constexpr PinyinCandidateEntry kPinyinCandidates[] = {
+    {"ai", {u8"爱", u8"哎", u8"矮", u8"挨", u8"碍", u8"艾", u8"唉"}},
+    {"an", {u8"安", u8"按", u8"俺", u8"案", u8"暗", u8"岸", u8"鞍"}},
+    {"ba", {u8"吧", u8"把", u8"八"}},
+    {"bei", {u8"北", u8"被", u8"备"}},
+    {"bu", {u8"不", u8"步", u8"部"}},
+    {"chi", {u8"吃", u8"迟", u8"持"}},
+    {"dao", {u8"到", u8"道", u8"导", u8"倒", u8"岛", u8"刀", u8"盗"}},
+    {"de", {u8"的", u8"得", u8"德", u8"地", u8"底", u8"等", u8"点"}},
+    {"deng", {u8"等", u8"灯", u8"登"}},
+    {"di", {u8"地", u8"第", u8"低"}},
+    {"dong", {u8"东", u8"动", u8"懂"}},
+    {"dui", {u8"对", u8"队", u8"兑"}},
+    {"en", {u8"嗯", u8"恩", u8"摁"}},
+    {"fa", {u8"发", u8"法", u8"罚", u8"乏", u8"伐", u8"阀", u8"烦"}},
+    {"hao", {u8"好", u8"号", u8"浩", u8"耗", u8"豪", u8"郝", u8"毫"}},
+    {"he", {u8"和", u8"河", u8"合", u8"喝", u8"何", u8"核", u8"盒"}},
+    {"hui", {u8"会", u8"回", u8"灰", u8"汇", u8"惠", u8"挥", u8"毁"}},
+    {"ji", {u8"机", u8"几", u8"急", u8"记", u8"即", u8"级", u8"集"}},
+    {"jia", {u8"家", u8"加", u8"甲"}},
+    {"kan", {u8"看", u8"砍", u8"刊", u8"堪", u8"坎", u8"侃", u8"勘"}},
+    {"ke", {u8"可", u8"客", u8"科", u8"课", u8"克", u8"刻", u8"颗"}},
+    {"lai", {u8"来", u8"赖", u8"莱", u8"唻", u8"徕", u8"睐", u8"癞"}},
+    {"le", {u8"了", u8"乐", u8"勒", u8"嘞", u8"肋", u8"仂", u8"叻"}},
+    {"li", {u8"里", u8"离", u8"力", u8"理", u8"立", u8"利", u8"李"}},
+    {"ma", {u8"吗", u8"妈", u8"马", u8"嘛", u8"码", u8"麻", u8"骂"}},
+    {"mei", {u8"没", u8"美", u8"每"}},
+    {"men", {u8"们", u8"门", u8"闷"}},
+    {"mi", {u8"米", u8"密", u8"迷", u8"咪", u8"秘", u8"蜜", u8"弥"}},
+    {"ming", {u8"明", u8"名", u8"命"}},
+    {"mo", {u8"么", u8"末", u8"摸", u8"没", u8"墨", u8"默", u8"磨"}},
+    {"mu", {u8"木", u8"目", u8"母", u8"亩", u8"幕", u8"牧", u8"穆"}},
+    {"na", {u8"那", u8"拿", u8"哪"}},
+    {"neng", {u8"能", u8"冷", u8"楞", u8"棱", u8"嗯", u8"内", u8"嫩"}},
+    {"ni", {u8"你", u8"尼", u8"呢", u8"拟", u8"泥", u8"逆", u8"腻"}},
+    {"nihao", {u8"你好", u8"你号", u8"拟好", u8"泥好", u8"你好啊", u8"你们", u8"你呢"}},
+    {"ok", {u8"好", u8"行", u8"OK", u8"可以", u8"收到", u8"没问题", u8"确认"}},
+    {"qing", {u8"请", u8"清", u8"情", u8"青", u8"轻", u8"庆", u8"晴"}},
+    {"qu", {u8"去", u8"取", u8"区", u8"曲", u8"趣", u8"渠", u8"驱"}},
+    {"rang", {u8"让", u8"嚷", u8"壤"}},
+    {"ren", {u8"人", u8"认", u8"任"}},
+    {"shou", {u8"收", u8"手", u8"守", u8"受", u8"首", u8"售", u8"瘦"}},
+    {"shi", {u8"是", u8"时", u8"事", u8"十", u8"使", u8"试", u8"市"}},
+    {"shoudao", {u8"收到", u8"手到", u8"守到", u8"收到了", u8"已收到", u8"收到啦", u8"确认收到"}},
+    {"tian", {u8"天", u8"填", u8"田"}},
+    {"ting", {u8"听", u8"停", u8"挺"}},
+    {"wo", {u8"我", u8"窝", u8"握", u8"喔", u8"沃", u8"卧", u8"斡"}},
+    {"xie", {u8"谢", u8"写", u8"些", u8"鞋", u8"斜", u8"协", u8"卸"}},
+    {"xing", {u8"行", u8"星", u8"型", u8"醒", u8"姓", u8"性", u8"幸"}},
+    {"yao", {u8"要", u8"药", u8"摇", u8"腰", u8"遥", u8"咬", u8"钥"}},
+    {"yi", {u8"一", u8"已", u8"以", u8"也", u8"有", u8"要", u8"用"}},
+    {"you", {u8"有", u8"又", u8"由", u8"右", u8"友", u8"油", u8"优"}},
+    {"zai", {u8"在", u8"再", u8"载", u8"哉", u8"栽", u8"仔", u8"灾"}},
+    {"zhe", {u8"这", u8"者", u8"着", u8"折", u8"哲", u8"遮", u8"浙"}},
+    {"zhidao", {u8"知道", u8"直到", u8"制导", u8"只到", u8"指到", u8"知道了", u8"我知道"}},
+    {"zou", {u8"走", u8"奏", u8"揍"}},
 };
 
 template <typename T, size_t N>
@@ -434,13 +518,44 @@ void appendChar(char* buffer, size_t capacity, size_t& len, char ch)
     buffer[len] = '\0';
 }
 
+void appendText(char* buffer, size_t capacity, size_t& len, const char* text)
+{
+    if (!buffer || capacity == 0 || !text)
+    {
+        return;
+    }
+
+    for (size_t i = 0; text[i] != '\0';)
+    {
+        const size_t cp_len = utf8CharLength(text[i]);
+        size_t actual_len = 0;
+        while (actual_len < cp_len && text[i + actual_len] != '\0')
+        {
+            ++actual_len;
+        }
+        if (actual_len == 0 || len + actual_len >= capacity)
+        {
+            return;
+        }
+        std::memcpy(buffer + len, text + i, actual_len);
+        len += actual_len;
+        buffer[len] = '\0';
+        i += actual_len;
+    }
+}
+
 void popChar(char* buffer, size_t& len)
 {
     if (!buffer || len == 0)
     {
         return;
     }
-    --len;
+    size_t start = len - 1U;
+    while (start > 0U && (static_cast<unsigned char>(buffer[start]) & 0xC0U) == 0x80U)
+    {
+        --start;
+    }
+    len = start;
     buffer[len] = '\0';
 }
 
@@ -452,6 +567,8 @@ const char* composeKeysetForMode(ui::mono::Runtime::ComposeMode mode)
         return kComposeNumKeys;
     case ui::mono::Runtime::ComposeMode::Sym:
         return kComposeSymKeys;
+    case ui::mono::Runtime::ComposeMode::Cn:
+        return kComposeAbcKeys;
     case ui::mono::Runtime::ComposeMode::AbcUpper:
     case ui::mono::Runtime::ComposeMode::AbcLower:
     default:
@@ -471,8 +588,25 @@ const char* composeModeLabel(ui::mono::Runtime::ComposeMode mode)
         return "123";
     case ui::mono::Runtime::ComposeMode::Sym:
         return "SYM";
+    case ui::mono::Runtime::ComposeMode::Cn:
+        return "CN";
     default:
         return "ABC";
+    }
+}
+
+const char* physicalComposeModeLabel(ui::mono::Runtime::ComposeMode mode)
+{
+    switch (mode)
+    {
+    case ui::mono::Runtime::ComposeMode::Num:
+        return "123";
+    case ui::mono::Runtime::ComposeMode::Cn:
+        return "CN";
+    case ui::mono::Runtime::ComposeMode::AbcLower:
+    case ui::mono::Runtime::ComposeMode::AbcUpper:
+    default:
+        return "EN";
     }
 }
 
@@ -504,6 +638,77 @@ char upperAscii(char ch)
 bool isAlphaAscii(char ch)
 {
     return std::isalpha(static_cast<unsigned char>(ch)) != 0;
+}
+
+const char* phoneCycleCharsForKey(char ch)
+{
+    switch (ch)
+    {
+    case '2':
+        return "abc2";
+    case '3':
+        return "def3";
+    case '4':
+        return "ghi4";
+    case '5':
+        return "jkl5";
+    case '6':
+        return "mno6";
+    case '7':
+        return "pqrs7";
+    case '8':
+        return "tuv8";
+    case '9':
+        return "wxyz9";
+    case '1':
+        return ".,?!1";
+    default:
+        return "";
+    }
+}
+
+char applyPhoneCycleCase(ui::mono::Runtime::ComposeMode mode, char ch)
+{
+    if (std::isalpha(static_cast<unsigned char>(ch)) == 0)
+    {
+        return ch;
+    }
+    return mode == ui::mono::Runtime::ComposeMode::AbcUpper
+               ? static_cast<char>(std::toupper(static_cast<unsigned char>(ch)))
+               : static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+}
+
+void formatPhoneCycleHint(char* out, size_t out_len,
+                          ui::mono::Runtime::ComposeMode mode,
+                          char key,
+                          size_t tap_index)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+    out[0] = '\0';
+
+    const char* chars = phoneCycleCharsForKey(key);
+    const size_t count = std::strlen(chars);
+    if (count == 0)
+    {
+        return;
+    }
+
+    char group[8] = {};
+    size_t pos = 0;
+    for (size_t i = 0; i < count && pos + 1 < sizeof(group); ++i)
+    {
+        const char ch = chars[i];
+        group[pos++] = std::isalpha(static_cast<unsigned char>(ch)) != 0
+                           ? static_cast<char>(std::toupper(static_cast<unsigned char>(ch)))
+                           : ch;
+    }
+    group[pos] = '\0';
+
+    const char selected = applyPhoneCycleCase(mode, chars[tap_index % count]);
+    std::snprintf(out, out_len, "%c %s:%c", key, group, selected);
 }
 
 bool hasPrefixIgnoreCase(const char* text, const char* prefix)
@@ -1201,6 +1406,12 @@ void Runtime::typeText(char ch)
     }
 
     last_interaction_ms_ = nowMs();
+    if (usesPhysicalTextInput() && handlePhysicalComposeText(ch))
+    {
+        render();
+        return;
+    }
+
     if (ch == '\b')
     {
         removeComposeChar();
@@ -1430,15 +1641,17 @@ void Runtime::handleInput(InputAction action)
         break;
 
     case Page::NodeInfo:
+    {
+        const size_t page_size = visibleRowsFrom(10);
         if (action == InputAction::Up && node_info_scroll_ > 0)
         {
-            node_info_scroll_ = (node_info_scroll_ >= kNodeInfoPageSize)
-                                    ? (node_info_scroll_ - kNodeInfoPageSize)
+            node_info_scroll_ = (node_info_scroll_ >= page_size)
+                                    ? (node_info_scroll_ - page_size)
                                     : 0U;
         }
-        else if (action == InputAction::Down && (node_info_scroll_ + kNodeInfoPageSize) < node_info_count_)
+        else if (action == InputAction::Down && (node_info_scroll_ + page_size) < node_info_count_)
         {
-            node_info_scroll_ += kNodeInfoPageSize;
+            node_info_scroll_ += page_size;
         }
         else if (action == InputAction::Left || action == InputAction::Back ||
                  action == InputAction::Right || action == InputAction::Select || action == InputAction::Primary)
@@ -1446,6 +1659,7 @@ void Runtime::handleInput(InputAction action)
             enterPage(Page::NodeList);
         }
         break;
+    }
 
     case Page::NodeCompass:
         if (action == InputAction::Left || action == InputAction::Back ||
@@ -1503,15 +1717,17 @@ void Runtime::handleInput(InputAction action)
         break;
 
     case Page::MessageInfo:
+    {
+        const size_t page_size = visibleRowsFrom(10);
         if (action == InputAction::Up && message_info_scroll_ > 0)
         {
-            message_info_scroll_ = (message_info_scroll_ >= kMessageInfoPageSize)
-                                       ? (message_info_scroll_ - kMessageInfoPageSize)
+            message_info_scroll_ = (message_info_scroll_ >= page_size)
+                                       ? (message_info_scroll_ - page_size)
                                        : 0U;
         }
-        else if (action == InputAction::Down && (message_info_scroll_ + kMessageInfoPageSize) < message_info_count_)
+        else if (action == InputAction::Down && (message_info_scroll_ + page_size) < message_info_count_)
         {
-            message_info_scroll_ += kMessageInfoPageSize;
+            message_info_scroll_ += page_size;
         }
         else if (action == InputAction::Left || action == InputAction::Back ||
                  action == InputAction::Right || action == InputAction::Select || action == InputAction::Primary)
@@ -1519,13 +1735,22 @@ void Runtime::handleInput(InputAction action)
             enterPage(Page::MessageMenu);
         }
         break;
+    }
 
     case Page::Compose:
         if (usesPhysicalTextInput())
         {
-            if (action == InputAction::Back || action == InputAction::Left)
+            if (action == InputAction::Up && compose_mode_ == ComposeMode::Cn && compose_candidate_count_ > 0)
             {
-                if (compose_len_ > 0)
+                adjustComposeCandidate(-1);
+            }
+            else if (action == InputAction::Down && compose_mode_ == ComposeMode::Cn && compose_candidate_count_ > 0)
+            {
+                adjustComposeCandidate(1);
+            }
+            else if (action == InputAction::Back || action == InputAction::Left)
+            {
+                if (compose_preedit_len_ > 0 || compose_len_ > 0)
                 {
                     removeComposeChar();
                 }
@@ -1536,11 +1761,16 @@ void Runtime::handleInput(InputAction action)
             }
             else if (action == InputAction::Secondary)
             {
+                (void)commitPhysicalComposePreedit(true);
                 appendComposeChar(' ');
             }
             else if (action == InputAction::Select || action == InputAction::Primary)
             {
-                if (edit_target_ == EditTarget::Message)
+                if (commitPhysicalComposePreedit(true))
+                {
+                    compose_focus_ = ComposeFocus::Body;
+                }
+                else if (edit_target_ == EditTarget::Message)
                 {
                     sendComposeMessage();
                 }
@@ -1767,13 +1997,15 @@ void Runtime::handleInput(InputAction action)
         break;
 
     case Page::InfoPage:
+    {
+        const size_t page_size = visibleRowsFrom(10);
         if (action == InputAction::Up && info_scroll_ > 0)
         {
-            info_scroll_ = (info_scroll_ >= kInfoPageSize) ? (info_scroll_ - kInfoPageSize) : 0U;
+            info_scroll_ = (info_scroll_ >= page_size) ? (info_scroll_ - page_size) : 0U;
         }
         else if (action == InputAction::Down)
         {
-            info_scroll_ += kInfoPageSize;
+            info_scroll_ += page_size;
         }
         else if (action == InputAction::Left || action == InputAction::Back ||
                  action == InputAction::Right || action == InputAction::Select || action == InputAction::Primary)
@@ -1781,6 +2013,7 @@ void Runtime::handleInput(InputAction action)
             enterPage(Page::MainMenu);
         }
         break;
+    }
 
     case Page::RadioSettings:
         if (action == InputAction::Up && radio_index_ > 0)
@@ -2115,6 +2348,21 @@ void Runtime::renderScreensaver()
 
 void Runtime::renderSleep()
 {
+    if (usesLargeScreensaverLayout())
+    {
+        const int x = std::max(0, (display_.width() - assets::kTrailmateSleepLogoWidth) / 2);
+        const int y = std::max(0, (display_.height() - assets::kTrailmateSleepLogoHeight) / 2);
+        drawBitmap1bpp(display_,
+                       x,
+                       y,
+                       assets::kTrailmateSleepLogoWidth,
+                       assets::kTrailmateSleepLogoHeight,
+                       assets::kTrailmateSleepLogoStride,
+                       assets::kTrailmateSleepLogoBitmap);
+        return;
+    }
+
+    text_renderer_.drawText(display_, 0, 24, "SLEEP");
 }
 
 void Runtime::renderMainMenu()
@@ -2125,12 +2373,13 @@ void Runtime::renderMainMenu()
 void Runtime::renderChatList()
 {
     rebuildConversationList();
-    const size_t total_pages = std::max<size_t>(1U, (conversation_count_ + kChatListPageSize - 1U) / kChatListPageSize);
+    const size_t page_size = visibleRowsFrom(10);
+    const size_t total_pages = std::max<size_t>(1U, (conversation_count_ + page_size - 1U) / page_size);
     const size_t selected = (conversation_count_ > 0)
                                 ? std::min(chat_list_index_, conversation_count_ - 1U)
                                 : 0U;
-    const size_t start = (conversation_count_ > 0) ? ((selected / kChatListPageSize) * kChatListPageSize) : 0U;
-    const size_t current_page = (conversation_count_ > 0) ? ((start / kChatListPageSize) + 1U) : 1U;
+    const size_t start = (conversation_count_ > 0) ? ((selected / page_size) * page_size) : 0U;
+    const size_t current_page = (conversation_count_ > 0) ? ((start / page_size) + 1U) : 1U;
     char pos[16] = {};
     std::snprintf(pos, sizeof(pos), "%u/%u",
                   static_cast<unsigned>(current_page),
@@ -2143,7 +2392,7 @@ void Runtime::renderChatList()
     }
 
     const int line_h = text_renderer_.lineHeight();
-    const size_t visible = std::min(conversation_count_ - start, kChatListPageSize);
+    const size_t visible = std::min(conversation_count_ - start, page_size);
     for (size_t i = 0; i < visible; ++i)
     {
         const size_t conversation_index = start + i;
@@ -2164,34 +2413,37 @@ void Runtime::renderNodeList()
     const size_t selected = (node_count_ > 0)
                                 ? std::min(node_list_index_, node_count_ - 1U)
                                 : 0U;
-    const size_t start = (node_count_ > 0) ? ((selected / kNodeListPageSize) * kNodeListPageSize) : 0U;
+    const size_t page_size = visibleRowsFrom(10);
+    const size_t start = (node_count_ > 0) ? ((selected / page_size) * page_size) : 0U;
     constexpr int kHeaderY = 0;
     const int line_h = text_renderer_.lineHeight();
     constexpr int kRowStartY = 10;
-    constexpr int kNameX = 0;
-    constexpr int kNameW = 22;
-    constexpr int kAgeX = 24;
-    constexpr int kAgeW = 14;
-    constexpr int kDistX = 40;
-    constexpr int kDistW = 18;
-    constexpr int kBrgX = 60;
-    constexpr int kBrgW = 28;
-    constexpr int kHopsX = 90;
-    constexpr int kHopsW = 12;
-    constexpr int kBarsX = 106;
+    const bool wide = display_.width() >= 160;
+    const int name_x = 0;
+    const int name_w = wide ? 54 : 22;
+    const int age_x = wide ? 56 : 24;
+    const int age_w = wide ? 24 : 14;
+    const int dist_x = wide ? 82 : 40;
+    const int dist_w = wide ? 30 : 18;
+    const int brg_x = wide ? 114 : 60;
+    const int brg_w = wide ? 30 : 28;
+    const int hops_x = wide ? 146 : 90;
+    const int hops_w = wide ? 18 : 12;
+    const int bars_x = wide ? 168 : 106;
 
     display_.fillRect(0, kHeaderY, display_.width(), line_h + 1, true);
-    drawTextClipped(kAgeX, kHeaderY, kAgeW, "AGE", true);
-    drawTextClipped(kDistX, kHeaderY, kDistW, "DST", true);
-    drawTextClipped(kBrgX, kHeaderY, kBrgW, "BRG", true);
-    drawTextClipped(kHopsX, kHeaderY, kHopsW, "HP", true);
+    drawTextClipped(name_x, kHeaderY, name_w, wide ? "NODE" : "ID", true);
+    drawTextClipped(age_x, kHeaderY, age_w, "AGE", true);
+    drawTextClipped(dist_x, kHeaderY, dist_w, "DST", true);
+    drawTextClipped(brg_x, kHeaderY, brg_w, "BRG", true);
+    drawTextClipped(hops_x, kHeaderY, hops_w, "HP", true);
     if (node_count_ == 0)
     {
         text_renderer_.drawText(display_, 0, kRowStartY, "NO NODES");
         return;
     }
 
-    const size_t visible = std::min(node_count_ - start, kNodeListPageSize);
+    const size_t visible = std::min(node_count_ - start, page_size);
 
     for (size_t i = 0; i < visible; ++i)
     {
@@ -2202,8 +2454,20 @@ void Runtime::renderNodeList()
         char node_id[8] = {};
         std::snprintf(node_id, sizeof(node_id), "%04lX",
                       static_cast<unsigned long>(node.node_id & 0xFFFFUL));
-        char label[16] = {};
-        std::snprintf(label, sizeof(label), "%s", node_id);
+        char label[32] = {};
+        const char* label_source = node_id;
+        if (wide)
+        {
+            if (!node.display_name.empty())
+            {
+                label_source = node.display_name.c_str();
+            }
+            else if (node.short_name[0] != '\0')
+            {
+                label_source = node.short_name;
+            }
+        }
+        copyText(label, label_source);
 
         if (selected_row)
         {
@@ -2247,19 +2511,19 @@ void Runtime::renderNodeList()
         {
             std::snprintf(hops_buf, sizeof(hops_buf), "%u", static_cast<unsigned>(node.hops_away));
         }
-        drawTextClipped(kNameX, row_y, kNameW, label, selected_row);
-        drawTextClipped(kAgeX, row_y, kAgeW, age_buf, selected_row);
-        drawTextClipped(kDistX, row_y, kDistW, dist_buf, selected_row);
-        drawTextClipped(kHopsX, row_y, kHopsW, hops_buf, selected_row);
+        drawTextClipped(name_x, row_y, name_w, label, selected_row);
+        drawTextClipped(age_x, row_y, age_w, age_buf, selected_row);
+        drawTextClipped(dist_x, row_y, dist_w, dist_buf, selected_row);
+        drawTextClipped(hops_x, row_y, hops_w, hops_buf, selected_row);
         if (has_bearing)
         {
             char bearing_buf[10] = {};
             formatBearingCompact(bearing_buf, sizeof(bearing_buf), bearing_deg);
-            drawTextClipped(kBrgX, row_y, kBrgW, bearing_buf, selected_row);
+            drawTextClipped(brg_x, row_y, brg_w, bearing_buf, selected_row);
         }
         else
         {
-            drawTextClipped(kBrgX, row_y, kBrgW, "-", selected_row);
+            drawTextClipped(brg_x, row_y, brg_w, "-", selected_row);
         }
 
         const int bars = std::strcmp(sig, "STR") == 0 ? 3 : std::strcmp(sig, "OK") == 0 ? 2
@@ -2272,7 +2536,7 @@ void Runtime::renderNodeList()
                 continue;
             }
             const int bar_h = 2 + bar * 3;
-            const int bar_x = kBarsX + bar * 4;
+            const int bar_x = bars_x + bar * 4;
             const int bar_y = row_y + 6 - bar_h;
             display_.fillRect(bar_x, bar_y, 3, bar_h, !selected_row);
         }
@@ -2283,10 +2547,11 @@ void Runtime::renderNodeInfo()
 {
     buildNodeInfo();
     char pos[24] = {};
+    const size_t page_size = visibleRowsFrom(10);
     if (node_info_count_ > 0)
     {
-        const size_t total_pages = (node_info_count_ + kNodeInfoPageSize - 1U) / kNodeInfoPageSize;
-        const size_t current_page = (node_info_scroll_ / kNodeInfoPageSize) + 1U;
+        const size_t total_pages = (node_info_count_ + page_size - 1U) / page_size;
+        const size_t current_page = (node_info_scroll_ / page_size) + 1U;
         std::snprintf(pos, sizeof(pos), "%u/%u",
                       static_cast<unsigned>(current_page),
                       static_cast<unsigned>(total_pages));
@@ -2298,9 +2563,15 @@ void Runtime::renderNodeInfo()
         return;
     }
 
+    const size_t max_scroll = node_info_count_ > page_size ? (node_info_count_ - page_size) : 0U;
+    if (node_info_scroll_ > max_scroll)
+    {
+        node_info_scroll_ = max_scroll;
+    }
+
     const int line_h = text_renderer_.lineHeight();
     const size_t start = std::min(node_info_scroll_, node_info_count_);
-    const size_t visible = std::min(node_info_count_ - start, kNodeInfoPageSize);
+    const size_t visible = std::min(node_info_count_ - start, page_size);
     for (size_t i = 0; i < visible && (start + i) < node_info_count_; ++i)
     {
         drawTextClipped(0, 10 + static_cast<int>(i * line_h), display_.width(), node_info_lines_[start + i], false);
@@ -2501,13 +2772,15 @@ void Runtime::renderConversation()
     const int line_h = text_renderer_.lineHeight();
     constexpr int kConversationStartY = 10;
     constexpr int kBubbleGap = 1;
-    constexpr int kBubbleWidth = 118;
+    constexpr int kBubbleWidth = 168;
     constexpr int kBubbleBodyBottomPadding = 2;
-    constexpr size_t kVisibleConversationBubbles = 2;
     const int bubble_h = (line_h * 2) + 1 + kBubbleBodyBottomPadding;
     const int row_h = bubble_h + kBubbleGap;
     const int bubble_w = std::max(8, std::min(kBubbleWidth, display_.width() - 2));
-    const size_t visible = std::min(message_count_, kVisibleConversationBubbles);
+    const size_t max_visible = std::max<size_t>(
+        1U,
+        static_cast<size_t>(std::max(row_h, display_.height() - kConversationStartY) / row_h));
+    const size_t visible = std::min(message_count_, max_visible);
     const size_t selected_index = std::min(message_index_, message_count_ - 1U);
     size_t start = 0;
     if (message_count_ > visible)
@@ -2565,10 +2838,11 @@ void Runtime::renderMessageInfo()
 {
     buildMessageInfo();
     char pos[24] = {};
+    const size_t page_size = visibleRowsFrom(10);
     if (message_info_count_ > 0)
     {
-        const size_t total_pages = (message_info_count_ + kMessageInfoPageSize - 1U) / kMessageInfoPageSize;
-        const size_t current_page = (message_info_scroll_ / kMessageInfoPageSize) + 1U;
+        const size_t total_pages = (message_info_count_ + page_size - 1U) / page_size;
+        const size_t current_page = (message_info_scroll_ / page_size) + 1U;
         std::snprintf(pos, sizeof(pos), "%u/%u",
                       static_cast<unsigned>(current_page),
                       static_cast<unsigned>(total_pages));
@@ -2580,9 +2854,15 @@ void Runtime::renderMessageInfo()
         return;
     }
 
+    const size_t max_scroll = message_info_count_ > page_size ? (message_info_count_ - page_size) : 0U;
+    if (message_info_scroll_ > max_scroll)
+    {
+        message_info_scroll_ = max_scroll;
+    }
+
     const int line_h = text_renderer_.lineHeight();
     const size_t start = std::min(message_info_scroll_, message_info_count_);
-    const size_t visible = std::min(message_info_count_ - start, kMessageInfoPageSize);
+    const size_t visible = std::min(message_info_count_ - start, page_size);
     for (size_t i = 0; i < visible && (start + i) < message_info_count_; ++i)
     {
         drawTextClipped(0, 10 + static_cast<int>(i * line_h), display_.width(), message_info_lines_[start + i], false);
@@ -2593,7 +2873,7 @@ void Runtime::renderCompose()
 {
     if (usesPhysicalTextInput())
     {
-        drawTitleBar(edit_target_ == EditTarget::Message ? "COMPOSE" : "EDIT", nullptr);
+        drawTitleBar(edit_target_ == EditTarget::Message ? "COMPOSE" : "EDIT", physicalComposeModeLabel(compose_mode_));
 
         char target[16] = {};
         formatComposeTarget(target, sizeof(target));
@@ -2604,24 +2884,32 @@ void Runtime::renderCompose()
             drawTextClipped(0, 10, display_.width(), to_line, false);
         }
 
-        constexpr size_t kBodyVisiblePerLine = 22;
         char body_text[kComposeMax + 1] = {};
         if (compose_len_ > 0)
         {
             copyText(body_text, compose_buffer_);
         }
 
+        const int line_h = std::max(1, text_renderer_.lineHeight());
+        const int body_y = edit_target_ == EditTarget::Message ? 22 : 10;
+        const bool show_cn_candidates = compose_mode_ == ComposeMode::Cn && compose_preedit_len_ > 0;
+        const int cn_candidate_rows = (show_cn_candidates && compose_candidate_count_ > 3U && display_.height() >= 96) ? 2 : 1;
+        const int ime_rows = show_cn_candidates ? (1 + cn_candidate_rows) : 1;
+        const int ime_y = std::max(body_y + line_h, display_.height() - (ime_rows * line_h));
+        const size_t body_line_count = std::max<size_t>(1U, static_cast<size_t>(std::max(line_h, ime_y - body_y) / line_h));
+        const size_t body_visible_per_line = std::max<size_t>(
+            16U,
+            std::min<size_t>(42U, static_cast<size_t>(std::max(80, display_.width())) / 5U));
         const size_t body_text_len = std::strlen(body_text);
-        const size_t body_window = kBodyVisiblePerLine * 3U;
+        const size_t body_window = body_visible_per_line * body_line_count;
         const size_t body_start = body_text_len > body_window ? (body_text_len - body_window) : 0U;
-        const size_t line_h = static_cast<size_t>(text_renderer_.lineHeight());
-        for (size_t line_index = 0; line_index < 3; ++line_index)
+        for (size_t line_index = 0; line_index < body_line_count; ++line_index)
         {
-            char line[24] = {};
-            const size_t offset = body_start + line_index * kBodyVisiblePerLine;
+            char line[48] = {};
+            const size_t offset = body_start + line_index * body_visible_per_line;
             if (offset < body_text_len)
             {
-                const size_t len = std::min(kBodyVisiblePerLine, body_text_len - offset);
+                const size_t len = std::min(body_visible_per_line, body_text_len - offset);
                 std::memcpy(line, body_text + offset, len);
                 line[len] = '\0';
             }
@@ -2630,12 +2918,78 @@ void Runtime::renderCompose()
                 std::snprintf(line, sizeof(line), "_");
             }
             drawTextClipped(0,
-                            22 + static_cast<int>(line_index * line_h),
+                            body_y + static_cast<int>(line_index * static_cast<size_t>(line_h)),
                             display_.width(),
                             line,
                             false);
         }
-        drawFooterHint(edit_target_ == EditTarget::Message ? "OK SEND / NO DEL" : "OK SAVE / NO DEL");
+
+        char ime_lines[3][96] = {};
+        if (show_cn_candidates)
+        {
+            char hint[32] = {};
+            formatPhoneCycleHint(hint, sizeof(hint), compose_mode_, compose_physical_last_key_, compose_abc_tap_index_);
+            if (hint[0] != '\0')
+            {
+                std::snprintf(ime_lines[0], sizeof(ime_lines[0]), "%s_  %s", compose_preedit_, hint);
+            }
+            else
+            {
+                std::snprintf(ime_lines[0], sizeof(ime_lines[0]), "%s_", compose_preedit_);
+            }
+
+            size_t row = 1;
+            size_t pos = 0;
+            if (compose_candidate_count_ > 0 && pos + 1 < sizeof(ime_lines[row]))
+            {
+                ime_lines[row][0] = '\0';
+            }
+            else if (compose_candidate_count_ == 0)
+            {
+                std::snprintf(ime_lines[row], sizeof(ime_lines[row]), "-");
+            }
+            for (size_t i = 0; i < compose_candidate_count_ && row < static_cast<size_t>(ime_rows); ++i)
+            {
+                char token[32] = {};
+                std::snprintf(token, sizeof(token),
+                              i == compose_candidate_index_ ? "[%s]" : "%s",
+                              compose_candidates_[i]);
+                const int current_w = text_renderer_.measureTextWidth(ime_lines[row]);
+                const int token_w = text_renderer_.measureTextWidth(token);
+                if (row + 1U < static_cast<size_t>(ime_rows) &&
+                    pos > 0 && current_w + token_w + text_renderer_.measureTextWidth(" ") > display_.width())
+                {
+                    ++row;
+                    pos = 0;
+                    ime_lines[row][0] = '\0';
+                }
+                pos += static_cast<size_t>(std::snprintf(ime_lines[row] + pos, sizeof(ime_lines[row]) - pos,
+                                                         "%s", token));
+                if (i + 1 < compose_candidate_count_ && pos + 1 < sizeof(ime_lines[row]))
+                {
+                    ime_lines[row][pos++] = ' ';
+                    ime_lines[row][pos] = '\0';
+                }
+            }
+        }
+        else
+        {
+            char hint[32] = {};
+            formatPhoneCycleHint(hint, sizeof(hint), compose_mode_, compose_physical_last_key_, compose_abc_tap_index_);
+            if (hint[0] != '\0' && compose_mode_ != ComposeMode::Num)
+            {
+                std::snprintf(ime_lines[0], sizeof(ime_lines[0]), "* %s #SP %s",
+                              physicalComposeModeLabel(compose_mode_), hint);
+            }
+            else
+            {
+                std::snprintf(ime_lines[0], sizeof(ime_lines[0]), "* %s  # SPACE", physicalComposeModeLabel(compose_mode_));
+            }
+        }
+        for (int row = 0; row < ime_rows; ++row)
+        {
+            drawTextClipped(0, ime_y + row * line_h, display_.width(), ime_lines[row], false);
+        }
         return;
     }
 
@@ -2656,7 +3010,6 @@ void Runtime::renderCompose()
         text_renderer_.drawText(display_, 40, 54, "L DEL OK");
         return;
     }
-
     const int line_h = text_renderer_.lineHeight();
 
     char target[16] = {};
@@ -2829,6 +3182,8 @@ void Runtime::renderRadioSettings()
     drawTitleBar("LORA", protocolShortLabel(protocol));
     char value[40] = {};
     auto& cfg = app()->getConfig();
+    const int row_y = 12;
+    const int row_h = rowStrideFor(item_count, row_y, 4);
     for (size_t i = 0; i < item_count; ++i)
     {
         value[0] = '\0';
@@ -2879,7 +3234,7 @@ void Runtime::renderRadioSettings()
 
         char line[48] = {};
         std::snprintf(line, sizeof(line), "%s: %s", items[i], value);
-        drawTextClipped(0, 10 + static_cast<int>(i * text_renderer_.lineHeight()),
+        drawTextClipped(0, row_y + static_cast<int>(i * static_cast<size_t>(row_h)),
                         display_.width(), line, i == radio_index_);
     }
 }
@@ -2892,6 +3247,8 @@ void Runtime::renderDeviceSettings()
     const bool has_ble_status = loadBlePairingStatus(app(), &ble_status);
 #endif
     char line[48] = {};
+    constexpr int kRowY = 12;
+    const int row_h = rowStrideFor(arrayCount(kDeviceItems), kRowY, 4);
     for (size_t i = 0; i < arrayCount(kDeviceItems); ++i)
     {
         line[0] = '\0';
@@ -2963,7 +3320,7 @@ void Runtime::renderDeviceSettings()
             break;
         }
         }
-        drawTextClipped(0, 10 + static_cast<int>(i * text_renderer_.lineHeight()),
+        drawTextClipped(0, kRowY + static_cast<int>(i * static_cast<size_t>(row_h)),
                         display_.width(), line, i == device_index_);
     }
 }
@@ -3229,14 +3586,15 @@ void Runtime::renderInfoPage()
         push_kv("FIX", "SEARCH");
     }
 
-    const size_t max_scroll = line_count > kInfoPageSize ? (line_count - kInfoPageSize) : 0U;
+    const size_t page_size = visibleRowsFrom(10);
+    const size_t max_scroll = line_count > page_size ? (line_count - page_size) : 0U;
     if (info_scroll_ > max_scroll)
     {
         info_scroll_ = max_scroll;
     }
 
-    const size_t total_pages = std::max<size_t>(1U, (line_count + kInfoPageSize - 1U) / kInfoPageSize);
-    const size_t current_page = (line_count > 0) ? ((info_scroll_ / kInfoPageSize) + 1U) : 1U;
+    const size_t total_pages = std::max<size_t>(1U, (line_count + page_size - 1U) / page_size);
+    const size_t current_page = (line_count > 0) ? ((info_scroll_ / page_size) + 1U) : 1U;
     char pos[16] = {};
     std::snprintf(pos, sizeof(pos), "%u/%u",
                   static_cast<unsigned>(current_page),
@@ -3245,7 +3603,7 @@ void Runtime::renderInfoPage()
 
     const int line_h = text_renderer_.lineHeight();
     const int start_y = 10;
-    const size_t visible = std::min(line_count - info_scroll_, kInfoPageSize);
+    const size_t visible = std::min(line_count - info_scroll_, page_size);
     for (size_t i = 0; i < visible; ++i)
     {
         drawTextClipped(0,
@@ -3342,8 +3700,10 @@ void Runtime::renderGnssPage()
         pushFormattedLine(summary_lines, summary_count, "MOVE:-");
     }
 
-    const size_t summary_pages = std::max<size_t>(1U, (summary_count + kGnssSummaryPageSize - 1U) / kGnssSummaryPageSize);
-    const size_t sat_pages = std::max<size_t>(1U, (sat_count + kGnssSatPageSize - 1U) / kGnssSatPageSize);
+    const size_t summary_page_size = visibleRowsFrom(10);
+    const size_t sat_page_size = visibleRowsFrom(20);
+    const size_t summary_pages = std::max<size_t>(1U, (summary_count + summary_page_size - 1U) / summary_page_size);
+    const size_t sat_pages = std::max<size_t>(1U, (sat_count + sat_page_size - 1U) / sat_page_size);
     const size_t total_pages = summary_pages + sat_pages;
     if (gnss_page_index_ >= total_pages)
     {
@@ -3360,8 +3720,8 @@ void Runtime::renderGnssPage()
 
     if (gnss_page_index_ < summary_pages)
     {
-        const size_t start = gnss_page_index_ * kGnssSummaryPageSize;
-        const size_t visible = std::min(kGnssSummaryPageSize, summary_count - std::min(start, summary_count));
+        const size_t start = gnss_page_index_ * summary_page_size;
+        const size_t visible = std::min(summary_page_size, summary_count - std::min(start, summary_count));
         for (size_t i = 0; i < visible; ++i)
         {
             text_renderer_.drawText(display_, 0, 10 + static_cast<int>(i * line_h), summary_lines[start + i]);
@@ -3371,29 +3731,35 @@ void Runtime::renderGnssPage()
 
     constexpr int kSatHeaderY = 10;
     constexpr int kSatRowY = 20;
-    constexpr int kSysX = 0;
-    constexpr int kSysW = 16;
-    constexpr int kIdX = 18;
-    constexpr int kIdW = 14;
-    constexpr int kUseX = 34;
-    constexpr int kUseW = 18;
-    constexpr int kSnrX = 54;
-    constexpr int kSnrW = 22;
-    constexpr int kElvX = 78;
-    constexpr int kElvW = 20;
-    constexpr int kAziX = 100;
-    constexpr int kAziW = 28;
+    const bool wide = display_.width() >= 160;
+    const int sys_x = 0;
+    const int sys_w = wide ? 28 : 16;
+    const int id_x = wide ? 30 : 18;
+    const int id_w = wide ? 18 : 14;
+    const int use_x = wide ? 50 : 34;
+    const int use_w = wide ? 22 : 18;
+    const int snr_x = wide ? 74 : 54;
+    const int snr_w = wide ? 28 : 22;
+    const int elv_x = wide ? 104 : 78;
+    const int elv_w = wide ? 28 : 20;
+    const int azi_x = wide ? 134 : 100;
+    const int azi_w = wide ? 32 : 28;
+    const int sig_x = 168;
 
     display_.fillRect(0, kSatHeaderY, display_.width(), line_h, true);
-    drawTextClipped(kSysX, kSatHeaderY, kSysW, "SAT", true);
-    drawTextClipped(kIdX, kSatHeaderY, kIdW, "ID", true);
-    drawTextClipped(kUseX, kSatHeaderY, kUseW, "USE", true);
-    drawTextClipped(kSnrX, kSatHeaderY, kSnrW, "SNR", true);
-    drawTextClipped(kElvX, kSatHeaderY, kElvW, "ELV", true);
-    drawTextClipped(kAziX, kSatHeaderY, kAziW, "AZI", true);
+    drawTextClipped(sys_x, kSatHeaderY, sys_w, "SAT", true);
+    drawTextClipped(id_x, kSatHeaderY, id_w, "ID", true);
+    drawTextClipped(use_x, kSatHeaderY, use_w, "USE", true);
+    drawTextClipped(snr_x, kSatHeaderY, snr_w, "SNR", true);
+    drawTextClipped(elv_x, kSatHeaderY, elv_w, "ELV", true);
+    drawTextClipped(azi_x, kSatHeaderY, azi_w, "AZI", true);
+    if (wide)
+    {
+        drawTextClipped(sig_x, kSatHeaderY, display_.width() - sig_x, "SIG", true);
+    }
     const size_t sat_page = gnss_page_index_ - summary_pages;
-    const size_t sat_start = sat_page * kGnssSatPageSize;
-    const size_t sat_visible = std::min(kGnssSatPageSize, sat_count - std::min(sat_start, sat_count));
+    const size_t sat_start = sat_page * sat_page_size;
+    const size_t sat_visible = std::min(sat_page_size, sat_count - std::min(sat_start, sat_count));
     if (sat_visible == 0)
     {
         text_renderer_.drawText(display_, 0, 22, "NO SATELLITE DATA");
@@ -3407,22 +3773,39 @@ void Runtime::renderGnssPage()
         char cell[12] = {};
 
         std::snprintf(cell, sizeof(cell), "%s", gnssSystemLabel(sat.sys));
-        drawTextClipped(kSysX, row_y, kSysW, cell);
+        drawTextClipped(sys_x, row_y, sys_w, cell);
 
         std::snprintf(cell, sizeof(cell), "%02u", static_cast<unsigned>(sat.id));
-        drawTextClipped(kIdX, row_y, kIdW, cell);
+        drawTextClipped(id_x, row_y, id_w, cell);
 
         std::snprintf(cell, sizeof(cell), "%c", sat.used ? 'Y' : '-');
-        drawTextClipped(kUseX, row_y, kUseW, cell);
+        drawTextClipped(use_x, row_y, use_w, cell);
 
-        std::snprintf(cell, sizeof(cell), "%03d", static_cast<int>(sat.snr >= 0 ? sat.snr : 0));
-        drawTextClipped(kSnrX, row_y, kSnrW, cell);
+        const int snr = static_cast<int>(sat.snr >= 0 ? sat.snr : 0);
+        std::snprintf(cell, sizeof(cell), "%03d", snr);
+        drawTextClipped(snr_x, row_y, snr_w, cell);
 
         std::snprintf(cell, sizeof(cell), "%02u", static_cast<unsigned>(sat.elevation));
-        drawTextClipped(kElvX, row_y, kElvW, cell);
+        drawTextClipped(elv_x, row_y, elv_w, cell);
 
         std::snprintf(cell, sizeof(cell), "%03u", static_cast<unsigned>(sat.azimuth));
-        drawTextClipped(kAziX, row_y, kAziW, cell);
+        drawTextClipped(azi_x, row_y, azi_w, cell);
+
+        if (wide)
+        {
+            const int bars = snr >= 40 ? 5 : snr >= 30 ? 4
+                                      : snr >= 20   ? 3
+                                      : snr >= 10   ? 2
+                                      : snr > 0     ? 1
+                                                    : 0;
+            for (int bar = 0; bar < bars; ++bar)
+            {
+                const int bar_h = 2 + bar * 2;
+                const int bar_x = sig_x + 2 + bar * 4;
+                const int bar_y = row_y + line_h - 1 - bar_h;
+                display_.fillRect(bar_x, bar_y, 3, bar_h, true);
+            }
+        }
     }
 }
 
@@ -3499,13 +3882,16 @@ void Runtime::openCompose(EditTarget target, const char* seed_text)
     compose_buffer_[0] = '\0';
     compose_len_ = 0;
     compose_charset_index_ = 0;
-    compose_mode_ = ComposeMode::AbcLower;
+    compose_mode_ = usesPhysicalTextInput()
+                        ? (target == EditTarget::Message ? ComposeMode::Cn : ComposeMode::AbcLower)
+                        : ComposeMode::AbcLower;
     compose_focus_ = ComposeFocus::Body;
     compose_action_index_ = 0;
     compose_abc_group_index_ = 0;
     compose_abc_tap_index_ = 0;
     compose_abc_last_tap_ms_ = 0;
     compose_abc_last_group_index_ = -1;
+    compose_physical_last_key_ = '\0';
     compose_preedit_[0] = '\0';
     compose_preedit_len_ = 0;
     compose_candidate_count_ = 0;
@@ -4603,6 +4989,23 @@ void Runtime::addComposeChar()
 
 void Runtime::removeComposeChar()
 {
+    if (usesPhysicalTextInput())
+    {
+        compose_physical_last_key_ = '\0';
+        compose_abc_last_tap_ms_ = 0;
+        compose_abc_tap_index_ = 0;
+        if (compose_preedit_len_ > 0)
+        {
+            popChar(compose_preedit_, compose_preedit_len_);
+            rebuildComposeCandidates();
+        }
+        else
+        {
+            popChar(compose_buffer_, compose_len_);
+        }
+        return;
+    }
+
     if (usesSmartCompose())
     {
         compose_abc_last_group_index_ = -1;
@@ -4625,7 +5028,23 @@ void Runtime::removeComposeChar()
 
 void Runtime::cycleComposeMode()
 {
-    if (compose_mode_ == ComposeMode::AbcLower)
+    if (usesPhysicalTextInput())
+    {
+        (void)commitPhysicalComposePreedit(true);
+        if (compose_mode_ == ComposeMode::Num)
+        {
+            compose_mode_ = ComposeMode::AbcLower;
+        }
+        else if (compose_mode_ == ComposeMode::AbcLower || compose_mode_ == ComposeMode::AbcUpper)
+        {
+            compose_mode_ = ComposeMode::Cn;
+        }
+        else
+        {
+            compose_mode_ = ComposeMode::Num;
+        }
+    }
+    else if (compose_mode_ == ComposeMode::AbcLower)
     {
         compose_mode_ = ComposeMode::AbcUpper;
     }
@@ -4645,7 +5064,142 @@ void Runtime::cycleComposeMode()
     compose_abc_tap_index_ = 0;
     compose_abc_last_tap_ms_ = 0;
     compose_abc_last_group_index_ = -1;
+    compose_physical_last_key_ = '\0';
     rebuildComposeCandidates();
+}
+
+bool Runtime::handlePhysicalComposeText(char ch)
+{
+    if (!usesPhysicalTextInput() || page_ != Page::Compose)
+    {
+        return false;
+    }
+
+    if (ch == '*')
+    {
+        cycleComposeMode();
+        return true;
+    }
+
+    if (ch == '#')
+    {
+        (void)commitPhysicalComposePreedit(true);
+        appendComposeChar(' ');
+        return true;
+    }
+
+    if (ch < '0' || ch > '9')
+    {
+        return false;
+    }
+
+    compose_focus_ = ComposeFocus::Body;
+    if (compose_mode_ == ComposeMode::Cn)
+    {
+        if (ch == '0')
+        {
+            (void)commitPhysicalComposePreedit(true);
+            appendComposeChar(' ');
+            compose_physical_last_key_ = '\0';
+            compose_abc_last_tap_ms_ = 0;
+            compose_abc_tap_index_ = 0;
+            return true;
+        }
+        if (ch == '1')
+        {
+            (void)commitPhysicalComposePreedit(true);
+            appendComposeRawText(u8"，");
+            compose_physical_last_key_ = '\0';
+            compose_abc_last_tap_ms_ = 0;
+            compose_abc_tap_index_ = 0;
+            return true;
+        }
+
+        const char* chars = phoneCycleCharsForKey(ch);
+        const size_t char_count = std::strlen(chars);
+        if (char_count == 0)
+        {
+            return true;
+        }
+
+        const uint32_t now = nowMs();
+        const bool can_cycle = compose_physical_last_key_ == ch &&
+                               compose_preedit_len_ > 0 &&
+                               (now - compose_abc_last_tap_ms_) <= kComposeMultiTapWindowMs;
+        if (can_cycle)
+        {
+            compose_abc_tap_index_ = (compose_abc_tap_index_ + 1U) % char_count;
+            compose_preedit_[compose_preedit_len_ - 1U] =
+                applyPhoneCycleCase(ComposeMode::Cn, chars[compose_abc_tap_index_]);
+        }
+        else
+        {
+            compose_abc_tap_index_ = 0;
+            appendChar(compose_preedit_, sizeof(compose_preedit_), compose_preedit_len_,
+                       applyPhoneCycleCase(ComposeMode::Cn, chars[0]));
+        }
+
+        compose_physical_last_key_ = ch;
+        compose_abc_last_tap_ms_ = now;
+        compose_abc_last_group_index_ = -1;
+        rebuildComposeCandidates();
+        return true;
+    }
+
+    if (compose_mode_ == ComposeMode::Num)
+    {
+        (void)commitPhysicalComposePreedit(true);
+        appendComposeChar(ch);
+        compose_physical_last_key_ = '\0';
+        compose_abc_last_tap_ms_ = 0;
+        compose_abc_tap_index_ = 0;
+        return true;
+    }
+
+    if (ch == '0')
+    {
+        (void)commitPhysicalComposePreedit(true);
+        appendComposeChar(' ');
+        compose_physical_last_key_ = '\0';
+        return true;
+    }
+
+    const char* chars = phoneCycleCharsForKey(ch);
+    const size_t char_count = std::strlen(chars);
+    if (char_count == 0)
+    {
+        return true;
+    }
+
+    const uint32_t now = nowMs();
+    const bool can_cycle = compose_physical_last_key_ == ch &&
+                           compose_len_ > 0 &&
+                           (now - compose_abc_last_tap_ms_) <= kComposeMultiTapWindowMs;
+    if (can_cycle)
+    {
+        compose_abc_tap_index_ = (compose_abc_tap_index_ + 1U) % char_count;
+        compose_buffer_[compose_len_ - 1U] = applyPhoneCycleCase(compose_mode_, chars[compose_abc_tap_index_]);
+    }
+    else
+    {
+        compose_abc_tap_index_ = 0;
+        appendChar(compose_buffer_, sizeof(compose_buffer_), compose_len_,
+                   applyPhoneCycleCase(compose_mode_, chars[0]));
+    }
+
+    compose_physical_last_key_ = ch;
+    compose_abc_last_tap_ms_ = now;
+    compose_abc_last_group_index_ = -1;
+    return true;
+}
+
+bool Runtime::commitPhysicalComposePreedit(bool prefer_candidate)
+{
+    if (!usesPhysicalTextInput() || compose_preedit_len_ == 0)
+    {
+        return false;
+    }
+    return commitComposePreedit(prefer_candidate);
 }
 
 void Runtime::rebuildComposeCandidates()
@@ -4657,7 +5211,49 @@ void Runtime::rebuildComposeCandidates()
         compose_candidates_[i][0] = '\0';
     }
 
-    if (!usesSmartCompose() || !isAlphaComposeMode(compose_mode_) || compose_preedit_len_ == 0)
+    if (compose_preedit_len_ == 0)
+    {
+        return;
+    }
+
+    if (usesPhysicalTextInput() && compose_mode_ == ComposeMode::Cn)
+    {
+        auto add_candidate = [this](const char* word) -> bool
+        {
+            if (!word || word[0] == '\0')
+            {
+                return false;
+            }
+            for (size_t i = 0; i < compose_candidate_count_; ++i)
+            {
+                if (std::strcmp(compose_candidates_[i], word) == 0)
+                {
+                    return compose_candidate_count_ >= kComposeCandidateMax;
+                }
+            }
+            copyText(compose_candidates_[compose_candidate_count_], word);
+            ++compose_candidate_count_;
+            return compose_candidate_count_ >= kComposeCandidateMax;
+        };
+
+        for (const auto& entry : kPinyinCandidates)
+        {
+            if (!hasPrefixIgnoreCase(entry.pinyin, compose_preedit_))
+            {
+                continue;
+            }
+            for (const char* word : entry.words)
+            {
+                if (add_candidate(word))
+                {
+                    return;
+                }
+            }
+        }
+        return;
+    }
+
+    if (!usesSmartCompose() || !isAlphaComposeMode(compose_mode_))
     {
         return;
     }
@@ -4683,12 +5279,20 @@ bool Runtime::commitComposeCandidate()
     {
         return false;
     }
-    appendComposeWord(compose_candidates_[compose_candidate_index_]);
+    if (compose_mode_ == ComposeMode::Cn)
+    {
+        appendComposeRawText(compose_candidates_[compose_candidate_index_]);
+    }
+    else
+    {
+        appendComposeWord(compose_candidates_[compose_candidate_index_]);
+    }
     compose_preedit_[0] = '\0';
     compose_preedit_len_ = 0;
     compose_abc_last_group_index_ = -1;
     compose_abc_last_tap_ms_ = 0;
     compose_abc_tap_index_ = 0;
+    compose_physical_last_key_ = '\0';
     rebuildComposeCandidates();
     return true;
 }
@@ -4703,12 +5307,20 @@ bool Runtime::commitComposePreedit(bool prefer_candidate)
     {
         return true;
     }
-    appendComposeWord(compose_preedit_);
+    if (compose_mode_ == ComposeMode::Cn)
+    {
+        appendComposeRawText(compose_preedit_);
+    }
+    else
+    {
+        appendComposeWord(compose_preedit_);
+    }
     compose_preedit_[0] = '\0';
     compose_preedit_len_ = 0;
     compose_abc_last_group_index_ = -1;
     compose_abc_last_tap_ms_ = 0;
     compose_abc_tap_index_ = 0;
+    compose_physical_last_key_ = '\0';
     rebuildComposeCandidates();
     return true;
 }
@@ -4764,6 +5376,16 @@ void Runtime::appendComposeWord(const char* text)
     {
         appendChar(compose_buffer_, sizeof(compose_buffer_), compose_len_, applyComposeAlphaCase(compose_mode_, text[i]));
     }
+}
+
+void Runtime::appendComposeRawText(const char* text)
+{
+    if (!text || text[0] == '\0')
+    {
+        return;
+    }
+
+    appendText(compose_buffer_, sizeof(compose_buffer_), compose_len_, text);
 }
 
 void Runtime::activateComposeAction()
@@ -5156,6 +5778,30 @@ void Runtime::drawTextClipped(int x, int y, int w, const char* text, bool invers
         clipped[std::min(keep_bytes, sizeof(clipped) - 1)] = '\0';
     }
     text_renderer_.drawText(display_, x, y, clipped, inverse);
+}
+
+size_t Runtime::visibleRowsFrom(int start_y, int bottom_margin) const
+{
+    const int line_h = std::max(1, text_renderer_.lineHeight());
+    const int available_h = display_.height() - start_y - std::max(0, bottom_margin);
+    if (available_h <= 0)
+    {
+        return 1U;
+    }
+    return std::max<size_t>(1U, static_cast<size_t>(available_h / line_h));
+}
+
+int Runtime::rowStrideFor(size_t count, int start_y, int bottom_margin) const
+{
+    const int line_h = std::max(1, text_renderer_.lineHeight());
+    if (count <= 1U)
+    {
+        return line_h;
+    }
+
+    const int available_h = display_.height() - start_y - std::max(0, bottom_margin) - line_h;
+    const int distributed = available_h > 0 ? (available_h / static_cast<int>(count - 1U)) : line_h;
+    return std::max(line_h, std::min(line_h + 12, distributed));
 }
 
 void Runtime::drawConversationText(int x, int y, int w, const char* text, bool selected, bool align_right)

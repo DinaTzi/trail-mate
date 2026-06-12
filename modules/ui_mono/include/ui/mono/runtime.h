@@ -104,6 +104,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver
         AbcUpper,
         Num,
         Sym,
+        Cn,
     };
 
     enum class ComposeFocus : uint8_t
@@ -201,11 +202,14 @@ class Runtime : public chat::ChatService::IncomingTextObserver
     void addComposeChar();
     void removeComposeChar();
     void cycleComposeMode();
+    bool handlePhysicalComposeText(char ch);
+    bool commitPhysicalComposePreedit(bool prefer_candidate);
     void rebuildComposeCandidates();
     bool commitComposeCandidate();
     bool commitComposePreedit(bool prefer_candidate);
     void appendComposeChar(char ch);
     void appendComposeWord(const char* text);
+    void appendComposeRawText(const char* text);
     void activateComposeAction();
     void saveEditedTextToConfig();
     void formatTime(char* out_time, size_t out_len, char* out_date, size_t date_len) const;
@@ -219,6 +223,8 @@ class Runtime : public chat::ChatService::IncomingTextObserver
     void drawMenuList(const char* title, const char* const* items, size_t count, size_t selected);
     void drawFooterHint(const char* hint);
     void drawTextClipped(int x, int y, int w, const char* text, bool inverse = false);
+    size_t visibleRowsFrom(int start_y, int bottom_margin = 0) const;
+    int rowStrideFor(size_t count, int start_y, int bottom_margin = 0) const;
     void drawConversationText(int x, int y, int w, const char* text, bool selected, bool align_right);
     void drawConversationBubble(int x, int y, int w, const char* sender, const char* time_text,
                                 const char* text, bool selected, bool align_right);
@@ -339,11 +345,12 @@ class Runtime : public chat::ChatService::IncomingTextObserver
     size_t compose_abc_tap_index_ = 0;
     uint32_t compose_abc_last_tap_ms_ = 0;
     int compose_abc_last_group_index_ = -1;
+    char compose_physical_last_key_ = '\0';
     static constexpr size_t kComposePreeditMax = 24;
     char compose_preedit_[kComposePreeditMax] = {};
     size_t compose_preedit_len_ = 0;
-    static constexpr size_t kComposeCandidateMax = 3;
-    static constexpr size_t kComposeCandidateWidth = 20;
+    static constexpr size_t kComposeCandidateMax = 7;
+    static constexpr size_t kComposeCandidateWidth = 24;
     char compose_candidates_[kComposeCandidateMax][kComposeCandidateWidth] = {};
     size_t compose_candidate_count_ = 0;
     size_t compose_candidate_index_ = 0;

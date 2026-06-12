@@ -106,7 +106,6 @@ constexpr uint8_t kAw21009ChannelCount = 9;
 constexpr uint32_t kMessageToneSampleRateHz = 16129;
 constexpr uint16_t kMessageToneI2sWords = 512;
 constexpr uint32_t kEpaperPresentMinIntervalMs = 250UL;
-constexpr uint8_t kEpaperFastCleanupPartialCount = 30U;
 constexpr int kEpaperMirrorPixels = ::boards::t_echo_lite::kBoardProfile.epaper.width *
                                     ::boards::t_echo_lite::kBoardProfile.epaper.height;
 constexpr size_t kEpaperMirrorBytes = static_cast<size_t>((kEpaperMirrorPixels + 7) / 8);
@@ -826,13 +825,6 @@ class EpaperMonoDisplay final : public ::ui::mono::MonoDisplay
         if (last_present_ms_ != 0 && (now_ms - last_present_ms_) < kEpaperPresentMinIntervalMs)
         {
             delay(kEpaperPresentMinIntervalMs - (now_ms - last_present_ms_));
-        }
-
-        if (partial_refresh_count_ >= kEpaperFastCleanupPartialCount)
-        {
-            display_.display(Adafruit_EPD::Update_Mode::FAST_REFRESH, true);
-            partial_refresh_base_map_ready_ = false;
-            partial_refresh_count_ = 0;
         }
 
         if (!partial_refresh_base_map_ready_)

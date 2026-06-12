@@ -25,6 +25,7 @@ constexpr std::size_t kGpsTailCanarySize = 32;
 constexpr uint8_t kGpsTailCanaryByte = 0xA5;
 constexpr uint32_t kTimeSyncHeartbeatLogMs = 60000UL;
 constexpr uint32_t kTimeSyncJumpThresholdS = 5UL;
+constexpr bool kGpsFlowDebugLog = false;
 
 enum class TimeSyncSource : uint8_t
 {
@@ -645,7 +646,7 @@ struct GpsRuntime::Impl
         char talker[3] = {fields[0][0], fields[0][1], '\0'};
         const char* type = fields[0] + std::strlen(fields[0]) - 3;
 
-        if (!first_nmea_sentence_logged)
+        if (kGpsFlowDebugLog && !first_nmea_sentence_logged)
         {
             first_nmea_sentence_logged = true;
             Serial.printf("[T-Echo Lite][gps][flow] first_nmea talker=%s type=%s raw_sats=%u\n",
@@ -929,6 +930,11 @@ struct GpsRuntime::Impl
 
     void logSatelliteFlowIfChanged()
     {
+        if (!kGpsFlowDebugLog)
+        {
+            return;
+        }
+
         const uint32_t now_ms = millis();
         const uint8_t parser_sats =
             static_cast<uint8_t>(std::min<uint32_t>(parser.satellites.isValid() ? parser.satellites.value() : 0U, 255U));
