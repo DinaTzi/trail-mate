@@ -36,18 +36,10 @@ struct TeamPageEventState
     std::vector<TeamMemberUi> members;
 };
 
-class ITeamPageMemberNameResolver
-{
-  public:
-    virtual ~ITeamPageMemberNameResolver() = default;
-    virtual std::string resolveMemberName(uint32_t node_id) const = 0;
-};
-
 struct TeamPageEventContext
 {
     uint32_t now_s = 0;
     uint32_t self_node_id = 0;
-    const ITeamPageMemberNameResolver* names = nullptr;
 };
 
 struct TeamPageEventEffects
@@ -143,7 +135,7 @@ class TeamPageEventReducer
     void applyPairingIdentity(TeamPageEventState& state,
                               const TeamPagePairingUpdate& update) const;
     bool isPairingActive(TeamPairingState state) const;
-    std::string resolveMemberName(uint32_t node_id) const;
+    std::string memberDisplayLabel(uint32_t node_id) const;
     void assignMemberColor(TeamMemberUi& member) const;
 
     TeamPageEventContext context_;

@@ -2,6 +2,7 @@
 
 #include "platform/ui/team_ui_snapshot_store.h"
 #include "ui/team_presence/team_presence_model.h"
+#include "ui/team_presentation/team_member_label.h"
 
 #include <cstdio>
 
@@ -203,7 +204,9 @@ TeamMemberRowView TeamPageReadModel::buildMemberRow(
     TeamMemberRowView row;
     row.source_index = source_index;
     row.node_id = member.node_id;
-    row.name = member.name;
+    row.name = member.node_id == 0
+                   ? member.name
+                   : ::ui::team_presentation::shortTeamMemberLabel(member.node_id);
     row.online = ::ui::team_presence::isTeamMemberOnline(now_s_,
                                                          member.last_seen_s);
     row.leader = member.leader;

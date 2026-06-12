@@ -5,23 +5,6 @@
 namespace
 {
 
-class FakeNames final : public team::ui::ITeamPageMemberNameResolver
-{
-  public:
-    std::string resolveMemberName(uint32_t node_id) const override
-    {
-        if (node_id == 0x22222222)
-        {
-            return "Ada";
-        }
-        if (node_id == 0x33333333)
-        {
-            return "Ben";
-        }
-        return "";
-    }
-};
-
 team::TeamId testTeamId()
 {
     team::TeamId id{};
@@ -32,11 +15,9 @@ team::TeamId testTeamId()
 
 team::ui::TeamPageEventReducer makeReducer()
 {
-    static FakeNames names;
     team::ui::TeamPageEventContext context;
     context.now_s = 1000;
     context.self_node_id = 0x11111111;
-    context.names = &names;
     return team::ui::TeamPageEventReducer(context);
 }
 
@@ -81,7 +62,7 @@ void testStatusRostersPreservePresenceAndLeader()
     assert(state.members[0].name == "You");
     assert(state.members[0].leader);
     assert(state.members[1].node_id == 0x22222222);
-    assert(state.members[1].name == "Ada");
+    assert(state.members[1].name == "2222");
     assert(state.members[1].last_seen_s == 990);
 }
 
@@ -118,7 +99,7 @@ void testActivityTouchesSenderAndConfirmsKeys()
     assert(effects.keydist_confirmed);
     assert(effects.keydist_key_id == 7);
     assert(state.members.size() == 1);
-    assert(state.members[0].name == "Ada");
+    assert(state.members[0].name == "2222");
     assert(state.last_update_s == 990);
 }
 
@@ -192,7 +173,7 @@ void testTransferLeaderUpdatesRoster()
     assert(state.members.size() == 2);
     assert(!state.members[0].leader);
     assert(state.members[1].node_id == 0x33333333);
-    assert(state.members[1].name == "Ben");
+    assert(state.members[1].name == "3333");
     assert(state.members[1].leader);
 }
 

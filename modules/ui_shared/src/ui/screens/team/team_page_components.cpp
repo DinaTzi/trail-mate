@@ -5,7 +5,6 @@
 
 #include "ui/screens/team/team_page_components.h"
 #include "app/app_facade_access.h"
-#include "chat/usecase/contact_service.h"
 #include "platform/ui/team_ui_store_runtime.h"
 #include "sys/clock.h"
 #include "sys/event_bus.h"
@@ -37,6 +36,7 @@
 #include "ui/screens/team/team_page_state_store.h"
 #include "ui/screens/team/team_page_styles.h"
 #include "ui/screens/team/team_page_transfer_leader_action.h"
+#include "ui/team_presentation/team_member_label.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/system_notification.h"
 #include "ui/widgets/top_bar.h"
@@ -177,7 +177,7 @@ uint8_t next_random_byte()
 uint32_t now_secs();
 bool is_team_ui_active();
 bool is_team_chat_visible();
-std::string resolve_node_name(uint32_t node_id);
+std::string resolve_node_label(uint32_t node_id);
 bool is_pairing_active();
 void sync_pairing_from_service();
 void fill_status_members(team::proto::TeamStatus& status);
@@ -379,17 +379,12 @@ void apply_pairing_command_failures(
     }
 }
 
-class TeamPageMemberNameResolver final : public ITeamPageMemberNameResolver, public ITeamPageLvglNameResolver
+class TeamPageNodeLabelResolver final : public ITeamPageLvglNameResolver
 {
   public:
-    std::string resolveMemberName(uint32_t node_id) const override
-    {
-        return resolve_node_name(node_id);
-    }
-
     std::string resolveNodeName(uint32_t node_id) const override
     {
-        return resolve_node_name(node_id);
+        return resolve_node_label(node_id);
     }
 };
 
@@ -468,11 +463,9 @@ TeamPageFlowController current_flow_controller()
 
 TeamPageEventReducer current_event_reducer()
 {
-    static TeamPageMemberNameResolver names;
     TeamPageEventContext context;
     context.now_s = now_secs();
     context.self_node_id = app::messagingFacade().getSelfNodeId();
-    context.names = &names;
     return TeamPageEventReducer(context);
 }
 
@@ -548,7 +541,6 @@ class TeamPageEventNotifierAdapter final : public ITeamPageEventNotifier
 TeamPageEventEffectResult apply_event_effects(
     const TeamPageEventEffects& effects)
 {
-    static TeamPageMemberNameResolver names;
     static TeamPageEventDeferredAdapter deferred;
     static TeamPageEventNotifierAdapter notifier;
     auto key_state = key_event_state_from_page();
@@ -560,8 +552,7 @@ TeamPageEventEffectResult apply_event_effects(
         current_runtime_port(),
         current_key_event_log(),
         deferred,
-        notifier,
-        names);
+        notifier);
     apply_key_event_state_to_page(key_state);
     apply_event_navigation_requests(result);
     return result;
@@ -1023,16 +1014,9 @@ TeamPageReadModel current_read_model()
     return TeamPageReadModel(now_secs());
 }
 
-std::string resolve_node_name(uint32_t node_id)
+std::string resolve_node_label(uint32_t node_id)
 {
-    std::string name = app::messagingFacade().getContactService().getContactName(node_id);
-    if (!name.empty())
-    {
-        return name;
-    }
-    char fallback[16];
-    snprintf(fallback, sizeof(fallback), "%08lX", static_cast<unsigned long>(node_id));
-    return std::string(fallback);
+    return ::ui::team_presentation::shortTeamMemberLabel(node_id);
 }
 
 TeamPageColorContext current_color_context()
@@ -1738,7 +1722,7 @@ void render_page()
     input.read_model = read_model_input;
     input.pairing_peer_id = team_page_state().pairing_peer_id;
 
-    static TeamPageMemberNameResolver names;
+    static TeamPageNodeLabelResolver names;
     TeamPageLvglRenderer(now_secs()).render(context, input, handlers, names);
 
     ui_update_top_bar_battery(team_page_lvgl_context().top_bar_widget);

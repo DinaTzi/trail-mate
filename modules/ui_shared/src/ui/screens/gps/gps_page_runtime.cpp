@@ -6,7 +6,6 @@ using Projection = gps::ui::shell::Projection;
 
 #include "app/app_config.h"
 #include "app/app_facade_access.h"
-#include "chat/usecase/contact_service.h"
 #include "gps/domain/gps_diagnostics.h"
 #include "platform/ui/device_runtime.h"
 #include "platform/ui/gps_runtime.h"
@@ -21,6 +20,7 @@ using Projection = gps::ui::shell::Projection;
 #include "ui/presentation_sources/team_map_overlay_source.h"
 #include "ui/screens/gps/gps_constants.h"
 #include "ui/support/lvgl_fs_utils.h"
+#include "ui/team_presentation/team_member_label.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/map/map_viewport.h"
 #include "ui/widgets/system_notification.h"
@@ -519,23 +519,12 @@ uint32_t member_color(const ::team::ui::TeamMemberUi& member)
 
 std::string member_label(const ::team::ui::TeamMemberUi& member)
 {
-    const uint32_t member_id = member_id_for_button(member);
-    std::string contact_name = app::messagingFacade().getContactService().getContactName(member_id);
-    if (!contact_name.empty())
+    if (member.node_id == 0)
     {
-        return contact_name;
+        return member.name.empty() ? std::string("You") : member.name;
     }
-    if (!member.name.empty())
-    {
-        return member.name;
-    }
-
-    char fallback[8]{};
-    std::snprintf(fallback,
-                  sizeof(fallback),
-                  "%04lX",
-                  static_cast<unsigned long>(member_id & 0xFFFFU));
-    return fallback;
+    return ::ui::team_presentation::shortTeamMemberLabel(
+        member_id_for_button(member));
 }
 
 uint32_t hash_member_list(const ::team::ui::TeamUiSnapshot& snapshot)

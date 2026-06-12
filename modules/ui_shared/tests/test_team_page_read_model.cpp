@@ -79,11 +79,13 @@ void testRowsDoNotMutatePresence()
 
     assert(rows.size() == 3);
     assert(rows[0].source_index == 0);
-    assert(rows[0].name == "Ada");
+    assert(rows[0].name == "1111");
     assert(rows[0].online);
     assert(rows[0].leader);
     assert(rows[1].source_index == 1);
+    assert(rows[1].name == "2222");
     assert(!rows[1].online);
+    assert(rows[2].name == "3333");
     assert(input.members[0].online == false);
 }
 
@@ -95,7 +97,7 @@ void testMemberDetailProjection()
     const auto detail = model.buildSelectedMember(input);
 
     assert(detail.valid);
-    assert(detail.member.name == "Ben");
+    assert(detail.member.name == "2222");
     assert(!detail.member.online);
     assert(detail.last_seen.kind == team::ui::TeamRelativeTimeKind::MinutesAgo);
     assert(detail.last_seen.value == 6);

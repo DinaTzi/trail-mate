@@ -1,6 +1,9 @@
 #include "ui/presentation_sources/team_map_overlay_source.h"
 
+#include "ui/team_presentation/team_member_label.h"
+
 #include <cstdio>
+#include <string>
 #include <vector>
 
 namespace ui::presentation_sources
@@ -184,12 +187,14 @@ const char* TeamMapOverlaySource::labelForMember(
 
     for (const auto& member : snapshot.members)
     {
-        if (member.node_id == member_id && !member.name.empty())
+        if (member.node_id == member_id)
         {
+            const std::string label =
+                ::ui::team_presentation::shortTeamMemberLabel(member_id);
             std::snprintf(labels[index],
                           sizeof(labels[index]),
                           "%s",
-                          member.name.c_str());
+                          label.c_str());
             return labels[index];
         }
     }
