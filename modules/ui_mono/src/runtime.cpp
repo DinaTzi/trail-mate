@@ -7124,7 +7124,7 @@ const chat::contacts::NodeInfo* Runtime::selectedNode() const
 size_t Runtime::nodeActionCount() const
 {
     const bool meshtastic_mode = app() && app()->getConfig().mesh_protocol != chat::MeshProtocol::MeshCore;
-    return meshtastic_mode ? kNodeActionItemCount : (kNodeActionItemCount - 1U);
+    return meshtastic_mode ? kNodeActionItemCount : (kNodeActionItemCount - 2U);
 }
 
 const char* Runtime::nodeActionLabel(size_t index) const
@@ -7142,9 +7142,9 @@ const char* Runtime::nodeActionLabel(size_t index) const
     case 3:
         return (node && node->is_ignored) ? "UNIGNORE NODE" : "IGNORE NODE";
     case 4:
-        return "TRACE ROUTE";
+        return meshtastic_mode ? "TRACE ROUTE" : "OPEN COMPASS";
     case 5:
-        return meshtastic_mode ? "EXCHANGE POSITION" : "OPEN COMPASS";
+        return meshtastic_mode ? "EXCHANGE POSITION" : "";
     case 6:
         return meshtastic_mode ? "OPEN COMPASS" : "";
     default:
@@ -7251,6 +7251,12 @@ void Runtime::executeNodeAction()
     }
     case 4:
     {
+        if (!meshtastic_mode)
+        {
+            showTransientPopup("OPEN COMPASS", "OPENED");
+            enterPage(Page::NodeCompass);
+            return;
+        }
         if (!mesh)
         {
             appendBootLog("trace na");
@@ -7272,11 +7278,11 @@ void Runtime::executeNodeAction()
                                           route_buf,
                                           stream.bytes_written,
                                           node->node_id,
-                                          false,
+                                          true,
                                           0,
                                           true);
-        appendBootLog(ok ? "trace queued" : "trace failed");
-        showTransientPopup("TRACE ROUTE", ok ? "QUEUED" : "FAILED");
+        appendBootLog(ok ? "trace wait reply" : "trace send fail");
+        showTransientPopup("TRACE ROUTE", ok ? "WAIT REPLY" : "SEND FAILED");
         return;
     }
     case 5:
@@ -7322,8 +7328,8 @@ void Runtime::requestNodePositionExchange()
                                       false,
                                       0,
                                       true);
-    appendBootLog(ok ? "pos req queued" : "pos req failed");
-    showTransientPopup("EXCHANGE POSITION", ok ? "QUEUED" : "FAILED");
+    appendBootLog(ok ? "pos wait reply" : "pos req failed");
+    showTransientPopup("EXCHANGE POSITION", ok ? "WAIT REPLY" : "SEND FAILED");
 }
 
 } // namespace ui::mono
