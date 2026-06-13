@@ -10,7 +10,6 @@ set(TRAILMATE_ESP_IDF_APP_SHELL_SOURCES
     "${TRAILMATE_ROOT}/apps/esp32_lvgl/src/esp32_lvgl_idf_app_registry.cpp"
     "${TRAILMATE_ROOT}/apps/esp32_lvgl/src/esp32_lvgl_idf_app_runtime_access.cpp"
     "${TRAILMATE_ROOT}/apps/esp32_lvgl/src/esp32_lvgl_app_shell.cpp"
-    "${TRAILMATE_ROOT}/apps/esp32_lvgl/src/esp32_lvgl_historical_source_descriptor.cpp"
     "${TRAILMATE_ROOT}/apps/esp32_lvgl/src/esp32_lvgl_startup_runtime.cpp"
     "${TRAILMATE_ROOT}/apps/esp32_lvgl/src/esp32_lvgl_loop_runtime.cpp"
     "${TRAILMATE_ROOT}/apps/esp32_lvgl/src/esp32_lvgl_runtime_config.cpp")

@@ -13,7 +13,6 @@ include(CTest)
 add_library(trailmate_esp32_lvgl_app_shell
     src/esp32_lvgl_idf_app_runtime_access.cpp
     src/esp32_lvgl_app_shell.cpp
-    src/esp32_lvgl_historical_source_descriptor.cpp
     src/esp32_lvgl_startup_runtime.cpp
     src/esp32_lvgl_loop_runtime.cpp
     src/esp32_lvgl_runtime_config.cpp
@@ -39,13 +38,6 @@ if(BUILD_TESTING)
         PRIVATE trailmate_esp32_lvgl_app_shell)
     add_test(NAME trailmate_esp32_lvgl_app_shell_smoke
              COMMAND trailmate_esp32_lvgl_app_shell_smoke)
-
-    add_executable(trailmate_esp32_lvgl_historical_source_descriptor_smoke
-        tests/esp32_lvgl_historical_source_descriptor_smoke.cpp)
-    target_link_libraries(trailmate_esp32_lvgl_historical_source_descriptor_smoke
-        PRIVATE trailmate_esp32_lvgl_app_shell)
-    add_test(NAME trailmate_esp32_lvgl_historical_source_descriptor_smoke
-             COMMAND trailmate_esp32_lvgl_historical_source_descriptor_smoke)
 
     add_executable(trailmate_esp32_lvgl_startup_runtime_smoke
         tests/esp32_lvgl_startup_runtime_smoke.cpp)

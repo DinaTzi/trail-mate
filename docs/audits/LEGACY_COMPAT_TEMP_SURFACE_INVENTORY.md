@@ -258,8 +258,7 @@ Current location:
 
 Current callers:
 - docs and checkers recognize it as archive-only.
-- final app shell records it through
-  `apps/linux_sim_shell/src/linux_sim_historical_source_descriptor.*`.
+- active app shells do not retain source-descriptor metadata for it.
 
 Current responsibility:
 - archive-only historical simulator source and scripts.
@@ -284,7 +283,8 @@ Delete condition:
 - Satisfied by Batch 4 Root Legacy Elimination.
 
 Risk:
-- medium; source is archive-only but still referenced by descriptors and docs.
+- low-medium; source is archive-only and now referenced only by historical
+  documentation and retirement checkers.
 
 ## Surface: legacy/app_implementations/linux_uconsole
 
@@ -299,8 +299,7 @@ Current location:
 
 Current callers:
 - docs and checkers recognize it as archive-only.
-- final app shell records it through
-  `apps/linux_uconsole_gtk/src/linux_uconsole_gtk_historical_source_descriptor.*`.
+- active app shells do not retain source-descriptor metadata for it.
 
 Current responsibility:
 - archive-only historical uConsole GTK source, packaging files, scripts, and
@@ -327,7 +326,8 @@ Delete condition:
 
 Risk:
 - high; this archive still contains real business/page/packaging history that
-  must be migrated or deliberately replaced before deletion.
+  must be migrated or deliberately replaced before deletion, but no active app
+  shell descriptor keeps it alive.
 
 ## Surface: legacy/app_implementations/linux_unoq
 
@@ -379,7 +379,6 @@ Current location:
 
 Current callers:
 - docs and inventory only after Batch 2.
-- `apps/esp32_lvgl` uses `esp32_lvgl_historical_source_descriptor.*`.
 - `builds/esp_idf/ESP_IDF_COMPONENT_SOURCES.cmake` owns migrated ESP-IDF
   source lists.
 
@@ -390,8 +389,8 @@ Is this final architecture?
 - No.
 
 Final owner:
-- `apps/esp32_lvgl` for app shell metadata and `builds/esp_idf` for build
-  entrypoint wiring.
+- `apps/esp32_lvgl` for app shell/runtime ownership and `builds/esp_idf` for
+  build entrypoint wiring.
 
 Disposition:
 - Deleted.
@@ -419,8 +418,6 @@ Current location:
 
 Current callers:
 - docs and inventory only after Batch 1.
-- `builds/pio_nrf52/src/nrf52_node_wrapper_baseline.cpp` now uses
-  `apps/nrf52_node/src/nrf52_historical_source_descriptor.*`.
 - `builds/pio_nrf52/platformio.ini` no longer adds the legacy root include path.
 
 Current responsibility:
@@ -527,144 +524,152 @@ Risk:
 ## Surface: linux_sim_historical_source_descriptor (formerly linux_sim_legacy_source_descriptor)
 
 Category:
-- transitional descriptors
+- retired descriptors
 
 Current location:
-- `apps/linux_sim_shell/src/linux_sim_historical_source_descriptor.*`
-- `apps/linux_sim_shell/tests/linux_sim_historical_source_descriptor_smoke.cpp`
+- removed from active app source and tests.
 
 Current callers:
-- `apps/linux_sim_shell/src/linux_sim_app_shell.*`
-- `apps/linux_sim_shell/CMakeLists.txt`
-- `tools/architecture/check_legacy_app_roots_burndown_ready.py`
-- `tools/architecture/check_phase8_layout_ready.py`
+- none from active app or build code.
+- `tools/architecture/check_legacy_disposition_execution_ready.py` and
+  `tools/architecture/check_no_root_legacy_ready.py` assert it stays retired.
 
 Current responsibility:
-- records `historical_root_name`, `historical_role`, and replacement owner
-  metadata for the final LinuxSim app shell.
+- Historical descriptor retired from active app shell. Removed root history is
+  documented only in `docs/archive/REMOVED_LEGACY_ROOTS.md`.
 
 Is this final architecture?
-- No.
+- Yes.
 
 Final owner:
-- `apps/linux_sim_shell` as historical source metadata, not runtime-reachable
-  legacy root path.
+- `apps/linux_sim_shell` owns the app shell; docs/archive owns removed root
+  history.
 
 Disposition:
-- Must Rename.
+- Deleted.
+
+Final status:
+- Historical descriptor retired from active app shell.
 
 Delete condition:
-- rename to historical source descriptor or delete once docs/archive records
-  the legacy root history; remove the concrete `legacy/...` root_path field.
-  Batch 1 completed the rename and removed the `root_path` field.
+- Satisfied once docs/archive records removed root history and active app/build
+  code has no descriptor files, targets, includes, or fields.
 
 Risk:
-- medium; app shell validation currently reads this descriptor.
+- low; app shell validation no longer reads this descriptor.
 
 ## Surface: linux_uconsole_gtk_historical_source_descriptor (formerly linux_uconsole_gtk_legacy_source_descriptor)
 
 Category:
-- transitional descriptors
+- retired descriptors
 
 Current location:
-- `apps/linux_uconsole_gtk/src/linux_uconsole_gtk_historical_source_descriptor.*`
-- `apps/linux_uconsole_gtk/tests/linux_uconsole_gtk_historical_source_descriptor_smoke.cpp`
+- removed from active app source and tests.
 
 Current callers:
-- `apps/linux_uconsole_gtk/src/linux_uconsole_gtk_app_shell.*`
-- `apps/linux_uconsole_gtk/CMakeLists.txt`
-- `tools/architecture/check_legacy_app_roots_burndown_ready.py`
-- `tools/architecture/check_phase8_layout_ready.py`
+- none from active app or build code.
+- `tools/architecture/check_legacy_disposition_execution_ready.py` and
+  `tools/architecture/check_no_root_legacy_ready.py` assert it stays retired.
 
 Current responsibility:
-- records `historical_root_name`, `historical_role`, and replacement owner
-  metadata for the final uConsole GTK app shell.
+- Historical descriptor retired from active app shell. Removed root history is
+  documented only in `docs/archive/REMOVED_LEGACY_ROOTS.md`.
 
 Is this final architecture?
-- No.
+- Yes.
 
 Final owner:
-- `apps/linux_uconsole_gtk` as historical source metadata, plus
-  `builds/linux_cmake` for package/build metadata.
+- `apps/linux_uconsole_gtk` owns the app shell; `builds/linux_cmake` owns
+  build metadata; docs/archive owns removed root history.
 
 Disposition:
-- Must Rename.
+- Deleted.
+
+Final status:
+- Historical descriptor retired from active app shell.
 
 Delete condition:
-- rename to historical source descriptor or delete once docs/archive records
-  the legacy root history; remove the concrete `legacy/...` root_path field.
-  Batch 1 completed the rename and removed the `root_path` field.
+- Satisfied once docs/archive records removed root history and active app/build
+  code has no descriptor files, targets, includes, or fields.
 
 Risk:
-- high; it currently hides the fact that uConsole archive still contains
-  page and packaging material that may need migration.
+- medium; uConsole history is still important, but no descriptor keeps it in
+  the active app shell.
 
 ## Surface: nrf52_historical_source_descriptor
 
 Category:
-- transitional descriptors
+- retired descriptors
 
 Current location:
-- `apps/nrf52_node/src/nrf52_historical_source_descriptor.*`
-- `apps/nrf52_node/tests/nrf52_historical_source_descriptor_smoke.cpp`
+- removed from active app source and tests.
 
 Current callers:
-- `apps/nrf52_node/src/nrf52_node_app_shell.*`
-- `builds/pio_nrf52/src/nrf52_node_wrapper_baseline.cpp`
+- none from active app or build code.
+- `tools/architecture/check_legacy_disposition_execution_ready.py` and
+  `tools/architecture/check_no_root_legacy_ready.py` assert it stays retired.
 
 Current responsibility:
-- records historical PIO and GAT562 root identity after active wrapper stopped
-  including `nrf52_pio_legacy_implementation_adapter.h`.
+- Historical descriptor retired from active app shell. Removed root history is
+  documented only in `docs/archive/REMOVED_LEGACY_ROOTS.md`.
 
 Is this final architecture?
-- No as a permanent source descriptor; yes as a short-lived historical record
-  during root deletion preparation.
+- Yes.
 
 Final owner:
-- `apps/nrf52_node`, `builds/pio_nrf52`, and `boards/gat562_mesh_evb_pro`.
+- `apps/nrf52_node`, `builds/pio_nrf52`, and
+  `boards/gat562_mesh_evb_pro`; docs/archive owns removed root history.
 
 Disposition:
-- Must Rename.
+- Deleted.
+
+Final status:
+- Historical descriptor retired from active app shell.
 
 Delete condition:
-- delete once `docs/archive` records removed root history and PIO/GAT562 source
-  ownership no longer requires historical source identity in app/runtime code.
+- Satisfied once docs/archive records removed root history and active app/build
+  code has no descriptor files, targets, includes, or fields.
 
 Risk:
-- medium; it is intentionally metadata-only and does not expose a root path
-  field, but it still names historical roots.
+- low-medium; the wrapper no longer compiles or includes this descriptor.
 
 ## Surface: esp32_lvgl_historical_source_descriptor
 
 Category:
-- transitional descriptors
+- retired descriptors
 
 Current location:
-- `apps/esp32_lvgl/src/esp32_lvgl_historical_source_descriptor.*`
-- `apps/esp32_lvgl/tests/esp32_lvgl_historical_source_descriptor_smoke.cpp`
+- removed from active app source and tests.
 
 Current callers:
-- `apps/esp32_lvgl/src/esp32_lvgl_app_shell.*`
+- none from active app or build code.
+- `tools/architecture/check_legacy_disposition_execution_ready.py` and
+  `tools/architecture/check_no_root_legacy_ready.py` assert it stays retired.
 
 Current responsibility:
-- records historical ESP-IDF root identity while the ESP-IDF final owner
-  migration plan is established.
+- Historical descriptor retired from active app shell. Removed root history is
+  documented only in `docs/archive/REMOVED_LEGACY_ROOTS.md`.
 
 Is this final architecture?
-- No as a permanent source descriptor; it is a migration landing record only.
+- Yes.
 
 Final owner:
-- `apps/esp32_lvgl` and `builds/esp_idf`.
+- `apps/esp32_lvgl` and `builds/esp_idf`; docs/archive owns removed root
+  history.
 
 Disposition:
-- Must Rename.
+- Deleted.
+
+Final status:
+- Historical descriptor retired from active app shell.
 
 Delete condition:
-- delete once ESP-IDF component/source ownership has moved out of
-  `legacy/app_implementations/esp_idf` and historical root removal is recorded.
+- Satisfied once docs/archive records removed root history and active app/build
+  code has no descriptor files, targets, includes, or fields.
 
 Risk:
-- medium-high; ESP-IDF is still an active build dependency.
+- medium; ESP-IDF remains an active build path, but descriptor metadata is no
+  longer part of the app shell contract.
 
 ## Surface: ui_headless_runtime descriptor consumer
 

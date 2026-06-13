@@ -41,7 +41,6 @@ set(TRAIL_MATE_UCONSOLE_REAL_GTK_SOURCES
 
 add_library(trailmate_linux_uconsole_gtk_shell
     src/linux_uconsole_gtk_app_shell.cpp
-    src/linux_uconsole_gtk_historical_source_descriptor.cpp
     src/linux_uconsole_gtk_page_registry_adoption.cpp
     src/linux_uconsole_gtk_page_registry_renderer.cpp
     src/linux_uconsole_gtk_runtime_entry_adoption_probe.cpp
@@ -202,13 +201,6 @@ if(BUILD_TESTING)
         PRIVATE trailmate_linux_uconsole_gtk_shell)
     add_test(NAME trailmate_linux_uconsole_gtk_app_shell_smoke
              COMMAND trailmate_linux_uconsole_gtk_app_shell_smoke)
-
-    add_executable(trailmate_linux_uconsole_gtk_historical_source_descriptor_smoke
-        tests/linux_uconsole_gtk_historical_source_descriptor_smoke.cpp)
-    target_link_libraries(trailmate_linux_uconsole_gtk_historical_source_descriptor_smoke
-        PRIVATE trailmate_linux_uconsole_gtk_shell)
-    add_test(NAME trailmate_linux_uconsole_gtk_historical_source_descriptor_smoke
-             COMMAND trailmate_linux_uconsole_gtk_historical_source_descriptor_smoke)
 
     add_executable(trailmate_linux_uconsole_gtk_runtime_entry_adoption_probe_smoke
         tests/linux_uconsole_gtk_runtime_entry_adoption_probe_smoke.cpp)

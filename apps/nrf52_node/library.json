@@ -6,7 +6,6 @@
     "srcDir": "src",
     "srcFilter": [
       "-<*>",
-      "+<nrf52_historical_source_descriptor.cpp>",
       "+<nrf52_node_app_facade_runtime.cpp>",
       "+<nrf52_node_app_runtime_access.cpp>",
       "+<nrf52_node_app_shell.cpp>",
