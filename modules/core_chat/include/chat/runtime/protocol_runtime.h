@@ -55,6 +55,7 @@ struct RequestNodeInfoIntent
 
 struct TraceRouteIntent
 {
+    ChannelId channel = ChannelId::PRIMARY;
     NodeId peer = 0;
     MessageId request_id = 0;
     uint32_t auth = 0;
@@ -64,7 +65,9 @@ struct TraceRouteIntent
 
 struct ExchangePositionIntent
 {
+    ChannelId channel = ChannelId::PRIMARY;
     NodeId peer = 0;
+    MessageId request_id = 0;
 };
 
 struct DiscoverIntent

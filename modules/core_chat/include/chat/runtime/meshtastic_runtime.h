@@ -2,8 +2,11 @@
 
 #include "chat/runtime/protocol_runtime.h"
 #include "meshtastic/mesh.pb.h"
+#include "meshtastic/portnums.pb.h"
+#include "pb_encode.h"
 
 #include <cstdint>
+#include <type_traits>
 
 namespace chat::runtime
 {
@@ -86,10 +89,25 @@ class MeshtasticPkiResyncState
 class MeshtasticRuntime final : public IProtocolRuntime
 {
   public:
-    ProtocolEffects prepareOutgoing(const ProtocolIntent&,
-                                    const RuntimeContext&) override
+    ProtocolEffects prepareOutgoing(const ProtocolIntent& intent,
+                                    const RuntimeContext& context) override
     {
-        return ProtocolEffects{};
+        ProtocolEffects effects{};
+        std::visit(
+            [&effects, &context](const auto& item)
+            {
+                using Intent = std::decay_t<decltype(item)>;
+                if constexpr (std::is_same_v<Intent, TraceRouteIntent>)
+                {
+                    resolveTraceRoute(item, context, effects);
+                }
+                else if constexpr (std::is_same_v<Intent, ExchangePositionIntent>)
+                {
+                    resolveExchangePosition(item, context, effects);
+                }
+            },
+            intent);
+        return effects;
     }
 
     ProtocolEffects handleIncoming(const IncomingPacket&,
@@ -115,6 +133,113 @@ class MeshtasticRuntime final : public IProtocolRuntime
     }
 
   private:
+    static constexpr uint32_t kTraceRouteRequestSalt = 0x4D545254UL;
+    static constexpr uint32_t kPositionRequestSalt = 0x4D54504FUL;
+
+    static NodeId normalizePeer(NodeId peer)
+    {
+        return peer == 0xFFFFFFFFUL ? 0 : peer;
+    }
+
+    static MessageId makeRequestId(MessageId requested,
+                                   NodeId peer,
+                                   const RuntimeContext& context,
+                                   uint32_t salt)
+    {
+        if (requested != 0)
+        {
+            return requested;
+        }
+        MessageId id = context.now_ms ^ context.self_node ^ peer ^ salt;
+        return id == 0 ? 1 : id;
+    }
+
+    static EmitActionResultEffect buildFailedAction(ProtocolActionKind action,
+                                                    NodeId peer,
+                                                    MessageId request_id,
+                                                    int32_t detail)
+    {
+        EmitActionResultEffect failed{};
+        failed.protocol = MeshProtocol::Meshtastic;
+        failed.action = action;
+        failed.state = ProtocolActionState::Failed;
+        failed.peer = peer;
+        failed.request_id = request_id;
+        failed.detail = detail;
+        return failed;
+    }
+
+    static void resolveTraceRoute(const TraceRouteIntent& intent,
+                                  const RuntimeContext& context,
+                                  ProtocolEffects& effects)
+    {
+        const NodeId peer = normalizePeer(intent.peer);
+        const MessageId request_id = makeRequestId(intent.request_id,
+                                                   peer,
+                                                   context,
+                                                   kTraceRouteRequestSalt);
+        if (peer == 0 || peer == context.self_node)
+        {
+            effects.add(buildFailedAction(ProtocolActionKind::TraceRoute,
+                                          peer,
+                                          request_id,
+                                          -1));
+            return;
+        }
+
+        meshtastic_RouteDiscovery route = meshtastic_RouteDiscovery_init_zero;
+        uint8_t route_buf[96] = {};
+        pb_ostream_t stream = pb_ostream_from_buffer(route_buf, sizeof(route_buf));
+        if (!pb_encode(&stream, meshtastic_RouteDiscovery_fields, &route))
+        {
+            effects.add(buildFailedAction(ProtocolActionKind::TraceRoute,
+                                          peer,
+                                          request_id,
+                                          -2));
+            return;
+        }
+
+        SendPacketEffect packet{};
+        packet.protocol = MeshProtocol::Meshtastic;
+        packet.channel = intent.channel;
+        packet.dest = peer;
+        packet.portnum = meshtastic_PortNum_TRACEROUTE_APP;
+        packet.request_id = request_id;
+        packet.want_ack = true;
+        packet.want_response = true;
+        packet.payload.assign(route_buf, route_buf + stream.bytes_written);
+        effects.add(std::move(packet));
+    }
+
+    static void resolveExchangePosition(const ExchangePositionIntent& intent,
+                                        const RuntimeContext& context,
+                                        ProtocolEffects& effects)
+    {
+        const NodeId peer = normalizePeer(intent.peer);
+        const MessageId request_id = makeRequestId(intent.request_id,
+                                                   peer,
+                                                   context,
+                                                   kPositionRequestSalt);
+        if (peer == 0 || peer == context.self_node)
+        {
+            effects.add(buildFailedAction(ProtocolActionKind::ExchangePosition,
+                                          peer,
+                                          request_id,
+                                          -1));
+            return;
+        }
+
+        SendPacketEffect packet{};
+        packet.protocol = MeshProtocol::Meshtastic;
+        packet.channel = intent.channel;
+        packet.dest = peer;
+        packet.portnum = meshtastic_PortNum_POSITION_APP;
+        packet.request_id = request_id;
+        packet.want_ack = false;
+        packet.want_response = true;
+        effects.add(std::move(packet));
+    }
+
     MeshtasticPkiResyncState pki_resync_{};
 };
 

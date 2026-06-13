@@ -17,8 +17,8 @@ Primary root cause:
 | --- | --- | --- | --- |
 | Meshtastic NodeInfo peer reannounce | Shared policy in working tree | Medium | ESP32 and nRF now call the same reannounce gate; platform adapters still own the actual queue/send IO. |
 | Meshtastic broadcast `want_response` | Shared policy in working tree | Medium | ESP32 and nRF now share the app-data destination/ACK/response decision; broadcast air ACK is suppressed while request response intent is preserved. |
-| Meshtastic request/reply core | Mostly shared | Medium | NodeInfo/Position reply gating, NodeInfo/Position payload construction, TraceRoute reply gating, TraceRoute payload mutation, and TraceRoute/Position action lifecycle tracking are shared; reply radio send still lives in adapters/UI. |
-| Meshtastic duplicated policy ownership | Mostly shared | Medium | App-data send intent, NodeInfo reannounce gate, NodeInfo/Position reply gates, NodeInfo self-announcement packet construction, Position payload construction, TraceRoute reply gate, TraceRoute payload mutation, TraceRoute/Position result lifecycle, and PKI/NO_CHANNEL resync decisions now live in shared runtime/policy. Radio IO and local data sources still live in adapters. |
+| Meshtastic request/reply core | Mostly shared | Medium | NodeInfo/Position reply gating, NodeInfo/Position payload construction, TraceRoute/Position outgoing request packet decisions, TraceRoute reply gating, TraceRoute payload mutation, and TraceRoute/Position action lifecycle tracking are shared; radio send still lives in adapters/UI executors. |
+| Meshtastic duplicated policy ownership | Mostly shared | Medium | App-data send intent, NodeInfo reannounce gate, NodeInfo/Position reply gates, NodeInfo self-announcement packet construction, Position payload construction, TraceRoute/Position outgoing request packet decisions, TraceRoute reply gate, TraceRoute payload mutation, TraceRoute/Position result lifecycle, and PKI/NO_CHANNEL resync decisions now live in shared runtime/policy. Radio IO and local data sources still live in adapters. |
 | MeshCore NodeInfo query/reply | Shared runtime/effects | Medium | ESP32 and nRF now route `requestNodeInfo()` through `MeshCoreRuntime` and shared control payload codecs; platform adapters still own packet IO/projection. |
 | MeshCore trace | Shared lifecycle, platform-limited routing | Medium | ESP32 and nRF use native `PAYLOAD_TYPE_TRACE` and shared completion/timeout policy; nRF still uses a minimal one-hop hash route. |
 | MeshCore app-data ACK/capability | Shared lifecycle | Medium | ESP32 and nRF now declare ACK tracking only when runtime pending/completion handling is wired. ACK frame scheduling remains adapter IO. |
@@ -189,9 +189,12 @@ Current state:
 - Shared `MeshtasticAppActionRuntime` now owns outgoing TraceRoute and Position Exchange
   lifecycle interpretation: pending, routing delivered where available, routing error,
   matching app response completed, and timeout.
+- `MeshtasticRuntime::prepareOutgoing(...)` now maps nRF mono UI `TraceRouteIntent` and
+  `ExchangePositionIntent` into `SendPacketEffect`, so the UI no longer constructs
+  `TRACEROUTE_APP` / `POSITION_APP` packets or protobuf payloads directly.
 - Mono UI observes `ChatService::IncomingDataObserver` instead of polling the adapter queue
   directly, so TraceRoute result state does not steal app-data from BLE/other consumers.
-- Adapter send mechanics still exist on ESP32 and nRF.
+- Adapter/UI executor send mechanics still exist on ESP32 and nRF.
 
 Residual risk:
 

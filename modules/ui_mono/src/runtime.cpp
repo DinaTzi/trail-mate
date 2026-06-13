@@ -6,12 +6,11 @@
 #include "chat/infra/meshcore/mc_region_presets.h"
 #include "chat/infra/meshtastic/mt_protocol_helpers.h"
 #include "chat/infra/meshtastic/mt_region.h"
+#include "chat/runtime/meshtastic_runtime.h"
 #include "chat/runtime/self_identity_policy.h"
 #include "chat/usecase/chat_service.h"
 #include "chat/usecase/contact_service.h"
 #include "generated/meshtastic/mesh.pb.h"
-#include "generated/meshtastic/portnums.pb.h"
-#include "pb_encode.h"
 #include "platform/ui/screen_runtime.h"
 #include "ui/mono/assets/trailmate_sleep_logo.h"
 #include "ui/mono/screens/screensaver_layout.h"
@@ -174,6 +173,33 @@ constexpr uint32_t kScreenTimeoutOptionsMs[] = {15000UL, 30000UL, 60000UL, kScre
 uint16_t normalizedMeshtasticChannelNum(uint16_t channel_num)
 {
     return std::min<uint16_t>(channel_num, kMeshtasticChannelNumMax);
+}
+
+const chat::runtime::SendPacketEffect* firstSendPacketEffect(
+    const chat::runtime::ProtocolEffects& effects)
+{
+    for (const auto& effect : effects.items)
+    {
+        if (const auto* packet = std::get_if<chat::runtime::SendPacketEffect>(&effect))
+        {
+            return packet;
+        }
+    }
+    return nullptr;
+}
+
+bool executeSendPacketEffect(chat::IMeshAdapter& mesh,
+                             const chat::runtime::SendPacketEffect& packet)
+{
+    const uint8_t* payload = packet.payload.empty() ? nullptr : packet.payload.data();
+    return mesh.sendAppData(packet.channel,
+                            packet.portnum,
+                            payload,
+                            packet.payload.size(),
+                            packet.dest,
+                            packet.want_ack,
+                            packet.request_id,
+                            packet.want_response);
 }
 
 void sanitizeMeshtasticChannelNum(app::AppConfig& cfg)
@@ -7388,25 +7414,21 @@ void Runtime::executeNodeAction()
             showTransientPopup("TRACE ROUTE", "UNAVAILABLE");
             return;
         }
-        meshtastic_RouteDiscovery route = meshtastic_RouteDiscovery_init_zero;
-        uint8_t route_buf[96] = {};
-        pb_ostream_t stream = pb_ostream_from_buffer(route_buf, sizeof(route_buf));
-        if (!pb_encode(&stream, meshtastic_RouteDiscovery_fields, &route))
-        {
-            appendBootLog("trace encode err");
-            showTransientPopup("TRACE ROUTE", "ENCODE FAILED");
-            return;
-        }
+        chat::runtime::MeshtasticRuntime protocol_runtime{};
+        chat::runtime::RuntimeContext context{};
+        context.protocol = chat::MeshProtocol::Meshtastic;
+        context.self_node = mesh->getNodeId();
+        context.now_ms = nowMs();
 
-        const chat::MessageId request_id = nextMeshtasticActionRequestId(node->node_id);
-        const bool ok = mesh->sendAppData(chat::ChannelId::PRIMARY,
-                                          meshtastic_PortNum_TRACEROUTE_APP,
-                                          route_buf,
-                                          stream.bytes_written,
-                                          node->node_id,
-                                          true,
-                                          request_id,
-                                          true);
+        chat::runtime::TraceRouteIntent intent{};
+        intent.channel = chat::ChannelId::PRIMARY;
+        intent.peer = node->node_id;
+        intent.request_id = nextMeshtasticActionRequestId(node->node_id);
+
+        const auto effects = protocol_runtime.prepareOutgoing(intent, context);
+        const auto* packet = firstSendPacketEffect(effects);
+        const chat::MessageId request_id = packet ? packet->request_id : intent.request_id;
+        const bool ok = packet && executeSendPacketEffect(*mesh, *packet);
         if (ok)
         {
             meshtastic_action_runtime_.startTraceRoute(request_id, node->node_id, nowMs());
@@ -7458,15 +7480,21 @@ void Runtime::requestNodePositionExchange()
         return;
     }
 
-    const chat::MessageId request_id = nextMeshtasticActionRequestId(node->node_id);
-    const bool ok = mesh->sendAppData(chat::ChannelId::PRIMARY,
-                                      meshtastic_PortNum_POSITION_APP,
-                                      nullptr,
-                                      0,
-                                      node->node_id,
-                                      false,
-                                      request_id,
-                                      true);
+    chat::runtime::MeshtasticRuntime protocol_runtime{};
+    chat::runtime::RuntimeContext context{};
+    context.protocol = chat::MeshProtocol::Meshtastic;
+    context.self_node = mesh->getNodeId();
+    context.now_ms = nowMs();
+
+    chat::runtime::ExchangePositionIntent intent{};
+    intent.channel = chat::ChannelId::PRIMARY;
+    intent.peer = node->node_id;
+    intent.request_id = nextMeshtasticActionRequestId(node->node_id);
+
+    const auto effects = protocol_runtime.prepareOutgoing(intent, context);
+    const auto* packet = firstSendPacketEffect(effects);
+    const chat::MessageId request_id = packet ? packet->request_id : intent.request_id;
+    const bool ok = packet && executeSendPacketEffect(*mesh, *packet);
     if (ok)
     {
         meshtastic_action_runtime_.startPositionExchange(request_id, node->node_id, nowMs());

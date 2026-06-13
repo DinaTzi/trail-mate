@@ -321,6 +321,18 @@ It does not own:
 - BLE phone protocol transport;
 - memory placement or ISR details.
 
+Current C++17 migration state:
+
+- Meshtastic TraceRoute and Position Exchange outgoing user actions can now enter
+  `MeshtasticRuntime::prepareOutgoing(...)` as `TraceRouteIntent` / `ExchangePositionIntent`.
+  The runtime chooses Meshtastic portnum, request id fallback, ACK/response flags, and protobuf payload shape,
+  then emits `SendPacketEffect`.
+- nRF mono UI executes those `SendPacketEffect`s through its platform mesh adapter and keeps UI-only lifecycle
+  projection in `MeshtasticAppActionRuntime`; it no longer constructs `TRACEROUTE_APP` /
+  `POSITION_APP` packets directly.
+- Platform adapters still own physical radio send, local GPS source selection, BLE projection, queueing, and
+  adapter-side incoming packet execution until those can be represented as runtime effects/state.
+
 ### Meshtastic PKI Resync State
 
 PKI resync must be a State object, not scattered if branches.

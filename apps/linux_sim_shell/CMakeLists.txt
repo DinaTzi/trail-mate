@@ -11,6 +11,19 @@ set(TRAIL_MATE_REPO_ROOT
 include("${TRAIL_MATE_REPO_ROOT}/cmake/TrailMateUxPacks.cmake")
 trailmate_add_ui_lvgl_ux_packs(trailmate_ui_lvgl_ux_packs)
 
+set(TRAIL_MATE_MESHTASTIC_GENERATED_SOURCES
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/admin.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/channel.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/config.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/connection_status.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/device_ui.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/localonly.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/mesh.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/module_config.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/portnums.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/telemetry.pb.cpp"
+    "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated/meshtastic/xmodem.pb.cpp")
+
 add_library(trailmate_linux_sim_shell
     src/linux_sim_app_shell.cpp
     src/linux_sim_runtime_entry.cpp
@@ -120,7 +133,10 @@ if(BUILD_TESTING)
              COMMAND trailmate_mesh_adapter_router_core_smoke)
 
     add_executable(trailmate_protocol_effect_executor_smoke
-        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/tests/test_protocol_effect_executor.cpp")
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/tests/test_protocol_effect_executor.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_common.c"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_encode.c"
+        ${TRAIL_MATE_MESHTASTIC_GENERATED_SOURCES})
     target_include_directories(trailmate_protocol_effect_executor_smoke
         PRIVATE
             "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include"
@@ -130,6 +146,22 @@ if(BUILD_TESTING)
         PRIVATE cxx_std_17)
     add_test(NAME trailmate_protocol_effect_executor_smoke
              COMMAND trailmate_protocol_effect_executor_smoke)
+
+    add_executable(trailmate_meshtastic_runtime_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/tests/test_meshtastic_runtime.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_common.c"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_decode.c"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_encode.c"
+        ${TRAIL_MATE_MESHTASTIC_GENERATED_SOURCES})
+    target_include_directories(trailmate_meshtastic_runtime_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb")
+    target_compile_features(trailmate_meshtastic_runtime_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_meshtastic_runtime_smoke
+             COMMAND trailmate_meshtastic_runtime_smoke)
 
     add_executable(trailmate_meshcore_protocol_strategy_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/tests/test_meshcore_protocol_strategy.cpp"
