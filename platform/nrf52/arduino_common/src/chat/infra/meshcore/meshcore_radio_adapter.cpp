@@ -1,9 +1,9 @@
 #include "platform/nrf52/arduino_common/chat/infra/meshcore/meshcore_radio_adapter.h"
 
 #include "chat/domain/contact_types.h"
-#include "chat/infra/meshcore/meshcore_identity_crypto.h"
 #include "chat/infra/meshcore/meshcore_payload_helpers.h"
 #include "chat/infra/meshcore/meshcore_protocol_helpers.h"
+#include "chat/runtime/meshcore_direct_secret_core.h"
 #include "chat/runtime/meshcore_self_announcement_core.h"
 #include "chat/runtime/self_identity_policy.h"
 #include "chat/time_utils.h"
@@ -782,15 +782,15 @@ bool MeshCoreRadioAdapter::sendPeerRequestPayload(const uint8_t* pubkey, size_t 
         return false;
     }
 
-    uint8_t shared_secret[::chat::meshcore::kMeshCorePubKeySize] = {};
-    if (!::chat::meshcore::meshcoreDeriveSharedSecret(private_key_, pubkey, shared_secret))
+    uint8_t key16[16] = {};
+    uint8_t key32[32] = {};
+    if (!::chat::runtime::MeshCoreDirectSecretCore::derivePeerKeys(private_key_, sizeof(private_key_),
+                                                                   pubkey, len,
+                                                                   key16, sizeof(key16),
+                                                                   key32, sizeof(key32)))
     {
         return false;
     }
-
-    uint8_t key16[16] = {};
-    uint8_t key32[32] = {};
-    ::chat::meshcore::sharedSecretToKeys(shared_secret, key16, key32);
 
     uint8_t plain[kMeshcoreMaxPayloadSize] = {};
     size_t plain_len = 0;
@@ -871,15 +871,15 @@ bool MeshCoreRadioAdapter::sendAnonRequestPayload(const uint8_t* pubkey, size_t 
         return false;
     }
 
-    uint8_t shared_secret[::chat::meshcore::kMeshCorePubKeySize] = {};
-    if (!::chat::meshcore::meshcoreDeriveSharedSecret(private_key_, pubkey, shared_secret))
+    uint8_t key16[16] = {};
+    uint8_t key32[32] = {};
+    if (!::chat::runtime::MeshCoreDirectSecretCore::derivePeerKeys(private_key_, sizeof(private_key_),
+                                                                   pubkey, len,
+                                                                   key16, sizeof(key16),
+                                                                   key32, sizeof(key32)))
     {
         return false;
     }
-
-    uint8_t key16[16] = {};
-    uint8_t key32[32] = {};
-    ::chat::meshcore::sharedSecretToKeys(shared_secret, key16, key32);
 
     uint8_t cipher[kMeshcoreMaxPayloadSize] = {};
     const size_t cipher_len = ::chat::meshcore::encryptThenMac(key16,

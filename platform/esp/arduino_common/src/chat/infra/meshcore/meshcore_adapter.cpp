@@ -8,6 +8,7 @@
 #include "chat/domain/contact_types.h"
 #include "chat/infra/meshcore/meshcore_payload_helpers.h"
 #include "chat/infra/meshcore/meshcore_protocol_helpers.h"
+#include "chat/runtime/meshcore_direct_secret_core.h"
 #include "chat/runtime/meshcore_direct_route_policy.h"
 #include "chat/time_utils.h"
 #include "mesh/protocol/meshcore/meshcore_protocol_strategy.h"
@@ -165,7 +166,6 @@ using chat::meshcore::parsePacket;
 using chat::meshcore::saturatingAddU32;
 using chat::meshcore::scoreFromSnr;
 using chat::meshcore::sha256Trunc;
-using chat::meshcore::sharedSecretToKeys;
 using chat::meshcore::toHex;
 using chat::meshcore::toHmacKey32;
 
@@ -418,7 +418,12 @@ bool MeshCoreAdapter::sendPeerRequestPayload(const uint8_t* pubkey, size_t len,
 
     uint8_t key16[kCipherKeySize] = {};
     uint8_t key32[kCipherHmacKeySize] = {};
-    sharedSecretToKeys(shared_secret, key16, key32);
+    if (!chat::runtime::MeshCoreDirectSecretCore::expandSharedSecret(shared_secret, sizeof(shared_secret),
+                                                                     key16, sizeof(key16),
+                                                                     key32, sizeof(key32)))
+    {
+        return false;
+    }
 
     uint8_t plain[kMeshcoreMaxPayloadSize] = {};
     size_t plain_len = 0;
@@ -522,7 +527,12 @@ bool MeshCoreAdapter::sendAnonRequestPayload(const uint8_t* pubkey, size_t len,
 
     uint8_t key16[kCipherKeySize] = {};
     uint8_t key32[kCipherHmacKeySize] = {};
-    sharedSecretToKeys(shared_secret, key16, key32);
+    if (!chat::runtime::MeshCoreDirectSecretCore::expandSharedSecret(shared_secret, sizeof(shared_secret),
+                                                                     key16, sizeof(key16),
+                                                                     key32, sizeof(key32)))
+    {
+        return false;
+    }
 
     uint8_t cipher[kMeshcoreMaxPayloadSize] = {};
     size_t cipher_len = encryptThenMac(key16, key32,
@@ -1477,8 +1487,9 @@ bool MeshCoreAdapter::deriveIdentitySecret(uint8_t peer_hash,
         return false;
     }
 
-    sharedSecretToKeys(shared_secret, out_key16, out_key32);
-    return true;
+    return chat::runtime::MeshCoreDirectSecretCore::expandSharedSecret(shared_secret, sizeof(shared_secret),
+                                                                      out_key16, 16,
+                                                                      out_key32, 32);
 }
 
 bool MeshCoreAdapter::deriveLegacyDirectSecret(ChannelId channel, uint8_t peer_hash,
@@ -4397,7 +4408,14 @@ void MeshCoreAdapter::handleRawPacketInternal(const uint8_t* data, size_t size, 
 
         uint8_t key16[kCipherKeySize] = {};
         uint8_t key32[kCipherHmacKeySize] = {};
-        sharedSecretToKeys(shared_secret, key16, key32);
+        if (!chat::runtime::MeshCoreDirectSecretCore::expandSharedSecret(shared_secret, sizeof(shared_secret),
+                                                                         key16, sizeof(key16),
+                                                                         key32, sizeof(key32)))
+        {
+            MESHCORE_LOG("[MESHCORE] RX ANON_REQ drop (shared secret expand failed) src=%02X\n",
+                         static_cast<unsigned>(src_hash));
+            return;
+        }
 
         uint8_t plain[kMeshcoreMaxPayloadSize] = {};
         size_t plain_len = 0;
