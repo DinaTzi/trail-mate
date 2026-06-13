@@ -1617,7 +1617,7 @@ void Runtime::handleInput(InputAction action)
         }
         else if (action == InputAction::Select || action == InputAction::Primary)
         {
-            enterPage(Page::NodeInfo);
+            enterPage(host_.physical_text_input ? Page::NodeActionMenu : Page::NodeInfo);
         }
         break;
 
@@ -1656,7 +1656,7 @@ void Runtime::handleInput(InputAction action)
         else if (action == InputAction::Left || action == InputAction::Back ||
                  action == InputAction::Right || action == InputAction::Select || action == InputAction::Primary)
         {
-            enterPage(Page::NodeList);
+            enterPage(host_.physical_text_input ? Page::NodeActionMenu : Page::NodeList);
         }
         break;
     }
@@ -2420,16 +2420,16 @@ void Runtime::renderNodeList()
     constexpr int kRowStartY = 10;
     const bool wide = display_.width() >= 160;
     const int name_x = 0;
-    const int name_w = wide ? 54 : 22;
-    const int age_x = wide ? 56 : 24;
-    const int age_w = wide ? 24 : 14;
-    const int dist_x = wide ? 82 : 40;
-    const int dist_w = wide ? 30 : 18;
-    const int brg_x = wide ? 114 : 60;
-    const int brg_w = wide ? 30 : 28;
-    const int hops_x = wide ? 146 : 90;
-    const int hops_w = wide ? 18 : 12;
-    const int bars_x = wide ? 168 : 106;
+    const int bars_x = wide ? std::max(0, display_.width() - 14) : 106;
+    const int hops_x = wide ? std::max(0, bars_x - 20) : 90;
+    const int brg_x = wide ? std::max(0, hops_x - 32) : 60;
+    const int dist_x = wide ? std::max(0, brg_x - 34) : 40;
+    const int age_x = wide ? std::max(0, dist_x - 24) : 24;
+    const int name_w = wide ? std::max(20, age_x - 2) : 22;
+    const int age_w = wide ? std::max(14, dist_x - age_x - 2) : 14;
+    const int dist_w = wide ? std::max(18, brg_x - dist_x - 2) : 18;
+    const int brg_w = wide ? std::max(24, hops_x - brg_x - 2) : 28;
+    const int hops_w = wide ? std::max(10, bars_x - hops_x - 2) : 12;
 
     display_.fillRect(0, kHeaderY, display_.width(), line_h + 1, true);
     drawTextClipped(name_x, kHeaderY, name_w, wide ? "NODE" : "ID", true);
@@ -2603,14 +2603,30 @@ void Runtime::renderNodeCompass()
     const auto gps = host_.gps_data_fn ? host_.gps_data_fn() : platform::ui::gps::GpsState{};
     if (!gps.valid)
     {
-        text_renderer_.drawText(display_, 0, 26, "GPS UNAVAILABLE");
-        text_renderer_.drawText(display_, 0, 36, "NEED LOCAL FIX");
+        if (display_.width() >= 160 && display_.height() >= 120)
+        {
+            drawTextClipped(12, 52, display_.width() - 24, "GPS UNAVAILABLE");
+            drawTextClipped(12, 68, display_.width() - 24, "NEED LOCAL FIX");
+        }
+        else
+        {
+            text_renderer_.drawText(display_, 0, 26, "GPS UNAVAILABLE");
+            text_renderer_.drawText(display_, 0, 36, "NEED LOCAL FIX");
+        }
         return;
     }
     if (!node->position.valid)
     {
-        text_renderer_.drawText(display_, 0, 26, "NODE POSITION");
-        text_renderer_.drawText(display_, 0, 36, "UNAVAILABLE");
+        if (display_.width() >= 160 && display_.height() >= 120)
+        {
+            drawTextClipped(12, 52, display_.width() - 24, "NODE POSITION");
+            drawTextClipped(12, 68, display_.width() - 24, "UNAVAILABLE");
+        }
+        else
+        {
+            text_renderer_.drawText(display_, 0, 26, "NODE POSITION");
+            text_renderer_.drawText(display_, 0, 36, "UNAVAILABLE");
+        }
         return;
     }
 
@@ -2619,6 +2635,92 @@ void Runtime::renderNodeCompass()
     const double dist_m = haversineMeters(gps.lat, gps.lng, node_lat, node_lon);
     const double abs_bearing_deg = bearingDegrees(gps.lat, gps.lng, node_lat, node_lon);
     const double rel_bearing_deg = gps.has_course ? normalizeBearingDeg(abs_bearing_deg - gps.course_deg) : abs_bearing_deg;
+    char line[24] = {};
+    char age_buf[12] = {};
+    char footer[24] = {};
+    const char* proto = node->protocol == chat::contacts::NodeProtocolType::MeshCore     ? "MC"
+                        : node->protocol == chat::contacts::NodeProtocolType::Meshtastic ? "MT"
+                                                                                         : "?";
+
+    if (display_.width() >= 160 && display_.height() >= 120)
+    {
+        const int center_x = std::max(42, display_.width() / 3 - 8);
+        const int center_y = std::min(display_.height() - 56, std::max(72, display_.height() / 2));
+        const int radius = std::min(44, std::min(center_x - 8, display_.height() / 4));
+        const int info_x = std::min(display_.width() - 68, center_x + radius + 14);
+        const int info_w = std::max(44, display_.width() - info_x - 2);
+
+        auto drawInfo = [this, info_x, info_w](int y, const char* text)
+        {
+            drawTextClipped(info_x, y, info_w, text);
+        };
+
+        drawCircle(display_, center_x, center_y, radius);
+        display_.drawPixel(center_x, center_y, true);
+        text_renderer_.drawText(display_, center_x - 2, center_y - radius - 10, "N");
+        text_renderer_.drawText(display_, center_x - 2, center_y + radius + 3, "S");
+        text_renderer_.drawText(display_, center_x - radius - 9, center_y - 3, "W");
+        text_renderer_.drawText(display_, center_x + radius + 5, center_y - 3, "E");
+        display_.drawPixel(center_x, center_y - radius + 3, true);
+        display_.drawPixel(center_x - 1, center_y - radius + 4, true);
+        display_.drawPixel(center_x + 1, center_y - radius + 4, true);
+        drawCompassArrow(display_,
+                         center_x,
+                         center_y,
+                         gps.has_course ? rel_bearing_deg : abs_bearing_deg,
+                         radius - 6,
+                         true);
+
+        if (dist_m < 1000.0)
+        {
+            std::snprintf(line, sizeof(line), "DST %.0fm", dist_m);
+        }
+        else
+        {
+            std::snprintf(line, sizeof(line), "DST %.2fkm", dist_m / 1000.0);
+        }
+        drawInfo(28, line);
+
+        std::snprintf(line, sizeof(line), "BRG %s %.0f", bearingCardinal(abs_bearing_deg), abs_bearing_deg);
+        drawInfo(42, line);
+        if (gps.has_course)
+        {
+            std::snprintf(line, sizeof(line), "HDG %.0f", gps.course_deg);
+            drawInfo(56, line);
+            std::snprintf(line, sizeof(line), "REL %.0f", rel_bearing_deg);
+            drawInfo(70, line);
+        }
+        else
+        {
+            drawInfo(56, "HDG N/A");
+            drawInfo(70, "REL N/A");
+        }
+
+        if (node->position.has_altitude)
+        {
+            std::snprintf(line, sizeof(line), "ALT %ldm", static_cast<long>(node->position.altitude));
+        }
+        else
+        {
+            std::snprintf(line, sizeof(line), "ALT -");
+        }
+        drawInfo(84, line);
+
+        formatElapsedShort(host_.utc_now_fn ? host_.utc_now_fn() : 0, node->last_seen, age_buf, sizeof(age_buf));
+        if (node->hops_away == 0xFF)
+        {
+            std::snprintf(footer, sizeof(footer), "%s  %s", proto, age_buf);
+        }
+        else
+        {
+            std::snprintf(footer, sizeof(footer), "%s H%u %s",
+                          proto,
+                          static_cast<unsigned>(node->hops_away),
+                          age_buf);
+        }
+        drawTextClipped(12, display_.height() - 18, display_.width() - 24, footer);
+        return;
+    }
 
     constexpr int kCenterX = 25;
     constexpr int kCenterY = 39;
@@ -2676,7 +2778,6 @@ void Runtime::renderNodeCompass()
         drawCompassArrow(display_, kCenterX, kCenterY, abs_bearing_deg, kRadius - 4, true);
     }
 
-    char line[24] = {};
     if (dist_m < 1000.0)
     {
         std::snprintf(line, sizeof(line), "DST %.0fm", dist_m);
@@ -2713,12 +2814,7 @@ void Runtime::renderNodeCompass()
     }
     drawInfoRight(50, line);
 
-    char age_buf[12] = {};
     formatElapsedShort(host_.utc_now_fn ? host_.utc_now_fn() : 0, node->last_seen, age_buf, sizeof(age_buf));
-    char footer[24] = {};
-    const char* proto = node->protocol == chat::contacts::NodeProtocolType::MeshCore     ? "MC"
-                        : node->protocol == chat::contacts::NodeProtocolType::Meshtastic ? "MT"
-                                                                                         : "?";
     if (node->hops_away == 0xFF)
     {
         std::snprintf(footer, sizeof(footer), "%s  %s", proto, age_buf);
@@ -3393,19 +3489,22 @@ void Runtime::renderSettingPopup()
 
 void Runtime::renderTransientPopup()
 {
-    constexpr int kBoxX = 14;
-    constexpr int kBoxY = 18;
-    constexpr int kBoxW = 100;
-    constexpr int kBoxH = 28;
+    const bool large_layout = display_.width() >= 160 && display_.height() >= 120;
+    const int kBoxW = large_layout ? std::min(display_.width() - 24, 148) : 100;
+    const int kBoxH = large_layout ? 44 : 28;
+    const int kBoxX = large_layout ? std::max(0, (display_.width() - kBoxW) / 2) : 14;
+    const int kBoxY = large_layout ? std::max(12, (display_.height() - kBoxH) / 2) : 18;
     display_.fillRect(kBoxX, kBoxY, kBoxW, kBoxH, false);
     drawFrame(display_, kBoxX, kBoxY, kBoxW, kBoxH);
     if (transient_popup_title_[0] != '\0')
     {
-        drawTextClipped(kBoxX + 4, kBoxY + 4, kBoxW - 8, transient_popup_title_);
+        drawTextClipped(kBoxX + 6, kBoxY + (large_layout ? 8 : 4),
+                        kBoxW - 12, transient_popup_title_);
     }
     if (transient_popup_message_[0] != '\0')
     {
-        drawTextClipped(kBoxX + 4, kBoxY + 15, kBoxW - 8, transient_popup_message_);
+        drawTextClipped(kBoxX + 6, kBoxY + (large_layout ? 24 : 15),
+                        kBoxW - 12, transient_popup_message_);
     }
 }
 

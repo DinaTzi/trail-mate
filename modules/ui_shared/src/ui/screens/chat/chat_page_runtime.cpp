@@ -24,10 +24,69 @@
 #include "ui_presentation/chat/chat_workspace_model.h"
 #include "ui_presentation/key_verification/key_verification_model.h"
 
+#include <limits>
 #include <memory>
 
 namespace
 {
+
+class ChatServiceRetryChatMessagePort final
+    : public ::chat::delivery::IRetryChatMessagePort
+{
+  public:
+    explicit ChatServiceRetryChatMessagePort(::chat::ChatService& chat_service)
+        : chat_service_(chat_service)
+    {
+    }
+
+    ::chat::delivery::ChatDeliveryActionResult retryMessage(
+        ::chat::delivery::ChatDeliveryRef ref) override
+    {
+        const ::chat::MessageId msg_id = messageIdFromRef(ref);
+        if (msg_id == 0)
+        {
+            return ::chat::delivery::ChatDeliveryActionResult::fail(
+                ::chat::delivery::ChatDeliveryActionFailure::InvalidRef);
+        }
+
+        const ::chat::ChatMessage* message = chat_service_.getMessage(msg_id);
+        if (message == nullptr)
+        {
+            return ::chat::delivery::ChatDeliveryActionResult::fail(
+                ::chat::delivery::ChatDeliveryActionFailure::NotFound);
+        }
+        if (message->status != ::chat::MessageStatus::Failed)
+        {
+            return ::chat::delivery::ChatDeliveryActionResult::fail(
+                ::chat::delivery::ChatDeliveryActionFailure::NotRetryable);
+        }
+
+        if (!chat_service_.resendFailed(msg_id))
+        {
+            return ::chat::delivery::ChatDeliveryActionResult::fail(
+                ::chat::delivery::ChatDeliveryActionFailure::Rejected);
+        }
+        return ::chat::delivery::ChatDeliveryActionResult::success();
+    }
+
+  private:
+    static ::chat::MessageId messageIdFromRef(
+        ::chat::delivery::ChatDeliveryRef ref)
+    {
+        if (ref.protocol_id != 0)
+        {
+            return ref.protocol_id;
+        }
+        if (ref.local_id > 0 &&
+            ref.local_id <= std::numeric_limits<::chat::MessageId>::max())
+        {
+            return static_cast<::chat::MessageId>(ref.local_id);
+        }
+        return 0;
+    }
+
+    ::chat::ChatService& chat_service_;
+};
 
 const chat::ui::shell::Host* s_host = nullptr;
 lv_obj_t* s_chat_container = nullptr;
@@ -38,6 +97,7 @@ std::unique_ptr<::chat::delivery::ChatDeliveryReadModel> s_delivery_read_model =
 std::unique_ptr<::chat::delivery::ChatDeliveryEventProjector> s_delivery_projector = nullptr;
 std::unique_ptr<::chat::delivery::ProjectingChatDeliveryEventPort> s_delivery_event_port = nullptr;
 std::unique_ptr<::ui_chat_runtime::ChatDeliveryEventProjectionAdapter> s_delivery_event_adapter = nullptr;
+std::unique_ptr<ChatServiceRetryChatMessagePort> s_delivery_retry_port = nullptr;
 std::unique_ptr<::chat::delivery::ChatDeliveryActionService> s_delivery_action_service = nullptr;
 std::unique_ptr<::ui_chat_runtime::ChatDeliveryActionPortAdapter> s_delivery_action_adapter = nullptr;
 std::unique_ptr<::ui_key_verification_runtime::KeyVerificationSessionAdapter> s_key_verification_session = nullptr;
@@ -148,6 +208,7 @@ void enter(const shell::Host* host, lv_obj_t* parent)
     s_key_verification_session.reset();
     s_delivery_action_adapter.reset();
     s_delivery_action_service.reset();
+    s_delivery_retry_port.reset();
     s_delivery_event_adapter.reset();
     s_delivery_event_port.reset();
     s_delivery_projector.reset();
@@ -193,10 +254,14 @@ void enter(const shell::Host* host, lv_obj_t* parent)
             new ::ui_chat_runtime::ChatDeliveryEventProjectionAdapter(
                 chat_service,
                 *s_delivery_event_port));
+    s_delivery_retry_port =
+        std::unique_ptr<ChatServiceRetryChatMessagePort>(
+            new ChatServiceRetryChatMessagePort(chat_service));
     s_delivery_action_service =
         std::unique_ptr<::chat::delivery::ChatDeliveryActionService>(
             new ::chat::delivery::ChatDeliveryActionService(
-                *s_delivery_read_model));
+                *s_delivery_read_model,
+                s_delivery_retry_port.get()));
     s_delivery_action_adapter =
         std::unique_ptr<::ui_chat_runtime::ChatDeliveryActionPortAdapter>(
             new ::ui_chat_runtime::ChatDeliveryActionPortAdapter(
@@ -270,6 +335,7 @@ void enter(const shell::Host* host, lv_obj_t* parent)
                                    *s_chat_model,
                                    *s_team_workflow,
                                    s_key_verification_model.get(),
+                                   s_delivery_action_adapter.get(),
                                    default_channel,
                                    request_shell_exit,
                                    nullptr));
@@ -319,6 +385,7 @@ void exit(lv_obj_t* parent)
     s_key_verification_session.reset();
     s_delivery_action_adapter.reset();
     s_delivery_action_service.reset();
+    s_delivery_retry_port.reset();
     s_delivery_event_adapter.reset();
     s_delivery_event_port.reset();
     s_delivery_projector.reset();
