@@ -119,6 +119,18 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_mesh_adapter_router_core_smoke
              COMMAND trailmate_mesh_adapter_router_core_smoke)
 
+    add_executable(trailmate_protocol_effect_executor_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/tests/test_protocol_effect_executor.cpp")
+    target_include_directories(trailmate_protocol_effect_executor_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb")
+    target_compile_features(trailmate_protocol_effect_executor_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_protocol_effect_executor_smoke
+             COMMAND trailmate_protocol_effect_executor_smoke)
+
     add_executable(trailmate_meshcore_protocol_strategy_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/tests/test_meshcore_protocol_strategy.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/src/protocol/meshcore/meshcore_protocol_strategy.cpp"
