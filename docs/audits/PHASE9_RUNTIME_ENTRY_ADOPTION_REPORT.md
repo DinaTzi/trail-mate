@@ -75,15 +75,18 @@ Adopted probe path:
 - `modules/ui_lvgl_ux_packs/include/ui_lvgl_ux_packs/runtime/lvgl_runtime_entry_adoption.h`
 - `modules/ui_lvgl_ux_packs/tests/test_lvgl_runtime_entry_adoption.cpp`
 
-Fallback path:
+Failure behavior:
 
-- real LVGL menu rendering and screen creation remain unchanged.
-- device-specific LVGL UI keeps its existing compatibility path.
+- LVGL failed adoption is unavailable-on-failure; descriptor runtime reports
+  `LvglScreenGraphRuntimeSource::Unavailable`.
+- no hardcoded LVGL menu/page fallback branch remains in the descriptor
+  runtime.
 
 Exit condition:
 
-- a real LVGL runtime entry consumes `LvglRuntimeEntryAdoption` descriptors
-  before falling back to compatibility menu/screen creation.
+- satisfied: `LvglPrimaryScreenGraphRuntime` consumes
+  `LvglRuntimeEntryAdoption` descriptors and failed adoption stops as
+  unavailable.
 
 ## Guardrail
 
@@ -106,9 +109,9 @@ Phase 9.3 adds entry-facing consumers above the Phase 9.2 probes:
   compatibility runtime path.
 
 These are real/probe runtime entry paths rather than plain app-shell smoke
-tests. LinuxSim and GTK failed adoption now stop at unavailable-on-failure.
-LVGL menu/page creation remains fallback only and is tracked in
-`docs/audits/PHASE9_FALLBACK_CONTAINMENT_LEDGER.md`.
+tests. LinuxSim, GTK, and LVGL failed adoption now stop at
+unavailable-on-failure. LVGL hardcoded menu/page creation is reported as burned
+down in `docs/audits/PHASE9_FALLBACK_CONTAINMENT_LEDGER.md`.
 
 `legacy/app_implementations remains burn-down`: Phase 9.3 does not add
 `LinuxSimRuntimeAdoptionBridge`, `GtkRuntimeEntryAdoption`, or screen graph

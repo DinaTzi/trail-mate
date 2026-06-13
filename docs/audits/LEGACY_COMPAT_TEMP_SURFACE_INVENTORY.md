@@ -902,7 +902,7 @@ Risk:
 ## Surface: LinuxSim hardcoded runtime routing
 
 Category:
-- fallback-only paths
+- deleted fallback paths
 
 Current location:
 - `apps/linux_sim_shell/src/linux_sim_runtime_entry.*`
@@ -991,24 +991,29 @@ Current callers:
 - Phase 10/11 checkers.
 
 Current responsibility:
-- fallback-only descriptor fallback while real LVGL menu/page renderers still
-  have compatibility paths.
+- historical record of the deleted LVGL hardcoded menu/page fallback. Failed
+  adoption is unavailable-on-failure.
 
 Is this final architecture?
-- No.
+- Yes for fallback deletion; real widget/menu migration remains separate debt.
 
 Final owner:
 - `modules/ui_lvgl_ux_packs` real renderer path.
 
 Disposition:
-- Must Delete.
+- Deleted.
+
+Final status:
+- Removed in LVGL fallback burn-down.
 
 Delete condition:
-- at least one real LVGL target consumes `LvglDescriptorMenuModel` before
-  menu/page object creation.
+- Satisfied for descriptor runtime failure: no `HardcodedFallback`,
+  `fallbackUsed`, `usedFallback`, or `loadFallback` remains in
+  `modules/ui_lvgl_ux_packs`.
 
 Risk:
-- medium-high; premature deletion may break LVGL compatibility behavior.
+- medium; real LVGL widget/menu migration remains, but failed descriptor
+  adoption no longer selects a second hardcoded UI source.
 
 ## Surface: legacy/app_implementations/linux_sim/archive
 

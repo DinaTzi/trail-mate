@@ -292,7 +292,7 @@ def main() -> int:
         "modules/ui_lvgl_ux_packs/src/runtime/lvgl_runtime_adoption_probe.cpp": [
             "LvglRuntimeAdoptionProbe",
             "LvglRuntimeEntryAdoption",
-            "fallback",
+            "ready_",
         ],
     }
     for rel, tokens in real_entry_contracts.items():
@@ -401,7 +401,6 @@ def main() -> int:
         [
             "LvglRuntimeAdoptionProbe",
             "LvglRuntimeEntryAdoption",
-            "fallbackUsed",
             "route.valid",
         ],
         failures,
@@ -433,6 +432,7 @@ def main() -> int:
             "LinuxUConsoleGtkPageRegistryAdoption",
             "LvglRuntimeAdoptionProbe",
             "unavailable-on-failure",
+            "LVGL failed adoption is unavailable-on-failure",
             "legacy/app_implementations remains burn-down",
         ],
         failures,
@@ -447,7 +447,7 @@ def main() -> int:
             "KeyVerification legacy source/sink",
             "MapOverlay legacy source",
             "exit condition",
-            "contained fallback",
+            "fallback burned down",
         ],
         failures,
     )

@@ -100,7 +100,6 @@ Phase 9 final readiness report:
   surface removed; stable owner is `MapOverlaySnapshotSource` and
   `MapOverlayProjectionAdapter`.
 
-LinuxSim and GTK hardcoded UI fallbacks have been burned down. The remaining
-Phase 10-facing LVGL fallback is not a legacy adapter burn-down item. It is
-tracked in `docs/audits/PHASE9_FALLBACK_CONTAINMENT_LEDGER.md` as contained
-fallback with owner and exit condition.
+LinuxSim, GTK, and LVGL hardcoded UI fallbacks have been burned down. LVGL is
+still pending real widget/menu migration, but failed descriptor adoption no
+longer selects a second hardcoded UI source.

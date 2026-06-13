@@ -233,7 +233,7 @@ def check_phase12_docs(failures: list[str]) -> None:
             "Batch 4 root legacy elimination",
             "Next work is not architecture refactor",
             "feature work",
-            "targeted remaining fallback deletion",
+            "fallback deletion guardrail",
         ],
         failures,
     )
@@ -241,9 +241,10 @@ def check_phase12_docs(failures: list[str]) -> None:
         "docs/audits/PHASE11_RENDERER_DESCRIPTOR_CONSUMPTION_REPORT.md",
         [
             "deleted after LinuxSim/uConsole fallback burn-down",
+            "deleted after LVGL fallback burn-down",
             "Phase 11 does not rewrite real GTK widgets",
             "Phase 11 does not create LVGL widgets",
-            "LinuxSim and GTK renderer fallbacks are deleted",
+            "LinuxSim, GTK, and LVGL renderer fallbacks are deleted",
         ],
         failures,
     )

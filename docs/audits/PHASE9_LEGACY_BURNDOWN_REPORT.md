@@ -107,8 +107,8 @@ Phase 9.6 keeps the legacy burn-down status aligned with
 | KeyVerification legacy source/sink/session | main runtime callers removed; alias build include surface removed | `KeyVerificationPresentationSource`, `KeyVerificationActionSink`, and `KeyVerificationSessionAdapter` | keep runtime headers as the only build-visible API |
 | MapOverlay legacy source | main runtime callers removed; alias build include surface removed | `MapOverlaySnapshotSource` and `MapOverlayProjectionAdapter` | keep runtime headers as the only build-visible API |
 
-LinuxSim and GTK hardcoded runtime paths are now reported as burned down: their
-fallback branches and fallback smoke targets are deleted, and failed adoption
-is unavailable-on-failure. The remaining LVGL hardcoded runtime path is not
-reported as burned down; it remains contained fallback until a real LVGL
-renderer consumes descriptor menu/page data before widget creation.
+LinuxSim, GTK, and LVGL hardcoded runtime paths are now reported as burned down:
+their fallback branches and fallback smoke targets are deleted, and failed
+adoption is unavailable-on-failure. LVGL is still pending real widget/menu
+migration, but failed descriptor adoption no longer selects a second hardcoded
+UI source.

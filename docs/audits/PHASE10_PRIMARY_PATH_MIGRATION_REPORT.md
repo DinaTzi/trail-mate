@@ -9,7 +9,7 @@ UX packs.
 
 The migration rule is:
 
-adoption descriptor path is primary; failed LinuxSim/uConsole adoption is
+adoption descriptor path is primary; failed LinuxSim/uConsole/LVGL adoption is
 unavailable-on-failure
 
 ## LinuxSim Primary Path
@@ -83,13 +83,12 @@ Current status:
 
 - `LvglScreenGraphRuntimeSource::ScreenGraphAdoption` is the default source
   when adoption loads.
-- `LvglScreenGraphRuntimeSource::HardcodedFallback` is used only when adoption
-  fails.
-- `usingPrimaryScreenGraph()` and `fallbackUsed()` expose the active path.
+- `LvglScreenGraphRuntimeSource::Unavailable` is used when adoption fails.
+- `usingPrimaryScreenGraph()` and `runtimeSource()` expose the active path.
 
 Fallback status:
 
-fallback-only after Phase 10.3
+LVGL fallback deleted
 
 Real widget migration:
 
@@ -97,13 +96,12 @@ deferred
 
 Deletion condition:
 
-LVGL renderers consume descriptor runtime before creating menu/page objects.
+satisfied: failed adoption no longer enters hardcoded LVGL menu/page creation.
 
 ## Not Done
 
 - real GTK widget hierarchy rewrite
 - real LVGL widget/menu rewrite
-- LVGL fallback deletion
 - full navigation stack replacement
 - all screen/page migration
 
@@ -111,7 +109,7 @@ LVGL renderers consume descriptor runtime before creating menu/page objects.
 
 `tools/architecture/check_phase10_primary_path_ready.py` verifies that
 LinuxSim/uConsole primary paths fail closed with unavailable-on-failure, that
-LVGL still records its contained descriptor fallback, and that forbidden-token
+LVGL failed adoption is unavailable-on-failure, and that forbidden-token
 guardrails remain in place.
 
 ## Phase 11 Recommendation

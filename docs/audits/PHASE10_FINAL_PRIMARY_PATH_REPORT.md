@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | LinuxSim | `LinuxSimRuntimeEntry -> LinuxSimRuntimeEntryAdoptionProbe -> AsciiRuntimeEntryAdoption` | `LinuxSimRuntimeSource::ScreenGraphAdoption` | primary screen graph adoption; Unavailable on failed adoption |
 | GTK | `LinuxUConsoleGtkPageRegistryAdoption -> GtkRuntimeEntryAdoption` | `LinuxUConsoleGtkPageRegistrySource::ScreenGraphAdoption` | primary page registry descriptors; Unavailable on failed adoption |
-| LVGL | `LvglPrimaryScreenGraphRuntime -> LvglRuntimeEntryAdoption` | `LvglScreenGraphRuntimeSource::ScreenGraphAdoption` | primary descriptor runtime |
+| LVGL | `LvglPrimaryScreenGraphRuntime -> LvglRuntimeEntryAdoption` | `LvglScreenGraphRuntimeSource::ScreenGraphAdoption` | primary descriptor runtime; LVGL failed adoption is unavailable-on-failure |
 
 ## Fallback Status
 
@@ -14,11 +14,10 @@
 | --- | --- | --- |
 | LinuxSim | deleted | deleted after LinuxSim/uConsole fallback burn-down |
 | GTK | deleted | deleted after LinuxSim/uConsole fallback burn-down |
-| LVGL | `LvglScreenGraphRuntimeSource::HardcodedFallback` | fallback-only descriptor fallback |
+| LVGL | deleted | deleted after LVGL fallback burn-down |
 
-LinuxSim/uConsole failed adoption remains testable through source enum checks
-and renderer false-return assertions. LVGL fallback remains testable through
-`fallbackUsed()` until the LVGL renderer burn-down lands.
+LinuxSim/uConsole/LVGL failed adoption remains testable through source enum
+checks and renderer false-return assertions.
 
 ## Not Done
 
@@ -26,7 +25,6 @@ Phase 10 intentionally does not complete these migrations:
 
 - real GTK widget rewrite
 - real LVGL widget/menu rewrite
-- LVGL fallback deletion
 - full navigation stack replacement
 - complete screen/page migration
 

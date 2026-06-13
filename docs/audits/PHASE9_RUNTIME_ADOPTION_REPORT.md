@@ -101,8 +101,8 @@ entry-facing consumers that still avoid `legacy/app_implementations`:
 
 These paths do not create widgets, do not choose UX packs, and do not replace
 device-specific renderer behavior. LinuxSim and GTK now treat failed adoption
-as unavailable-on-failure; LVGL still marks hardcoded menu/page creation as a
-contained fallback until descriptors become the primary menu/page source.
+as unavailable-on-failure; LVGL also treats failed adoption as
+unavailable-on-failure after LVGL fallback burn-down.
 
 The fallback inventory is tracked in
 `docs/audits/PHASE9_FALLBACK_CONTAINMENT_LEDGER.md`.

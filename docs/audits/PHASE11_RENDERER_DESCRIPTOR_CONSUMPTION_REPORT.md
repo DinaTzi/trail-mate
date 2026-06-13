@@ -97,21 +97,20 @@ Status:
 - The path does not include `lvgl.h`, does not create `lv_obj_t`, and does not
   branch on `BOARD_`.
 
-Fallback path:
+LVGL fallback burned down:
 
-- `LvglDescriptorRendererProbe::loadFallback(...)` is reached only when
-  `runtime.fallbackUsed()` is true.
-- hardcoded LVGL menu/page creation remains fallback-only.
+- `LvglDescriptorRendererProbe` no longer exposes `loadFallback`,
+  `fallbackUsed`, or `usedFallback`.
+- failed adoption returns false and leaves the descriptor renderer not ready.
 
-LVGL fallback status:
+fallback status:
 
-fallback-only
+deleted after LVGL fallback burn-down
 
 Not done:
 
 - real LVGL widget/menu rewrite
 - device-specific renderer migration
-- LVGL fallback deletion
 
 ## Guardrails
 
@@ -133,15 +132,13 @@ UX selection and `PresentationBundle` construction remain upstream.
 
 Phase 11 does not rewrite real GTK widgets.
 Phase 11 does not create LVGL widgets.
-LinuxSim and GTK renderer fallbacks are deleted. LVGL fallback remains
-contained until a real LVGL target consumes descriptor menu/page data before
-widget creation.
+LinuxSim, GTK, and LVGL renderer fallbacks are deleted. Real LVGL targets still
+need widget/menu migration, but failed descriptor adoption no longer selects a
+second hardcoded UI source.
 
 ## Phase 12 Recommendation
 
-Phase 12 should focus on fallback deletion readiness and architecture freeze:
+Phase 12 should focus on architecture freeze:
 
-- list which fallback branches are now provably unused by default
-- decide which alias/fallback surfaces can be deleted safely
 - freeze the directory and checker rules that prevent app shell, renderer, and
   legacy implementation concerns from drifting back together

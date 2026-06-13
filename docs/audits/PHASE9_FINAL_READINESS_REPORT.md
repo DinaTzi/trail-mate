@@ -17,7 +17,7 @@ The Phase 9 closeout distinction is:
 | --- | --- | --- | --- | --- |
 | ASCII / LinuxSim | `AsciiRuntimeScreenGraphPresenter` done in `modules/ui_ascii_runtime` | `AsciiRuntimeEntryAdoption` done | `LinuxSimRuntimeEntry` consumes the adoption probe as the only active renderer source | deleted after LinuxSim/uConsole fallback burn-down |
 | GTK / uConsole | `GtkUConsoleScreenGraphPresenter` done in `modules/ui_gtk_runtime` | `GtkRuntimeEntryAdoption` done | `LinuxUConsoleGtkPageRegistryAdoption` exposes descriptor data as the only active page-registry source | deleted after LinuxSim/uConsole fallback burn-down |
-| LVGL | `LvglRuntimeScreenGraphPresenter` done in `modules/ui_lvgl_ux_packs` | `LvglRuntimeEntryAdoption` done | `LvglRuntimeAdoptionProbe` proves compatibility runtime consumption, but real renderers are not yet descriptor-primary | LVGL hardcoded menu/page creation |
+| LVGL | `LvglRuntimeScreenGraphPresenter` done in `modules/ui_lvgl_ux_packs` | `LvglRuntimeEntryAdoption` done | `LvglPrimaryScreenGraphRuntime` consumes descriptor adoption as the only active descriptor-runtime source | deleted after LVGL fallback burn-down |
 
 The runtime adoption path is real enough to test:
 
@@ -29,7 +29,8 @@ Readiness summary:
 
 - ASCII presenter: done; entry adoption done; hardcoded runtime fallback deleted.
 - GTK presenter: done; entry adoption done; hardcoded page-registry fallback deleted.
-- LVGL presenter: done; probe adoption done; primary menu/page renderer migration remains.
+- LVGL presenter: done; primary descriptor runtime done; real widget/menu
+  migration remains.
 
 ## Legacy Burn-down
 
@@ -42,7 +43,7 @@ Readiness summary:
 Legacy headers are not primary runtime APIs. The migrated alias headers have
 been removed from the active build include surface.
 
-## Remaining Fallback
+## No Remaining Fallback
 
 Current fallback status:
 
@@ -50,7 +51,7 @@ Current fallback status:
 | --- | --- | --- | --- |
 | LinuxSim hardcoded runtime routing | final LinuxSim app shell | `LinuxSimRuntimeEntry -> LinuxSimRuntimeEntryAdoptionProbe -> AsciiRuntimeEntryAdoption` | satisfied; fallback branch deleted |
 | GTK hardcoded page registry | final GTK app shell page-registry adoption | `LinuxUConsoleGtkPageRegistryAdoption -> GtkRuntimeEntryAdoption -> GtkUConsoleScreenGraphPresenter` | satisfied; fallback branch deleted |
-| LVGL hardcoded menu/page creation | `modules/ui_lvgl_ux_packs` compatibility runtime plus device renderers | `LvglRuntimeAdoptionProbe -> LvglRuntimeEntryAdoption -> LvglRuntimeScreenGraphPresenter` | LVGL compatibility runtime consumes descriptors before creating menu/page objects |
+| LVGL hardcoded menu/page creation | `modules/ui_lvgl_ux_packs` descriptor runtime | `LvglPrimaryScreenGraphRuntime -> LvglRuntimeEntryAdoption -> LvglRuntimeScreenGraphPresenter` | satisfied; fallback branch deleted |
 
 The fallback ledger remains the authoritative itemized tracker for fallback
 owner, reason, new path, exit condition, and checker status.
@@ -71,9 +72,9 @@ The shared status for LinuxSim and GTK hardcoded UI paths is:
 
 deleted after LinuxSim/uConsole fallback burn-down
 
-The shared status for the remaining LVGL hardcoded UI path is:
+The shared status for the LVGL hardcoded UI path is:
 
-contained fallback with owner and exit condition
+deleted after LVGL fallback burn-down
 
 ## Phase 10 Entry Recommendation
 

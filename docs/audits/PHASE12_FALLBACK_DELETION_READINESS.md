@@ -2,10 +2,9 @@
 
 ## Purpose
 
-Phase 12 does not delete fallback by default. Current LinuxSim/uConsole
-follow-up work deletes the two fallback surfaces whose exit conditions are now
-satisfied, while the ledger still records what must be true before deleting
-remaining fallbacks.
+Phase 12 records the fallback deletion guardrail. LinuxSim/uConsole/LVGL
+follow-up work deletes the fallback surfaces whose exit conditions are now
+satisfied, while the ledger records how those deletions must stay enforced.
 
 ## Readiness Ledger
 
@@ -13,7 +12,7 @@ remaining fallbacks.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | LinuxSim hardcoded runtime routing | deleted | `LinuxSimRuntimeRenderer -> AsciiDescriptorRenderer -> AsciiRuntimeEntryAdoption` | Yes | exit condition satisfied; fallback smoke removed and failed adoption is unavailable-on-failure | keep `HardcodedFallback`, `fallbackUsed`, and `renderFallback` absent from `apps/linux_sim_shell` | `apps/linux_sim_shell` | `check_phase10_primary_path_ready.py`, `check_phase11_renderer_consumption_ready.py` |
 | GTK hardcoded page registry | deleted | `LinuxUConsoleGtkPageRegistryRenderer -> GtkDescriptorPageRegistry -> GtkRuntimeEntryAdoption` | Yes | exit condition satisfied; fallback smoke removed and failed adoption is unavailable-on-failure | keep `HardcodedFallback`, `fallbackUsed`, and `renderFallback` absent from `apps/linux_uconsole_gtk` | `apps/linux_uconsole_gtk` | `check_phase10_primary_path_ready.py`, `check_phase11_renderer_consumption_ready.py` |
-| LVGL hardcoded menu/page creation | fallback-only descriptor fallback | `LvglDescriptorRendererProbe -> LvglDescriptorMenuModel -> LvglPrimaryScreenGraphRuntime` | No | real LVGL menu/page renderers have not consumed `LvglDescriptorMenuModel` on a concrete target | one real LVGL target consumes `LvglDescriptorMenuModel` before menu/page object creation | `modules/ui_lvgl_ux_packs` | `check_phase10_primary_path_ready.py`, `check_phase11_renderer_consumption_ready.py` |
+| LVGL hardcoded menu/page creation | deleted | `LvglDescriptorRendererProbe -> LvglDescriptorMenuModel -> LvglPrimaryScreenGraphRuntime` | Yes | exit condition satisfied; descriptor runtime failure is unavailable-on-failure | keep `HardcodedFallback`, `fallbackUsed`, `usedFallback`, and `loadFallback` absent from `modules/ui_lvgl_ux_packs` | `modules/ui_lvgl_ux_packs` | `check_phase10_primary_path_ready.py`, `check_phase11_renderer_consumption_ready.py` |
 | Chat legacy alias headers | alias build include surface removed | `ChatDeliveryActionPortAdapter` | Yes | runtime headers are the only build-visible API | keep alias headers absent from active build roots | `modules/ui_chat_runtime` | `check_phase9_legacy_burndown_ready.py` |
 | KeyVerification legacy alias headers | alias build include surface removed | `KeyVerificationPresentationSource`, `KeyVerificationActionSink`, `KeyVerificationSessionAdapter` | Yes | runtime headers are the only build-visible API | keep alias headers absent from active build roots | `modules/ui_key_verification_runtime` | `check_phase9_legacy_burndown_ready.py` |
 | MapOverlay legacy alias header | alias build include surface removed | `MapOverlaySnapshotSource`, `MapOverlayProjectionAdapter` | Yes | runtime headers are the only build-visible API | keep alias headers absent from active build roots | `modules/ui_map_runtime` | `check_phase9_legacy_burndown_ready.py` |
@@ -33,7 +32,8 @@ Every deletion needs:
 
 ## Current Decision
 
-LinuxSim and GTK runtime fallbacks are deleted after their primary descriptor
-paths became the only active app sources. The migrated deprecated alias headers
-have left the build include surface, and Phase 12 records the guardrails that
-prevent deleted fallback from becoming a primary path again.
+LinuxSim, GTK, and LVGL runtime fallbacks are deleted after their primary
+descriptor paths became the only active app/runtime sources. The migrated
+deprecated alias headers have left the build include surface, and Phase 12
+records the guardrails that prevent deleted fallback from becoming a primary
+path again.
