@@ -64,7 +64,7 @@ void TDisplayP4TouchUxPack::buildInputBindings(InputBindingSet& out) const
 {
     out.clear();
     (void)out.add({InputAction::Select, "Tap"});
-    (void)out.add({InputAction::Back, "Back gesture"});
+    (void)out.add({InputAction::Back, "Bottom edge swipe"});
     (void)out.add({InputAction::Menu, "Menu gesture"});
     (void)out.add({InputAction::Compose, "Compose"});
     (void)out.add({InputAction::MapZoomIn, "Pinch zoom in"});

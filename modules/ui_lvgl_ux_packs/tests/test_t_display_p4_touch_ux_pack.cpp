@@ -20,6 +20,20 @@ bool contains(const ui_lvgl_ux::ScreenRegistry& registry,
     return false;
 }
 
+const ui_lvgl_ux::InputBinding* find_input(const ui_lvgl_ux::InputBindingSet& bindings,
+                                           ui_lvgl_ux::InputAction action)
+{
+    const auto* items = bindings.items();
+    for (std::size_t index = 0; index < bindings.size(); ++index)
+    {
+        if (items[index].action == action)
+        {
+            return &items[index];
+        }
+    }
+    return nullptr;
+}
+
 } // namespace
 
 int main()
@@ -70,5 +84,8 @@ int main()
     ui_lvgl_ux::InputBindingSet inputs;
     pack.buildInputBindings(inputs);
     assert(inputs.size() == 6);
+    const auto* back = find_input(inputs, ui_lvgl_ux::InputAction::Back);
+    assert(back != nullptr);
+    assert(std::strcmp(back->hint, "Bottom edge swipe") == 0);
     return 0;
 }
