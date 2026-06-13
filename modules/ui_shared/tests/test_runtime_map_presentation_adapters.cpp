@@ -1,7 +1,6 @@
 #include "platform/ui/team_ui_snapshot_store.h"
 #include "sys/clock.h"
-#include "ui/presentation_sources/legacy_map_action_sink.h"
-#include "ui/presentation_sources/legacy_map_presentation_source.h"
+#include "ui/presentation_sources/runtime_map_workspace_source.h"
 #include "ui_presentation/common/fixed_text.h"
 
 #include <cassert>
@@ -113,16 +112,16 @@ int main()
     team_store.snapshot.members.push_back(ada);
     team_store.snapshot.members.push_back(grace);
 
-    ui::presentation_sources::LegacyMapPresentationState state;
+    ui::presentation_sources::RuntimeMapWorkspaceState state;
     state.layers.osm = true;
     state.layers.contour = true;
     state.measurement.active = true;
     state.measurement.distance_m = 42.0f;
 
-    ui::presentation_sources::LegacyMapPresentationSource source(gps,
-                                                                 state,
-                                                                 &team_store);
-    ui::presentation_sources::LegacyMapActionSink sink(gps, state);
+    ui::presentation_sources::RuntimeMapWorkspaceSource source(gps,
+                                                               state,
+                                                               &team_store);
+    ui::presentation_sources::RuntimeMapActionSink sink(gps, state);
 
     ui::map::MapWorkspaceRequest request;
     request.requested_viewport = viewport(52.0, -1.0, 12);
@@ -132,7 +131,10 @@ int main()
     assert(source.buildMapWorkspaceSnapshot(request, snapshot));
     assert(snapshot.header.valid);
     assert(snapshot.header.version == 1);
-    assertViewport(snapshot.viewport, request.requested_viewport);
+    auto initial_viewport = request.requested_viewport;
+    initial_viewport.center_lat = gps.snapshot.latitude;
+    initial_viewport.center_lon = gps.snapshot.longitude;
+    assertViewport(snapshot.viewport, initial_viewport);
     assert(snapshot.active_tool == ui::map::MapToolKind::MeasureDistance);
     assert(snapshot.layers.osm);
     assert(snapshot.layers.contour);
@@ -160,6 +162,9 @@ int main()
 
     const auto center = sink.centerOnSelf();
     assert(center.ok);
+    assert(state.has_viewport);
+    assert(state.last_viewport.center_lat == gps.snapshot.latitude);
+    assert(state.last_viewport.center_lon == gps.snapshot.longitude);
 
     const auto updated_viewport = viewport(53.0, -2.0, 10);
     assert(sink.setViewport(updated_viewport).ok);

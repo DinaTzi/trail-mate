@@ -6,7 +6,7 @@
 #include "chat/usecase/chat_service.h"
 #include "sys/clock.h"
 #include "ui/presentation_sources/chat_presentation_source.h"
-#include "ui/presentation_sources/legacy_chat_action_sink.h"
+#include "ui/presentation_sources/runtime_chat_action_sink.h"
 
 #include <cassert>
 #include <cstdlib>
@@ -148,7 +148,7 @@ int main()
     ::chat::ChatService service(model, mesh, store);
     ::chat::delivery::ChatDeliveryReadModel delivery_read_model;
 
-    ui::presentation_sources::LegacyChatActionSink sink(service);
+    ui::presentation_sources::RuntimeChatActionSink sink(service);
     ui::presentation_sources::ChatPresentationSource source(
         service, nullptr, &delivery_read_model);
 

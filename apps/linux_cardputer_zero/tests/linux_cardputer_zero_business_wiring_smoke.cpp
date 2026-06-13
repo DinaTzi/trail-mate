@@ -83,7 +83,7 @@ int main(int argc, char** argv)
 
     const std::string cardputer_cmake = read_file(
         repo_root / "apps/linux_cardputer_zero/CMakeLists.txt");
-    assert(contains(cardputer_cmake, "NO_LEGACY_PRESENTATION"));
+    assert(not_contains(cardputer_cmake, "NO_LEGACY_PRESENTATION"));
     assert(not_contains(cardputer_cmake, "ui_legacy_adapters"));
 
     const std::string board_facts = read_file(
@@ -139,10 +139,19 @@ int main(int argc, char** argv)
     const std::string shell_includes = slice_between(
         linux_sources_cmake,
         "set(TRAIL_MATE_LINUX_UI_SHELL_INCLUDES",
-        "set(TRAIL_MATE_LINUX_UI_LEGACY_PRESENTATION_SOURCES");
+        "function(trailmate_apply_linux_common_warnings");
     assert(not_contains(common_includes, "TRAIL_MATE_UI_LEGACY_ADAPTERS_INCLUDE_ROOT"));
     assert(not_contains(shell_includes, "TRAIL_MATE_UI_LEGACY_ADAPTERS_INCLUDE_ROOT"));
-    assert(contains(linux_sources_cmake, "if(NOT ARG_NO_LEGACY_PRESENTATION)"));
+    assert(not_contains(linux_sources_cmake, "TRAIL_MATE_LINUX_UI_LEGACY_PRESENTATION_SOURCES"));
+    assert(not_contains(linux_sources_cmake, "NO_LEGACY_PRESENTATION"));
+    assert(not_contains(linux_sources_cmake, "legacy_air_device_status_source.cpp"));
+    assert(not_contains(linux_sources_cmake, "legacy_gps_status_source.cpp"));
+    assert(not_contains(linux_sources_cmake, "legacy_mesh_status_source.cpp"));
+    assert(not_contains(linux_sources_cmake, "legacy_settings_source.cpp"));
+    assert(not_contains(linux_sources_cmake, "legacy_settings_action_sink.cpp"));
+    assert(not_contains(linux_sources_cmake, "legacy_chat_action_sink.cpp"));
+    assert(not_contains(linux_sources_cmake, "legacy_map_presentation_source.cpp"));
+    assert(not_contains(linux_sources_cmake, "legacy_map_action_sink.cpp"));
     assert(contains(linux_sources_cmake, "TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/ui_status.cpp"));
     assert(contains(linux_sources_cmake, "TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/assets/gps_topbar.c"));
     assert(contains(linux_sources_cmake, "TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/assets/wifi_topbar.c"));
@@ -290,6 +299,30 @@ int main(int argc, char** argv)
     assert(contains(settings_components, "gps_runtime::supports_external_nmea_output_setting()"));
     assert(contains(settings_components, "gps_runtime::supports_altitude_reference_setting()"));
     assert(contains(settings_components, "gps_runtime::supports_coordinate_format_setting()"));
+
+    const std::string uconsole_cmake = read_file(
+        repo_root / "apps/linux_uconsole_gtk/CMakeLists.txt");
+    assert(contains(uconsole_cmake, "runtime_gps_status_source.cpp"));
+    assert(contains(uconsole_cmake, "runtime_map_workspace_source.cpp"));
+    assert(not_contains(uconsole_cmake, "legacy_gps_status_source.cpp"));
+    assert(not_contains(uconsole_cmake, "legacy_map_presentation_source.cpp"));
+    assert(not_contains(uconsole_cmake, "legacy_map_action_sink.cpp"));
+
+    const std::string uconsole_map_model_header = read_file(
+        repo_root / "platform/linux/uconsole/include/uconsole/uconsole_map_workspace_model.h");
+    const std::string uconsole_map_model = read_file(
+        repo_root / "platform/linux/uconsole/src/uconsole_map_workspace_model.cpp");
+    assert(contains(uconsole_map_model_header, "runtime_gps_status_source.h"));
+    assert(contains(uconsole_map_model_header, "runtime_map_workspace_source.h"));
+    assert(contains(uconsole_map_model_header, "RuntimeMapWorkspaceSource"));
+    assert(contains(uconsole_map_model_header, "RuntimeMapActionSink"));
+    assert(contains(uconsole_map_model, "runtime_gps_status_source()"));
+    assert(not_contains(uconsole_map_model_header, "LegacyGpsStatusSource"));
+    assert(not_contains(uconsole_map_model_header, "LegacyMapPresentationSource"));
+    assert(not_contains(uconsole_map_model_header, "LegacyMapActionSink"));
+    assert(not_contains(uconsole_map_model, "legacy_gps_source_"));
+    assert(not_contains(uconsole_map_model, "legacy_map_source_"));
+    assert(not_contains(uconsole_map_model, "legacy_map_sink_"));
 
     const std::string linux_services = read_file(
         repo_root / "platform/linux/common/src/app/linux_app_services.cpp");

@@ -4190,7 +4190,7 @@ def check_team_consumer_shadow_state_closeout() -> int:
     hostlink_header = "platform/esp/arduino_common/include/platform/esp/arduino_common/hostlink/hostlink_bridge_radio.h"
     hostlink_source = "platform/esp/arduino_common/src/hostlink/hostlink_bridge_radio.cpp"
     esp_gps_map = "platform/esp/arduino_common/src/ui/screens/gps/gps_page_map.cpp"
-    map_source = "modules/ui_shared/src/ui/presentation_sources/legacy_map_presentation_source.cpp"
+    map_source = "modules/ui_shared/src/ui/presentation_sources/runtime_map_workspace_source.cpp"
     app_events = "platform/esp/arduino_common/src/app_event_runtime_support.cpp"
     contacts_header = "modules/ui_shared/include/ui/screens/contacts/contacts_team_snapshot_source.h"
     contacts_source = "modules/ui_shared/src/ui/screens/contacts/contacts_team_snapshot_source.cpp"
@@ -4256,9 +4256,9 @@ def check_team_consumer_shadow_state_closeout() -> int:
             "ITeamUiSnapshotStore",
         ]:
             if token not in text:
-                failures += fail(f"Legacy map presentation source missing Team presence token: {token}")
+                failures += fail(f"Runtime map workspace source missing Team presence token: {token}")
         if "member.online" in text:
-            failures += fail("Legacy map presentation source still infers liveness from member.online")
+            failures += fail("Runtime map workspace source still infers liveness from member.online")
 
     for path in [contacts_header, contacts_source]:
         if not exists(path):

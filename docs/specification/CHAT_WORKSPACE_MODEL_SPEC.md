@@ -101,7 +101,7 @@ It must not:
 - access LVGL widgets
 - access radio, mesh adapters, PKI, or packet builders
 
-`LegacyChatActionSink` is the Phase 5.6 compatibility command adapter. It may
+`RuntimeChatActionSink` is the runtime command adapter. It may
 translate UI actions into `ChatService` commands.
 
 It must not:

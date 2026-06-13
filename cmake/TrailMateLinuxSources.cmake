@@ -545,17 +545,6 @@ set(TRAIL_MATE_LINUX_UI_SHELL_INCLUDES
     "${TRAIL_MATE_PLATFORM_SHARED_INCLUDE_ROOT}"
 )
 
-set(TRAIL_MATE_LINUX_UI_LEGACY_PRESENTATION_SOURCES
-    "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/presentation_sources/legacy_air_device_status_source.cpp"
-    "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/presentation_sources/legacy_gps_status_source.cpp"
-    "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/presentation_sources/legacy_mesh_status_source.cpp"
-    "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/presentation_sources/legacy_settings_source.cpp"
-    "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/presentation_sources/legacy_settings_action_sink.cpp"
-    "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/presentation_sources/legacy_chat_action_sink.cpp"
-    "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/presentation_sources/legacy_map_presentation_source.cpp"
-    "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/presentation_sources/legacy_map_action_sink.cpp"
-)
-
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
@@ -608,17 +597,8 @@ function(trailmate_add_linux_common target_name)
 endfunction()
 
 function(trailmate_add_linux_ui_shell target_name common_target)
-    set(options NO_LEGACY_PRESENTATION)
-    cmake_parse_arguments(ARG "${options}" "" "" ${ARGN})
-
     set(linux_ui_shell_sources ${TRAIL_MATE_LINUX_UI_SHELL_SOURCES})
     set(linux_ui_shell_includes ${TRAIL_MATE_LINUX_UI_SHELL_INCLUDES})
-    if(NOT ARG_NO_LEGACY_PRESENTATION)
-        list(APPEND linux_ui_shell_sources
-            ${TRAIL_MATE_LINUX_UI_LEGACY_PRESENTATION_SOURCES})
-        list(APPEND linux_ui_shell_includes
-            "${TRAIL_MATE_UI_LEGACY_ADAPTERS_INCLUDE_ROOT}")
-    endif()
 
     # common_target must already be created (via trailmate_add_linux_common).
     add_library(${target_name}

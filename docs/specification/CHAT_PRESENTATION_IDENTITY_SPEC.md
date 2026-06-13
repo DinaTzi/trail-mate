@@ -164,7 +164,7 @@ explicitly mapped in later phases.
 The current Phase 5.6-c compatibility adapter lives in
 `modules/ui_shared/src/ui/presentation_sources/chat_presentation_source.cpp`
 and
-`modules/ui_shared/src/ui/presentation_sources/legacy_chat_action_sink.cpp`.
+`modules/ui_shared/src/ui/presentation_sources/runtime_chat_action_sink.cpp`.
 It is a Source/Sink boundary around the existing `ChatService`, not a new chat
 domain model.
 
