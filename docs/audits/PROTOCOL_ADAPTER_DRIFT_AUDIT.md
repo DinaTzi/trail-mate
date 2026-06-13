@@ -304,13 +304,15 @@ Current state:
 - Confirmed platform gap, now documented in fine-grained capabilities.
 - ESP32 direct text/app-data sends now use `MeshCoreDirectRoutePolicy` for the shared decision table:
   missing peer pubkey -> discover/fail, selected route -> direct route path, no selected route -> flood,
-  and preferred-channel secret derivation may fall back to the requested channel.
+  and route/channel fallback remains explicit without redefining direct-secret material.
 - Incoming MeshCore discover request/response decisions now run through `MeshCoreRuntime`: request filter/since
   matching emits `SendDiscoverResponseEffect`, and responses emit `PublishNodeInfoEffect` plus
   `UpdatePeerRouteEffect`.
 - MeshCore direct shared-secret expansion and nRF peer-key derivation now use `MeshCoreDirectSecretCore`;
   ESP32 keeps identity storage and peer pubkey lookup in the adapter, then delegates key expansion to the
   shared helper.
+- ESP32 no longer accepts the historical group-secret-derived direct key fallback; MeshCore direct secrets are
+  identity/pubkey-derived only.
 
 Residual risk:
 

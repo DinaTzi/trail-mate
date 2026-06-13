@@ -339,8 +339,6 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     bool resolveGroupSecret(ChannelId channel, uint8_t out_key16[16],
                             uint8_t out_key32[32], uint8_t* out_hash) const;
     ChannelId resolveChannelFromHash(uint8_t channel_hash, bool* out_match) const;
-    bool deriveLegacyDirectSecret(ChannelId channel, uint8_t peer_hash,
-                                  uint8_t out_key16[16], uint8_t out_key32[32]) const;
     bool deriveIdentitySecret(uint8_t peer_hash, uint8_t out_key16[16],
                               uint8_t out_key32[32]) const;
     bool deriveDirectSecret(ChannelId channel, uint8_t peer_hash,

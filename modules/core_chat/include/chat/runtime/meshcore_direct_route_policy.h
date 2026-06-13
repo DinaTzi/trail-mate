@@ -34,9 +34,6 @@ struct MeshCoreDirectRouteDecision
     MeshCoreDirectRouteStatus status = MeshCoreDirectRouteStatus::Ready;
     MeshCoreRouteMode route_mode = MeshCoreRouteMode::Flood;
     ChannelId tx_channel = ChannelId::PRIMARY;
-    ChannelId primary_secret_channel = ChannelId::PRIMARY;
-    ChannelId fallback_secret_channel = ChannelId::PRIMARY;
-    bool allow_secret_fallback = false;
     bool should_discover = false;
 };
 
@@ -45,8 +42,6 @@ inline MeshCoreDirectRouteDecision resolveMeshCoreDirectRoutePolicy(
 {
     MeshCoreDirectRouteDecision decision{};
     decision.tx_channel = facts.requested_channel;
-    decision.primary_secret_channel = facts.requested_channel;
-    decision.fallback_secret_channel = facts.requested_channel;
 
     if (facts.identity_ready && (!facts.has_peer_route || !facts.peer_has_public_key))
     {
@@ -59,9 +54,6 @@ inline MeshCoreDirectRouteDecision resolveMeshCoreDirectRoutePolicy(
     {
         decision.route_mode = MeshCoreRouteMode::Direct;
         decision.tx_channel = facts.selected_route_channel;
-        decision.primary_secret_channel = facts.selected_route_channel;
-        decision.fallback_secret_channel = facts.requested_channel;
-        decision.allow_secret_fallback = facts.selected_route_channel != facts.requested_channel;
     }
 
     return decision;

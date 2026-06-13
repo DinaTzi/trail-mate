@@ -369,13 +369,15 @@ Current C++17 migration state:
 
 - Direct-route send decision for ESP32 MeshCore direct text/app-data now uses shared
   `MeshCoreDirectRoutePolicy`: missing peer pubkey triggers discover/failure, selected routes use direct path,
-  and direct secret derivation may fall back from preferred route channel to requested channel.
+  and route/channel fallback remains explicit without redefining direct-secret material.
 - Incoming MeshCore discover request/response control payloads now flow through `MeshCoreRuntime`: filter/since
   matching emits `SendDiscoverResponseEffect`, and discover responses emit `PublishNodeInfoEffect` plus
   `UpdatePeerRouteEffect`.
 - MeshCore identity shared-secret expansion and nRF peer-key derivation now use shared
   `MeshCoreDirectSecretCore`; ESP32 still owns private-key storage and route pubkey lookup before delegating
   key expansion to the runtime helper.
+- ESP32 no longer falls back to the historical group-secret-derived direct key; MeshCore direct secrets are
+  identity/pubkey-derived only.
 - Peer route storage, pubkey persistence, private identity storage, response scheduling, and frame transmission
   are still platform adapter responsibilities until they can be represented as runtime state/effects.
 

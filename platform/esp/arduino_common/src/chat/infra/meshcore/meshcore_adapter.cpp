@@ -164,7 +164,6 @@ using chat::meshcore::ParsedPacket;
 using chat::meshcore::parsePacket;
 using chat::meshcore::saturatingAddU32;
 using chat::meshcore::scoreFromSnr;
-using chat::meshcore::sha256Trunc;
 using chat::meshcore::toHex;
 using chat::meshcore::toHmacKey32;
 
@@ -1481,39 +1480,11 @@ bool MeshCoreAdapter::deriveIdentitySecret(uint8_t peer_hash,
                                                                       out_key32, 32);
 }
 
-bool MeshCoreAdapter::deriveLegacyDirectSecret(ChannelId channel, uint8_t peer_hash,
-                                               uint8_t out_key16[16], uint8_t out_key32[32]) const
-{
-    if (!out_key16 || !out_key32)
-    {
-        return false;
-    }
-
-    uint8_t base_key16[16];
-    uint8_t base_key32[32];
-    if (!resolveGroupSecret(channel, base_key16, base_key32, nullptr))
-    {
-        return false;
-    }
-
-    uint8_t material[18];
-    memcpy(material, base_key16, sizeof(base_key16));
-    material[16] = (peer_hash < self_hash_) ? peer_hash : self_hash_;
-    material[17] = (peer_hash < self_hash_) ? self_hash_ : peer_hash;
-
-    sha256Trunc(out_key32, 32, material, sizeof(material));
-    memcpy(out_key16, out_key32, 16);
-    return true;
-}
-
 bool MeshCoreAdapter::deriveDirectSecret(ChannelId channel, uint8_t peer_hash,
                                          uint8_t out_key16[16], uint8_t out_key32[32]) const
 {
-    if (deriveIdentitySecret(peer_hash, out_key16, out_key32))
-    {
-        return true;
-    }
-    return deriveLegacyDirectSecret(channel, peer_hash, out_key16, out_key32);
+    (void)channel;
+    return deriveIdentitySecret(peer_hash, out_key16, out_key32);
 }
 
 bool MeshCoreAdapter::tryDecryptPeerPayload(uint8_t src_hash,
@@ -1582,24 +1553,6 @@ bool MeshCoreAdapter::tryDecryptPeerPayload(uint8_t src_hash,
 
     for (size_t i = 0; i < order_len; ++i)
     {
-        {
-            uint8_t key16[16] = {};
-            uint8_t key32[32] = {};
-            if (deriveIdentitySecret(src_hash, key16, key32) &&
-                tryCandidate(order[i], key16, key32))
-            {
-                return true;
-            }
-        }
-        {
-            uint8_t key16[16] = {};
-            uint8_t key32[32] = {};
-            if (deriveLegacyDirectSecret(order[i], src_hash, key16, key32) &&
-                tryCandidate(order[i], key16, key32))
-            {
-                return true;
-            }
-        }
         {
             uint8_t key16[16] = {};
             uint8_t key32[32] = {};
@@ -3169,13 +3122,9 @@ MeshActionResult MeshCoreAdapter::sendDirectTextDetailed(ChannelId channel, cons
 
     uint8_t peer_key16[16];
     uint8_t peer_key32[32];
-    if (!deriveDirectSecret(route_decision.primary_secret_channel, peer_hash, peer_key16, peer_key32))
+    if (!deriveDirectSecret(route_decision.tx_channel, peer_hash, peer_key16, peer_key32))
     {
-        if (!route_decision.allow_secret_fallback ||
-            !deriveDirectSecret(route_decision.fallback_secret_channel, peer_hash, peer_key16, peer_key32))
-        {
-            return MeshActionResult::fail(MeshOperationFailure::PeerKeyMissing);
-        }
+        return MeshActionResult::fail(MeshOperationFailure::PeerKeyMissing);
     }
 
     constexpr size_t kDirectPlainPrefixSize = 5; // ts(4) + flags(1)
@@ -3352,16 +3301,12 @@ bool MeshCoreAdapter::sendAppData(ChannelId channel, uint32_t portnum,
 
         uint8_t peer_key16[16];
         uint8_t peer_key32[32];
-        if (!deriveDirectSecret(route_decision.primary_secret_channel, peer_hash, peer_key16, peer_key32))
+        if (!deriveDirectSecret(route_decision.tx_channel, peer_hash, peer_key16, peer_key32))
         {
-            if (!route_decision.allow_secret_fallback ||
-                !deriveDirectSecret(route_decision.fallback_secret_channel, peer_hash, peer_key16, peer_key32))
-            {
-                MESHCORE_LOG("[MESHCORE] TX direct app-data dropped (no peer secret) peer=%08lX port=%u\n",
-                             static_cast<unsigned long>(dest),
-                             static_cast<unsigned>(portnum));
-                return false;
-            }
+            MESHCORE_LOG("[MESHCORE] TX direct app-data dropped (no peer secret) peer=%08lX port=%u\n",
+                         static_cast<unsigned long>(dest),
+                         static_cast<unsigned>(portnum));
+            return false;
         }
         (void)peer_key16;
 

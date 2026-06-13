@@ -26,8 +26,6 @@ int main()
         assert(decision.status == chat::runtime::MeshCoreDirectRouteStatus::Ready);
         assert(decision.route_mode == chat::runtime::MeshCoreRouteMode::Flood);
         assert(decision.tx_channel == chat::ChannelId::SECONDARY);
-        assert(decision.primary_secret_channel == chat::ChannelId::SECONDARY);
-        assert(!decision.allow_secret_fallback);
     }
 
     {
@@ -43,9 +41,6 @@ int main()
         assert(decision.status == chat::runtime::MeshCoreDirectRouteStatus::Ready);
         assert(decision.route_mode == chat::runtime::MeshCoreRouteMode::Direct);
         assert(decision.tx_channel == chat::ChannelId::SECONDARY);
-        assert(decision.primary_secret_channel == chat::ChannelId::SECONDARY);
-        assert(decision.fallback_secret_channel == chat::ChannelId::PRIMARY);
-        assert(decision.allow_secret_fallback);
     }
 
     return 0;
