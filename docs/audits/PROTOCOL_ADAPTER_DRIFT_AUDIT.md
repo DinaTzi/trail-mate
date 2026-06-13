@@ -19,12 +19,12 @@ Primary root cause:
 | Meshtastic broadcast `want_response` | Shared policy in working tree | High | ESP32 and nRF now share the app-data destination/ACK/response decision; broadcast air ACK is suppressed while request response intent is preserved. |
 | Meshtastic request/reply core | Partially shared | Medium | NodeInfo/Position reply gating, TraceRoute reply gating, TraceRoute payload mutation, and TraceRoute/Position action lifecycle tracking are shared; actual reply send still lives in adapters/UI. |
 | Meshtastic duplicated policy ownership | Mostly shared | Medium | App-data send intent, NodeInfo reannounce gate, NodeInfo/Position reply gates, TraceRoute reply gate, TraceRoute payload mutation, TraceRoute/Position result lifecycle, and PKI/NO_CHANNEL resync decisions now live in shared runtime/policy. Packet construction and radio IO still live in adapters. |
-| MeshCore NodeInfo query/reply | Confirmed drift | High | ESP32 implements MeshCore NodeInfo control frames; nRF `requestNodeInfo()` ignores dest/want_response and sends advert only. |
-| MeshCore trace | Confirmed drift | Medium | ESP32 parses/forwards MeshCore `PAYLOAD_TYPE_TRACE`; nRF has no equivalent implementation. UI must not expose MC trace. |
-| MeshCore app-data ACK/capability | Confirmed drift | Medium | ESP32 claims and tracks app-data ACK; nRF can set a direct app flag but does not declare or track ACK capability. |
+| MeshCore NodeInfo query/reply | Shared runtime/effects | Medium | ESP32 and nRF now route `requestNodeInfo()` through `MeshCoreRuntime` and shared control payload codecs; platform adapters still own packet IO/projection. |
+| MeshCore trace | Shared lifecycle, platform-limited routing | Medium | ESP32 and nRF use native `PAYLOAD_TYPE_TRACE` and shared completion/timeout policy; nRF still uses a minimal one-hop hash route. |
+| MeshCore app-data ACK/capability | Shared lifecycle | Medium | ESP32 and nRF now declare ACK tracking only when runtime pending/completion handling is wired. ACK frame scheduling remains adapter IO. |
 | MeshCore direct routing/identity | Confirmed platform gap | High | ESP32 has richer peer routes, identity, secrets, and direct path behavior; nRF path is simplified. |
 | MeshCore duplicated/incomplete ownership | Confirmed architecture debt | Critical | MeshCore protocol truth is split between shared helpers, ESP32 adapter, and nRF simplified adapter. |
-| Capability granularity | Confirmed design gap | High | `MeshCapabilities` is too coarse to protect UI/actions from protocol-specific drift. |
+| Capability granularity | Fine-grained flags added | Medium | Coarse legacy fields remain for compatibility; new flags describe NodeInfo, Position, TraceRoute, app response, and ACK tracking separately. |
 
 ## Architecture Finding
 
@@ -211,10 +211,10 @@ Residual risk:
 
 Evidence:
 
-- ESP32 `MeshCoreAdapter::sendNodeInfoFrame(...)` builds NodeInfo query/info control frames.
-- ESP32 `requestNodeInfo(dest, want_response)` distinguishes broadcast query, unicast query, and info send.
-- nRF `MeshCoreRadioAdapter::requestNodeInfo(...)` ignores `dest` and `want_response`, then sends advert only.
-- nRF `MeshCapabilities` does not claim `supports_node_info`.
+- ESP32 and nRF both expose `requestNodeInfo(dest, want_response)` through
+  `RequestNodeInfoIntent -> MeshCoreRuntime -> SendNodeInfoEffect`.
+- Shared MeshCore codecs build and parse NodeInfo query/info control frames.
+- ESP32 and nRF both declare the fine-grained NodeInfo capability fields they now execute.
 
 Expected behavior:
 
@@ -223,14 +223,14 @@ Expected behavior:
 
 Current state:
 
-- Confirmed drift, partly masked by coarse `IMeshAdapter::requestNodeInfo()`.
-- ESP32 contains the richer protocol behavior; nRF does not call a shared MeshCore NodeInfo core.
+- NodeInfo query/info decision mapping is shared by `MeshCoreRuntime`.
+- NodeInfo control payload layout is shared by `meshcore_payload_helpers`.
+- ESP32 and nRF differ only in how the resulting `SendNodeInfoEffect` is transmitted and projected.
 
-Next action:
+Residual risk:
 
-- Either implement MeshCore NodeInfo control frames on nRF, or make unsupported behavior explicit and
-  remove any UI path that assumes it works.
-- Prefer extracting MeshCore NodeInfo control-frame build/parse/reply policy into shared core first.
+- nRF currently has limited projection for received `PublishNodeInfoEffect`; the shared runtime can emit the
+  effect, but platform-specific contact persistence remains thinner than ESP32.
 
 ### MC-002 Trace
 
@@ -238,7 +238,8 @@ Evidence:
 
 - ESP32 MeshCore adapter parses and forwards direct `PAYLOAD_TYPE_TRACE`.
 - Official MeshCore source uses `Mesh::createTrace()` and `onTraceRecv()` for this behavior.
-- nRF MeshCore adapter has no trace implementation.
+- nRF MeshCore adapter uses the shared trace runtime and sends a minimal one-hop native trace when no full route
+  table exists.
 
 Expected behavior:
 
@@ -247,17 +248,18 @@ Expected behavior:
 
 Current state:
 
-- Mono node action spec now hides MC trace.
-- nRF remains unsupported.
+- Trace base payload build/decode and lifecycle policy are shared.
+- ESP32 still owns richer route scheduling and BLE `TraceData` projection.
+- nRF declares `supports_trace_route_request` for its minimal native MeshCore trace path, but not richer route
+  projection.
 
 ### MC-003 App-data ACK
 
 Evidence:
 
-- ESP32 MeshCore capabilities include `supports_appdata_ack=true`.
-- ESP32 direct app-data tracks ACK state.
-- nRF MeshCore direct app payload includes a want-ack flag but capabilities do not claim ACK and there is
-  no equivalent tracking/result path in the simplified adapter.
+- ESP32 and nRF direct app-data send paths register pending ACK signatures in `MeshCoreRuntime`.
+- ESP32 and nRF incoming ACK frames call shared `handleAppAck(...)`.
+- Both adapters declare `supports_protocol_ack_tracking` when this runtime path is wired.
 
 Expected behavior:
 
@@ -265,11 +267,12 @@ Expected behavior:
 
 Current state:
 
-- Confirmed drift.
+- ACK pending/completed/timeout lifecycle is shared.
 
-Next action:
+Residual risk:
 
-- Decide if nRF MeshCore supports ACK tracking. If not, ensure callers do not treat `want_ack` success as delivery.
+- ACK frame response scheduling for received want-ack app-data is still platform IO; ESP32 has a fuller peer ACK
+  path than nRF.
 
 ### MC-004 Direct Routing, Identity, And Secrets
 
@@ -285,38 +288,35 @@ Expected behavior:
 
 Current state:
 
-- Confirmed platform gap, not fully documented in capabilities.
+- Confirmed platform gap, now partially documented in fine-grained capabilities.
 
 Next action:
 
-- Split MeshCore capabilities into discovery, native NodeInfo, ACK tracking, direct route, identity/key,
-  and trace support.
 - Move route/identity policy toward shared MeshCore runtime core before expanding nRF behavior.
 
 ## Capability Drift
 
-The current `MeshCapabilities` fields are too coarse:
+Current state:
 
-- `supports_unicast_appdata` does not say whether app-data ACK, app-level response, empty payload,
-  direct route, or protocol-native request/reply are supported.
-- `supports_node_info` does not distinguish passive parsing, active query, direct reply, broadcast announce,
-  or peer reannounce.
-- There is no capability for TraceRoute, Position request/reply, or MeshCore native trace.
+- `MeshCapabilities` now keeps the legacy coarse flags and adds fine-grained protocol flags for NodeInfo,
+  Position, TraceRoute, protocol app responses, and ACK tracking.
+- ESP32/nRF Meshtastic and MeshCore adapters declare the fine-grained flags they execute.
+- Linux loopback/raw-lora adapters and the legacy ESP radio shim were updated to avoid silently omitting the
+  new fields.
 
-This capability gap is the structural reason UI actions drift into unsupported adapters.
+Residual risk:
+
+- There are still no separate capability fields for MeshCore direct route tables, identity-key exchange, peer
+  secret derivation, or rich trace route projection. Those remain documented platform differences.
 
 ## Immediate Recommended Fix Order
 
-1. Land the shared Meshtastic app-data send policy and NodeInfo reannounce gate after build review.
-2. Add a compact adapter parity test for Meshtastic app-data encoding intent:
-   NodeInfo request, Position request, TraceRoute request, broadcast request where valid.
-3. Extract shared Meshtastic reply payload construction/availability, TraceRoute, and PKI resync policy,
-   replacing platform copies.
-4. Split MeshCore NodeInfo capability and stop using generic `requestNodeInfo()` as if all adapters support it.
-5. Add MeshCore capability fields for ACK tracking and trace support.
-6. Start MeshCore shared runtime extraction from NodeInfo control frames, because the ESP32 behavior already exists
-   and nRF lacks it.
-7. Audit PKI unknown/resync paths after the above, because they depend on NodeInfo request semantics.
+1. Add parity tests that assert ESP32 and nRF adapters advertise the fine-grained capabilities they actually
+   execute.
+2. Extract shared Meshtastic NodeInfo/Position packet construction and availability policy.
+3. Move MeshCore direct route / identity-key policy toward shared runtime before expanding nRF behavior.
+4. Add capability fields for MeshCore direct-route tables, identity/key exchange, and rich trace projection if UI
+   needs to expose those actions directly.
 
 ## Guardrail
 

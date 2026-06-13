@@ -170,8 +170,8 @@ Implementation ownership:
 
 ## Capability Surface Requirements
 
-The current `MeshCapabilities` surface is too coarse for several protocol actions. Future parity work should
-split at least these fields out of generic app-data support:
+`MeshCapabilities` keeps the coarse legacy flags for existing UI code, but protocol-sensitive callers should
+prefer these fine-grained flags over generic app-data support:
 
 - `supports_node_info_query`;
 - `supports_node_info_reply`;
@@ -183,7 +183,7 @@ split at least these fields out of generic app-data support:
 - `supports_protocol_app_response`;
 - `supports_protocol_ack_tracking`.
 
-Until those fields exist, UI must be conservative and protocol-specific specs, such as
+When a fine-grained flag is false, UI must be conservative and protocol-specific specs, such as
 `NODE_ACTION_PROTOCOL_SPEC.md`, remain authoritative.
 
 ## Extraction Requirement

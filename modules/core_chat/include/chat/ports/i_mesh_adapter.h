@@ -25,6 +25,15 @@ struct MeshCapabilities
     bool supports_node_info = false;
     bool supports_pki = false;
     bool supports_discovery_actions = false;
+    bool supports_node_info_query = false;
+    bool supports_node_info_reply = false;
+    bool supports_node_info_reannounce = false;
+    bool supports_position_request = false;
+    bool supports_position_reply = false;
+    bool supports_trace_route_request = false;
+    bool supports_trace_route_reply = false;
+    bool supports_protocol_app_response = false;
+    bool supports_protocol_ack_tracking = false;
 };
 
 /**

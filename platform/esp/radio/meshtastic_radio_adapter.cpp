@@ -106,6 +106,9 @@ chat::MeshCapabilities MeshtasticRadioAdapter::getCapabilities() const
     caps.supports_unicast_text = true;
     caps.supports_unicast_appdata = true;
     caps.supports_node_info = true;
+    caps.supports_node_info_query = true;
+    caps.supports_node_info_reply = true;
+    caps.supports_node_info_reannounce = true;
     return caps;
 }
 

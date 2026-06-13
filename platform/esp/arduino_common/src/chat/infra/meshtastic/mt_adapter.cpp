@@ -303,6 +303,15 @@ MeshCapabilities MtAdapter::getCapabilities() const
     caps.provides_appdata_sender = true;
     caps.supports_node_info = true;
     caps.supports_pki = true;
+    caps.supports_node_info_query = true;
+    caps.supports_node_info_reply = true;
+    caps.supports_node_info_reannounce = true;
+    caps.supports_position_request = true;
+    caps.supports_position_reply = true;
+    caps.supports_trace_route_request = true;
+    caps.supports_trace_route_reply = true;
+    caps.supports_protocol_app_response = true;
+    caps.supports_protocol_ack_tracking = true;
     return caps;
 }
 
