@@ -9,6 +9,7 @@
 #include "chat/infra/meshtastic/mt_radio_config.h"
 #include "chat/infra/meshtastic/mt_region.h"
 #include "chat/runtime/meshtastic_protocol_policy.h"
+#include "chat/runtime/meshtastic_position_core.h"
 #include "chat/runtime/meshtastic_self_announcement_core.h"
 #include "chat/runtime/self_identity_policy.h"
 #include "meshtastic/mqtt.pb.h"
@@ -26,7 +27,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstdarg>
 #include <cstring>
 #include <ctime>
@@ -395,69 +395,22 @@ uint32_t nowSeconds()
 
 bool buildSelfPositionPayload(uint8_t* out_buf, size_t* out_len)
 {
-    if (!out_buf || !out_len || *out_len == 0)
-    {
-        return false;
-    }
-
     const platform::ui::gps::GpsState gps_state = platform::ui::gps::get_data();
-    if (!gps_state.valid)
-    {
-        return false;
-    }
 
-    meshtastic_Position pos = meshtastic_Position_init_zero;
-    pos.has_latitude_i = true;
-    pos.latitude_i = static_cast<int32_t>(gps_state.lat * 1e7);
-    pos.has_longitude_i = true;
-    pos.longitude_i = static_cast<int32_t>(gps_state.lng * 1e7);
-    pos.location_source = meshtastic_Position_LocSource_LOC_INTERNAL;
+    ::chat::runtime::MeshtasticPositionInput input{};
+    input.valid = gps_state.valid;
+    input.latitude_deg = gps_state.lat;
+    input.longitude_deg = gps_state.lng;
+    input.has_altitude = gps_state.has_alt;
+    input.altitude_m = gps_state.alt_m;
+    input.has_speed = gps_state.has_speed;
+    input.speed_mps = gps_state.speed_mps;
+    input.has_course = gps_state.has_course;
+    input.course_deg = gps_state.course_deg;
+    input.satellites = gps_state.satellites;
+    input.timestamp_s = nowSeconds();
 
-    if (gps_state.has_alt)
-    {
-        pos.has_altitude = true;
-        pos.altitude = static_cast<int32_t>(lround(gps_state.alt_m));
-        pos.altitude_source = meshtastic_Position_AltSource_ALT_INTERNAL;
-    }
-    if (gps_state.has_speed)
-    {
-        pos.has_ground_speed = true;
-        pos.ground_speed = static_cast<uint32_t>(lround(gps_state.speed_mps));
-    }
-    if (gps_state.has_course)
-    {
-        double course = gps_state.course_deg;
-        if (course < 0.0)
-        {
-            course = 0.0;
-        }
-        uint32_t cdeg = static_cast<uint32_t>(lround(course * 100.0));
-        if (cdeg >= 36000U)
-        {
-            cdeg = 35999U;
-        }
-        pos.has_ground_track = true;
-        pos.ground_track = cdeg;
-    }
-    if (gps_state.satellites > 0)
-    {
-        pos.sats_in_view = gps_state.satellites;
-    }
-
-    const uint32_t ts = nowSeconds();
-    if (ts >= 1577836800U)
-    {
-        pos.timestamp = ts;
-    }
-
-    pb_ostream_t stream = pb_ostream_from_buffer(out_buf, *out_len);
-    if (!pb_encode(&stream, meshtastic_Position_fields, &pos))
-    {
-        return false;
-    }
-
-    *out_len = stream.bytes_written;
-    return true;
+    return ::chat::runtime::MeshtasticPositionCore::buildPositionPayload(input, out_buf, out_len);
 }
 
 } // namespace

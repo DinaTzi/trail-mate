@@ -84,6 +84,7 @@ set(TRAILMATE_ESP_IDF_CORE_CHAT_SOURCES
     "${TRAILMATE_ROOT}/modules/core_chat/src/infra/node_store_blob_format.cpp"
     "${TRAILMATE_ROOT}/modules/core_chat/src/infra/node_store_core.cpp"
     "${TRAILMATE_ROOT}/modules/core_chat/src/infra/store/ram_store.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/runtime/meshtastic_position_core.cpp"
     "${TRAILMATE_ROOT}/modules/core_chat/src/runtime/meshtastic_self_announcement_core.cpp"
     "${TRAILMATE_ROOT}/modules/core_chat/src/runtime/self_identity_policy.cpp"
     "${TRAILMATE_ROOT}/modules/core_chat/src/usecase/chat_service.cpp"

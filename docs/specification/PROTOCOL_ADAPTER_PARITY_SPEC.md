@@ -144,8 +144,9 @@ Implementation ownership:
 - TraceRoute payload mutation lives in shared `chat/infra/meshtastic/mt_protocol_helpers`;
 - TraceRoute and Position Exchange UI/app action lifecycle tracking live in
   `chat/runtime/meshtastic_app_action_runtime.h`;
-- remaining NodeInfo/Position packet construction and PKI request-response policy must be
-  extracted from platform adapters into shared Meshtastic runtime core.
+- Position payload construction lives in `MeshtasticPositionCore`;
+- remaining Position availability policy and low-level send/channel mechanics must stay explicit
+  and be extracted only when a shared runtime decision can own them without taking platform IO.
 
 ## MeshCore Required Behavior Matrix
 
