@@ -27,16 +27,20 @@ int main()
     using chat::runtime::RequestNodeInfoIntent;
     using chat::runtime::RuntimeContext;
     using chat::runtime::SendDiscoverRequestEffect;
+    using chat::runtime::SendDiscoverResponseEffect;
     using chat::runtime::SendNodeInfoEffect;
     using chat::runtime::SendSelfAnnouncementEffect;
     using chat::runtime::SendTraceRouteEffect;
     using chat::runtime::TraceRouteIntent;
     using chat::runtime::TxResult;
+    using chat::runtime::UpdatePeerRouteEffect;
 
     MeshCoreRuntime runtime{};
     RuntimeContext context{};
     context.protocol = MeshProtocol::MeshCore;
     context.self_node = 0x11111111UL;
+    context.meshcore_discover_node_type = chat::meshcore::kMeshCoreAdvertTypeChat;
+    context.meshcore_local_modified_epoch = 1781259000UL;
 
     {
         DiscoverIntent intent{};
@@ -92,6 +96,102 @@ int main()
         assert(node_info->protocol == MeshProtocol::MeshCore);
         assert(node_info->peer == 0);
         assert(node_info->want_response);
+    }
+
+    {
+        chat::meshcore::MeshCoreDiscoverRequestBuildInfo request{};
+        request.type_filter = static_cast<uint8_t>(1U << chat::meshcore::kMeshCoreAdvertTypeChat);
+        request.prefix_only = true;
+        request.tag = 0x24681357UL;
+        request.since = 1781258000UL;
+
+        uint8_t payload[chat::meshcore::kMeshCoreDiscoverRequestBasePayloadSize + sizeof(uint32_t)] = {};
+        size_t payload_len = 0;
+        assert(chat::meshcore::buildDiscoverRequestControlPayload(request,
+                                                                  payload,
+                                                                  sizeof(payload),
+                                                                  &payload_len));
+
+        IncomingPacket packet{};
+        packet.protocol = MeshProtocol::MeshCore;
+        packet.payload_type = chat::meshcore::kMeshCorePayloadTypeControl;
+        packet.payload.assign(payload, payload + payload_len);
+
+        const auto effects = runtime.handleIncoming(packet, context);
+        assert(effects.items.size() == 1);
+        const auto* response = effectAt<SendDiscoverResponseEffect>(effects, 0);
+        assert(response);
+        assert(response->protocol == MeshProtocol::MeshCore);
+        assert(response->tag == request.tag);
+        assert(response->prefix_only);
+
+        request.type_filter = static_cast<uint8_t>(1U << chat::meshcore::kMeshCoreAdvertTypeRepeater);
+        assert(chat::meshcore::buildDiscoverRequestControlPayload(request,
+                                                                  payload,
+                                                                  sizeof(payload),
+                                                                  &payload_len));
+        packet.payload.assign(payload, payload + payload_len);
+        assert(runtime.handleIncoming(packet, context).items.empty());
+
+        request.type_filter = static_cast<uint8_t>(1U << chat::meshcore::kMeshCoreAdvertTypeChat);
+        request.since = 1781260000UL;
+        assert(chat::meshcore::buildDiscoverRequestControlPayload(request,
+                                                                  payload,
+                                                                  sizeof(payload),
+                                                                  &payload_len));
+        packet.payload.assign(payload, payload + payload_len);
+        assert(runtime.handleIncoming(packet, context).items.empty());
+    }
+
+    {
+        uint8_t pubkey[chat::meshcore::kMeshCorePubKeySize] = {};
+        for (size_t i = 0; i < sizeof(pubkey); ++i)
+        {
+            pubkey[i] = static_cast<uint8_t>(0x42U + i);
+        }
+
+        uint8_t payload[chat::meshcore::kMeshCoreDiscoverResponseBasePayloadSize +
+                        chat::meshcore::kMeshCorePubKeySize] = {};
+        size_t payload_len = 0;
+        assert(chat::meshcore::buildDiscoverResponseControlPayload(
+            chat::meshcore::kMeshCoreAdvertTypeRepeater,
+            6,
+            0xAABBCCDDUL,
+            pubkey,
+            sizeof(pubkey),
+            payload,
+            sizeof(payload),
+            &payload_len));
+
+        IncomingPacket packet{};
+        packet.protocol = MeshProtocol::MeshCore;
+        packet.payload_type = chat::meshcore::kMeshCorePayloadTypeControl;
+        packet.payload.assign(payload, payload + payload_len);
+        packet.rx_meta.rssi_dbm_x10 = -840;
+
+        const auto effects = runtime.handleIncoming(packet, context);
+        assert(effects.items.size() == 2);
+        const auto* publish = effectAt<PublishNodeInfoEffect>(effects, 0);
+        assert(publish);
+        assert(publish->protocol == MeshProtocol::MeshCore);
+        assert(publish->node_id == chat::meshcore::deriveNodeIdFromPubkey(pubkey, sizeof(pubkey)));
+        assert(publish->short_name == "42");
+        assert(publish->long_name == "42");
+        assert(publish->role == chat::meshcore::mapAdvertTypeToRole(chat::meshcore::kMeshCoreAdvertTypeRepeater));
+        assert(publish->hops == 0);
+        assert(publish->rx_meta.snr_db_x10 == 15);
+        assert(publish->rx_meta.rssi_dbm_x10 == -840);
+        assert(publish->has_public_key);
+
+        const auto* route = effectAt<UpdatePeerRouteEffect>(effects, 1);
+        assert(route);
+        assert(route->protocol == MeshProtocol::MeshCore);
+        assert(route->peer == publish->node_id);
+        assert(route->peer_hash == 0x42);
+        assert(route->public_key.size() == sizeof(pubkey));
+        assert(std::memcmp(route->public_key.data(), pubkey, sizeof(pubkey)) == 0);
+        assert(route->tag == 0xAABBCCDDUL);
+        assert(route->payload.size() == payload_len);
     }
 
     {

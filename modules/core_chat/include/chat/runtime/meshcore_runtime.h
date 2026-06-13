@@ -1,11 +1,14 @@
 #pragma once
 
 #include "chat/infra/meshcore/meshcore_payload_helpers.h"
+#include "chat/infra/meshcore/meshcore_identity_crypto.h"
 #include "chat/infra/meshcore/meshcore_protocol_helpers.h"
 #include "chat/runtime/protocol_runtime.h"
 
+#include <cstdio>
 #include <cstdint>
 #include <deque>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -61,6 +64,14 @@ class MeshCoreRuntime final : public IProtocolRuntime
         if (packet.payload_type == chat::meshcore::kMeshCorePayloadTypeTrace)
         {
             handleIncomingTrace(packet, effects);
+            return effects;
+        }
+
+        if (packet.payload_type == chat::meshcore::kMeshCorePayloadTypeControl &&
+            !packet.payload.empty() &&
+            (packet.payload[0] & 0x80U) != 0)
+        {
+            handleIncomingDiscoverControl(packet, context, effects);
             return effects;
         }
 
@@ -300,6 +311,7 @@ class MeshCoreRuntime final : public IProtocolRuntime
     static constexpr uint32_t kDefaultTraceTimeoutMs = 15000;
     static constexpr uint32_t kDefaultAppAckTimeoutMs = 15000;
     static constexpr uint32_t kDefaultDiscoverRxGuardMs = 5000;
+    static constexpr uint32_t kMinValidEpochSeconds = 1577836800UL;
     static constexpr size_t kMaxPendingAppAcks = 32;
 
     static NodeId normalizePeer(NodeId peer)
@@ -328,6 +340,24 @@ class MeshCoreRuntime final : public IProtocolRuntime
         }
         uint32_t tag = context.now_ms ^ context.self_node ^ 0x4D434453UL;
         return tag == 0 ? 1 : tag;
+    }
+
+    static bool isValidEpoch(uint32_t seconds)
+    {
+        return seconds >= kMinValidEpochSeconds;
+    }
+
+    static int16_t snrQuarterDbToX10(int8_t snr_qdb)
+    {
+        const int32_t value = static_cast<int32_t>(snr_qdb) * 10;
+        return static_cast<int16_t>((value >= 0 ? value + 2 : value - 2) / 4);
+    }
+
+    static std::string makeDiscoverFallbackName(uint8_t peer_hash)
+    {
+        char name[8] = {};
+        std::snprintf(name, sizeof(name), "%02X", static_cast<unsigned>(peer_hash));
+        return std::string{name};
     }
 
     void resolveDiscover(const DiscoverIntent& intent,
@@ -362,6 +392,93 @@ class MeshCoreRuntime final : public IProtocolRuntime
         default:
             break;
         }
+    }
+
+    void handleIncomingDiscoverControl(const IncomingPacket& packet,
+                                       const RuntimeContext& context,
+                                       ProtocolEffects& effects)
+    {
+        chat::meshcore::DecodedDiscoverRequest request{};
+        if (chat::meshcore::decodeDiscoverRequest(packet.payload.data(),
+                                                  packet.payload.size(),
+                                                  &request))
+        {
+            if (!chat::meshcore::discoverFilterMatchesType(request.type_filter,
+                                                           context.meshcore_discover_node_type))
+            {
+                return;
+            }
+
+            if (request.since != 0 &&
+                isValidEpoch(request.since) &&
+                isValidEpoch(context.meshcore_local_modified_epoch) &&
+                context.meshcore_local_modified_epoch < request.since)
+            {
+                return;
+            }
+
+            SendDiscoverResponseEffect response{};
+            response.protocol = MeshProtocol::MeshCore;
+            response.tag = request.tag;
+            response.prefix_only = request.prefix_only;
+            effects.add(response);
+            return;
+        }
+
+        chat::meshcore::DecodedDiscoverResponse response{};
+        if (!chat::meshcore::decodeDiscoverResponse(packet.payload.data(),
+                                                    packet.payload.size(),
+                                                    &response) ||
+            response.pubkey_len == 0 ||
+            response.pubkey == nullptr)
+        {
+            return;
+        }
+
+        const uint8_t peer_hash = response.pubkey[0];
+        if (peer_hash == static_cast<uint8_t>(context.self_node & 0xFFU))
+        {
+            return;
+        }
+
+        const NodeId node = chat::meshcore::deriveNodeIdFromPubkey(response.pubkey,
+                                                                   response.pubkey_len);
+        if (node == 0)
+        {
+            return;
+        }
+
+        const uint8_t hops = packet.path.size() <= 255
+                                 ? static_cast<uint8_t>(packet.path.size())
+                                 : 0xFF;
+        auto rx_meta = packet.rx_meta;
+        rx_meta.hop_count = hops;
+        rx_meta.snr_db_x10 = snrQuarterDbToX10(response.snr_qdb);
+
+        PublishNodeInfoEffect publish{};
+        publish.protocol = MeshProtocol::MeshCore;
+        publish.channel = packet.channel;
+        publish.node_id = node;
+        publish.short_name = makeDiscoverFallbackName(peer_hash);
+        publish.long_name = publish.short_name;
+        publish.role = chat::meshcore::mapAdvertTypeToRole(response.node_type);
+        publish.hops = hops;
+        publish.rx_meta = rx_meta;
+        publish.has_public_key = response.pubkey_len == chat::meshcore::kMeshCorePubKeySize;
+        effects.add(std::move(publish));
+
+        UpdatePeerRouteEffect route{};
+        route.protocol = MeshProtocol::MeshCore;
+        route.peer = node;
+        route.peer_hash = peer_hash;
+        route.hops = hops;
+        route.tag = response.tag;
+        route.payload.assign(packet.payload.begin(), packet.payload.end());
+        if (response.pubkey_len == chat::meshcore::kMeshCorePubKeySize)
+        {
+            route.public_key.assign(response.pubkey, response.pubkey + response.pubkey_len);
+        }
+        effects.add(std::move(route));
     }
 
     void resolveTraceRoute(const TraceRouteIntent& intent,

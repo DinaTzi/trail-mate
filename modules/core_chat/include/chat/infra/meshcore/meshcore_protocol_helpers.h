@@ -28,6 +28,7 @@ struct ParsedPacket
 
 constexpr size_t kMeshCoreTraceBasePayloadSize = 9;
 constexpr uint8_t kMeshCorePayloadTypeTrace = 0x09;
+constexpr uint8_t kMeshCorePayloadTypeControl = 0x0B;
 
 struct DecodedTracePayload
 {

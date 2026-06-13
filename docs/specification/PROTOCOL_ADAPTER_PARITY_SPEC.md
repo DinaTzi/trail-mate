@@ -166,8 +166,10 @@ payload types, control frames, direct paths, and identity/key rules.
 Implementation ownership:
 
 - MeshCore payload helpers and protocol strategy already exist in shared modules;
-- NodeInfo query/reply, trace, ACK tracking, route selection policy, and identity/key policy must
-  move toward shared MeshCore runtime core instead of parallel ESP32/nRF adapter copies.
+- NodeInfo query/reply, discover request/response decisions, trace, ACK tracking, route selection policy,
+  and identity/key policy must live in shared MeshCore runtime core instead of parallel ESP32/nRF adapter
+  copies. Platform adapters may still own radio scheduling, route-cache persistence, and hardware identity
+  storage while they execute runtime effects.
 
 ## Capability Surface Requirements
 

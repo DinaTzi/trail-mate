@@ -305,13 +305,17 @@ Current state:
 - ESP32 direct text/app-data sends now use `MeshCoreDirectRoutePolicy` for the shared decision table:
   missing peer pubkey -> discover/fail, selected route -> direct route path, no selected route -> flood,
   and preferred-channel secret derivation may fall back to the requested channel.
+- Incoming MeshCore discover request/response decisions now run through `MeshCoreRuntime`: request filter/since
+  matching emits `SendDiscoverResponseEffect`, and responses emit `PublishNodeInfoEffect` plus
+  `UpdatePeerRouteEffect`.
 - MeshCore direct shared-secret expansion and nRF peer-key derivation now use `MeshCoreDirectSecretCore`;
   ESP32 keeps identity storage and peer pubkey lookup in the adapter, then delegates key expansion to the
   shared helper.
 
 Residual risk:
 
-- Peer route storage, pubkey persistence, private identity storage, and frame transmission remain platform-owned.
+- Peer route storage, pubkey persistence, private identity storage, discover response scheduling, and frame
+  transmission remain platform-owned.
 - nRF can derive identity/peer secrets for request payloads through the shared helper but does not implement the
   ESP32 direct route table.
 
@@ -334,8 +338,8 @@ Residual risk:
 
 1. Add parity tests that assert ESP32 and nRF adapters advertise the fine-grained capabilities they actually
    execute.
-2. Move MeshCore peer route storage / pubkey persistence effects toward shared runtime state.
-3. Move MeshCore direct route request/response side effects behind protocol runtime effects before exposing richer
+2. Move MeshCore peer route storage / pubkey persistence state toward shared runtime ownership.
+3. Move remaining MeshCore direct route request side effects behind protocol runtime effects before exposing richer
    MeshCore direct actions through UI.
 
 ## Guardrail

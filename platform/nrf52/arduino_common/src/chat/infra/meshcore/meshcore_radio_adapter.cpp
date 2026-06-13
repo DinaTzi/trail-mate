@@ -29,7 +29,7 @@ constexpr uint8_t kPayloadTypeAck = 0x03;
 constexpr uint8_t kPayloadTypeDirectData = 0x07;
 constexpr uint8_t kPayloadTypeGrpData = 0x06;
 constexpr uint8_t kPayloadTypeTrace = ::chat::meshcore::kMeshCorePayloadTypeTrace;
-constexpr uint8_t kPayloadTypeControl = 0x0B;
+constexpr uint8_t kPayloadTypeControl = ::chat::meshcore::kMeshCorePayloadTypeControl;
 constexpr uint8_t kPayloadTypeRawCustom = 0x0F;
 constexpr uint8_t kPayloadTypeAdvert = 0x04;
 constexpr uint8_t kDirectAppMagic0 = 0xDA;
@@ -250,6 +250,8 @@ bool MeshCoreRadioAdapter::requestNodeInfo(::chat::NodeId dest, bool want_respon
     context.protocol = ::chat::MeshProtocol::MeshCore;
     context.self_node = node_id_;
     context.now_ms = millis();
+    context.meshcore_discover_node_type = ::chat::meshcore::kMeshCoreAdvertTypeChat;
+    context.meshcore_local_modified_epoch = ::chat::now_epoch_seconds();
     return context;
 }
 
@@ -311,13 +313,21 @@ bool MeshCoreRadioAdapter::executeProtocolEffect(const ::chat::runtime::Protocol
             {
                 ok = executeDiscoverRequestEffect(item);
             }
+            else if constexpr (std::is_same_v<Effect, ::chat::runtime::SendDiscoverResponseEffect>)
+            {
+                ok = executeDiscoverResponseEffect(item);
+            }
             else if constexpr (std::is_same_v<Effect, ::chat::runtime::SendSelfAnnouncementEffect>)
             {
                 ok = executeSelfAnnouncementEffect(item);
             }
             else if constexpr (std::is_same_v<Effect, ::chat::runtime::PublishNodeInfoEffect>)
             {
-                ok = false;
+                ok = item.protocol == ::chat::MeshProtocol::MeshCore;
+            }
+            else if constexpr (std::is_same_v<Effect, ::chat::runtime::UpdatePeerRouteEffect>)
+            {
+                ok = item.protocol == ::chat::MeshProtocol::MeshCore;
             }
             else if constexpr (std::is_same_v<Effect, ::chat::runtime::EmitActionResultEffect>)
             {
@@ -418,6 +428,41 @@ bool MeshCoreRadioAdapter::executeDiscoverRequestEffect(const ::chat::runtime::S
            sendControlData(payload, payload_len);
 }
 
+bool MeshCoreRadioAdapter::executeDiscoverResponseEffect(const ::chat::runtime::SendDiscoverResponseEffect& effect)
+{
+    if (effect.protocol != ::chat::MeshProtocol::MeshCore)
+    {
+        return false;
+    }
+    if (!config_.tx_enabled)
+    {
+        return true;
+    }
+
+    ensureIdentityKeys();
+    if (!keys_ready_)
+    {
+        return true;
+    }
+
+    const size_t key_len = effect.prefix_only
+                               ? ::chat::meshcore::kMeshCorePubKeyPrefixSize
+                               : ::chat::meshcore::kMeshCorePubKeySize;
+    uint8_t payload[::chat::meshcore::kMeshCoreDiscoverResponseBasePayloadSize +
+                    ::chat::meshcore::kMeshCorePubKeySize] = {};
+    size_t payload_len = 0;
+    return ::chat::meshcore::buildDiscoverResponseControlPayload(
+               ::chat::meshcore::kMeshCoreAdvertTypeChat,
+               0,
+               effect.tag,
+               public_key_,
+               key_len,
+               payload,
+               sizeof(payload),
+               &payload_len) &&
+           sendControlData(payload, payload_len);
+}
+
 bool MeshCoreRadioAdapter::executeSelfAnnouncementEffect(const ::chat::runtime::SendSelfAnnouncementEffect& effect)
 {
     if (effect.protocol != ::chat::MeshProtocol::MeshCore || !config_.tx_enabled)
@@ -506,6 +551,22 @@ void MeshCoreRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
         ::chat::runtime::IncomingPacket packet{};
         packet.protocol = ::chat::MeshProtocol::MeshCore;
         packet.payload_type = kPayloadTypeTrace;
+        packet.payload.assign(parsed.payload, parsed.payload + parsed.payload_len);
+        if (parsed.path_len > 0)
+        {
+            packet.path.assign(parsed.path, parsed.path + parsed.path_len);
+        }
+        executeProtocolEffects(protocol_runtime_.handleIncoming(packet, buildRuntimeContext()));
+        return;
+    }
+
+    if (parsed.payload_type == kPayloadTypeControl &&
+        parsed.payload_len > 0 &&
+        (parsed.payload[0] & 0x80U) != 0)
+    {
+        ::chat::runtime::IncomingPacket packet{};
+        packet.protocol = ::chat::MeshProtocol::MeshCore;
+        packet.payload_type = kPayloadTypeControl;
         packet.payload.assign(parsed.payload, parsed.payload + parsed.payload_len);
         if (parsed.path_len > 0)
         {

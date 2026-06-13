@@ -84,6 +84,7 @@ class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter, public ::chat::m
     bool executeProtocolEffect(const ::chat::runtime::ProtocolEffect& effect);
     bool executeNodeInfoEffect(const ::chat::runtime::SendNodeInfoEffect& effect);
     bool executeDiscoverRequestEffect(const ::chat::runtime::SendDiscoverRequestEffect& effect);
+    bool executeDiscoverResponseEffect(const ::chat::runtime::SendDiscoverResponseEffect& effect);
     bool executeSelfAnnouncementEffect(const ::chat::runtime::SendSelfAnnouncementEffect& effect);
 
     ::chat::MeshConfig config_{};

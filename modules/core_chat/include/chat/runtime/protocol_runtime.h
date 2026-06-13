@@ -36,6 +36,8 @@ struct RuntimeContext
     MeshProtocol protocol = MeshProtocol::Meshtastic;
     NodeId self_node = 0;
     uint32_t now_ms = 0;
+    uint8_t meshcore_discover_node_type = 0;
+    uint32_t meshcore_local_modified_epoch = 0;
 };
 
 struct SendTextIntent
@@ -162,6 +164,13 @@ struct SendDiscoverRequestEffect
     uint32_t rx_guard_ms = 5000;
 };
 
+struct SendDiscoverResponseEffect
+{
+    MeshProtocol protocol = MeshProtocol::MeshCore;
+    uint32_t tag = 0;
+    bool prefix_only = false;
+};
+
 struct SendSelfAnnouncementEffect
 {
     MeshProtocol protocol = MeshProtocol::MeshCore;
@@ -206,6 +215,8 @@ struct PublishNodeInfoEffect
     uint8_t role = 0;
     uint8_t hops = 0;
     RxMeta rx_meta{};
+    bool has_public_key = false;
+    bool key_manually_verified = false;
 };
 
 struct EmitActionResultEffect
@@ -223,8 +234,14 @@ struct UpdatePeerRouteEffect
 {
     MeshProtocol protocol = MeshProtocol::MeshCore;
     NodeId peer = 0;
+    uint8_t peer_hash = 0;
     uint8_t next_hop = 0;
     ChannelId preferred_channel = ChannelId::PRIMARY;
+    std::vector<uint8_t> public_key;
+    bool public_key_verified = false;
+    uint8_t hops = 0xFF;
+    MessageId tag = 0;
+    std::vector<uint8_t> payload;
 };
 
 using ProtocolEffect = std::variant<SendPacketEffect,
@@ -232,6 +249,7 @@ using ProtocolEffect = std::variant<SendPacketEffect,
                                     SendRoutingErrorEffect,
                                     SendTraceRouteEffect,
                                     SendDiscoverRequestEffect,
+                                    SendDiscoverResponseEffect,
                                     SendSelfAnnouncementEffect,
                                     ForgetPeerKeyEffect,
                                     RequestPeerNodeInfoEffect,

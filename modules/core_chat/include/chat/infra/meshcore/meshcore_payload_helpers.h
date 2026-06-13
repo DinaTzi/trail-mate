@@ -28,6 +28,7 @@ constexpr size_t kMeshCoreNodeInfoInfoPayloadSize =
 constexpr uint8_t kMeshCoreAdvertTypeChat = 0x01;
 constexpr uint8_t kMeshCoreAdvertTypeRepeater = 0x02;
 constexpr uint8_t kMeshCoreDiscoverTypeFilterAll = 0xFF;
+constexpr size_t kMeshCorePubKeyPrefixSize = 8;
 constexpr size_t kMeshCoreDiscoverRequestBasePayloadSize = 6;
 constexpr size_t kMeshCoreDiscoverResponseBasePayloadSize = 6;
 
