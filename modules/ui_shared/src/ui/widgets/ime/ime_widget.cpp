@@ -9,6 +9,10 @@
 #include "ui/localization.h"
 #include "ui/page/page_profile.h"
 
+#if UI_SHARED_TOUCH_IME_ENABLED
+#include "ui/LV_Helper.h"
+#endif
+
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -30,6 +34,15 @@ static constexpr lv_coord_t kCompactImeControlHeight = 18;
 bool script_input_available()
 {
     return ::ui::i18n::any_enabled_script_input();
+}
+
+bool hardware_keyboard_available()
+{
+#if UI_SHARED_TOUCH_IME_ENABLED
+    return lv_get_keyboard_indev() != nullptr;
+#else
+    return false;
+#endif
 }
 
 #if UI_SHARED_TOUCH_IME_ENABLED
@@ -230,7 +243,8 @@ void ImeWidget::init(lv_obj_t* parent, lv_obj_t* textarea)
     candidate_window_start_ = 0;
 
 #if UI_SHARED_TOUCH_IME_ENABLED
-    touch_keyboard_enabled_ = profile.large_touch_hitbox && profile.ime_keyboard_height > 0;
+    touch_keyboard_enabled_ =
+        profile.large_touch_hitbox && profile.ime_keyboard_height > 0 && !hardware_keyboard_available();
     if (touch_keyboard_enabled_)
     {
         init_touch_ui(parent);

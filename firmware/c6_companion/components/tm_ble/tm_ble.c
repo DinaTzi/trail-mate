@@ -329,6 +329,21 @@ static uint32_t active_passkey(void)
     return s_active_passkey;
 }
 
+static bool passkey_action_needs_display(uint8_t action)
+{
+    if (action == BLE_SM_IOACT_DISP)
+    {
+        return true;
+    }
+#if defined(BLE_SM_IOACT_STATIC)
+    if (action == BLE_SM_IOACT_STATIC)
+    {
+        return true;
+    }
+#endif
+    return false;
+}
+
 static void apply_security_config(void)
 {
     if (!pairing_requires_pin())
@@ -596,8 +611,7 @@ static int gap_event_cb(struct ble_gap_event* event, void* arg)
         return BLE_GAP_REPEAT_PAIRING_RETRY;
     }
     case BLE_GAP_EVENT_PASSKEY_ACTION:
-        if (event->passkey.params.action == BLE_SM_IOACT_DISP ||
-            event->passkey.params.action == BLE_SM_IOACT_STATIC)
+        if (passkey_action_needs_display(event->passkey.params.action))
         {
             struct ble_sm_io pkey;
             memset(&pkey, 0, sizeof(pkey));

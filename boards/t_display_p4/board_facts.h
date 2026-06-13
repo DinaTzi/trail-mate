@@ -18,7 +18,8 @@ struct TDisplayP4BoardFacts
     int rm69a10_width = 568;
     int rm69a10_height = 1232;
     bool touch_present = true;
-    bool keyboard_present = false;
+    bool keyboard_module_supported = true;
+    bool keyboard_present_by_default = false;
     bool trackball_present = false;
     bool audio_present = true;
     bool sd_card_present = true;
@@ -29,6 +30,11 @@ struct TDisplayP4BoardFacts
     int sys_i2c_scl_pin = 8;
     int ext_i2c_sda_pin = 20;
     int ext_i2c_scl_pin = 21;
+    int keyboard_i2c_sda_pin = 46;
+    int keyboard_i2c_scl_pin = 45;
+    int keyboard_interrupt_pin = 48;
+    int keyboard_backlight_pin = 47;
+    std::uint16_t keyboard_tca8418_address = 0x34;
     int gps_uart_tx_pin = 22;
     int gps_uart_rx_pin = 23;
     std::uint16_t hi8561_touch_address = 0x68;

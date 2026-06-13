@@ -12,7 +12,7 @@
 #include "ui/widgets/ime/pinyin_ime.h"
 
 #ifndef UI_SHARED_TOUCH_IME_ENABLED
-#if defined(TRAIL_MATE_ESP_BOARD_TAB5)
+#if defined(TRAIL_MATE_ESP_BOARD_TAB5) || defined(TRAIL_MATE_ESP_BOARD_T_DISPLAY_P4)
 #define UI_SHARED_TOUCH_IME_ENABLED 1
 #else
 #define UI_SHARED_TOUCH_IME_ENABLED 0

@@ -179,6 +179,24 @@ void enter(const shell::Host* host, lv_obj_t* parent)
 {
     if (!is_available())
     {
+        s_host = host;
+        if (s_chat_container && lv_obj_is_valid(s_chat_container))
+        {
+            lv_obj_del(s_chat_container);
+        }
+
+        s_chat_container = lv_obj_create(parent);
+        lv_obj_set_size(s_chat_container, LV_PCT(100), LV_PCT(100));
+        lv_obj_set_style_bg_color(s_chat_container, lv_color_hex(0xFFF3DF), 0);
+        lv_obj_set_style_bg_opa(s_chat_container, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(s_chat_container, 0, 0);
+        lv_obj_set_style_pad_all(s_chat_container, 0, 0);
+        lv_obj_set_style_radius(s_chat_container, 0, 0);
+
+        lv_obj_t* label = lv_label_create(s_chat_container);
+        lv_label_set_text(label, "Chat runtime unavailable");
+        lv_obj_set_style_text_color(label, lv_color_hex(0x5B4632), 0);
+        lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
         return;
     }
 

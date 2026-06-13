@@ -4,6 +4,7 @@
 #include "tm_wifi.h"
 
 #include "esp_check.h"
+#include "esp_idf_version.h"
 #include "esp_log.h"
 #include "esp_now.h"
 #include "esp_wifi.h"
@@ -82,18 +83,25 @@ static void recv_cb(const esp_now_recv_info_t* info, const uint8_t* data, int da
     }
 }
 
-static void send_cb(const esp_now_send_info_t* tx_info, esp_now_send_status_t status)
+static void emit_send_done(const uint8_t* mac, esp_now_send_status_t status)
 {
-    const uint8_t* mac = NULL;
-    if (tx_info != NULL)
-    {
-        mac = tx_info->des_addr;
-    }
     emit_event(TM_C6_ESPNOW_EVENT_SEND_DONE,
                status == ESP_NOW_SEND_SUCCESS ? 0 : 1,
                mac,
                status == ESP_NOW_SEND_SUCCESS ? TM_C6_OK : TM_C6_ERROR_INTERNAL);
 }
+
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
+static void send_cb(const esp_now_send_info_t* tx_info, esp_now_send_status_t status)
+{
+    emit_send_done(tx_info != NULL ? tx_info->des_addr : NULL, status);
+}
+#else
+static void send_cb(const uint8_t* mac_addr, esp_now_send_status_t status)
+{
+    emit_send_done(mac_addr, status);
+}
+#endif
 
 static void rx_task(void* arg)
 {

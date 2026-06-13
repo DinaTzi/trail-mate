@@ -47,8 +47,7 @@ idf_component_register(
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
-    TRAIL_MATE_LORA_TX_POWER_MAX_DBM=22
-    TRAIL_MATE_FINAL_IDF_NO_APP_FACADE=1)
+    TRAIL_MATE_LORA_TX_POWER_MAX_DBM=22)
 
 if(TRAIL_MATE_IDF_TARGET STREQUAL "tab5")
     target_compile_definitions(${COMPONENT_LIB} PRIVATE TRAIL_MATE_ESP_BOARD_TAB5=1)

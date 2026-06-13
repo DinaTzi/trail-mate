@@ -238,17 +238,22 @@ uint8_t TDisplayP4Board::getBrightness()
 
 bool TDisplayP4Board::hasKeyboard()
 {
-    return false;
+    return keyboard_ready_;
 }
 
 void TDisplayP4Board::keyboardSetBrightness(uint8_t level)
 {
-    (void)level;
+    keyboard_brightness_ = level;
 }
 
 uint8_t TDisplayP4Board::keyboardGetBrightness()
 {
-    return 0;
+    return keyboard_brightness_;
+}
+
+void TDisplayP4Board::setKeyboardReady(bool ready)
+{
+    keyboard_ready_ = ready && profile().supports_keyboard_module;
 }
 
 bool TDisplayP4Board::isRTCReady() const
