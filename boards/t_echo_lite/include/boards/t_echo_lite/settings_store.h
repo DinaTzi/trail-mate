@@ -36,6 +36,8 @@ uint8_t loadStatusLedColor();
 void queueSaveStatusLedColor(uint8_t color_index);
 bool loadKeyboardLightEnabled();
 void queueSaveKeyboardLightEnabled(bool enabled);
+bool loadMessageKeyboardLightEnabled();
+void queueSaveMessageKeyboardLightEnabled(bool enabled);
 bool tickDeferredSave();
 bool hasDeferredSavePending();
 StoreStatus lastLoadStatus();

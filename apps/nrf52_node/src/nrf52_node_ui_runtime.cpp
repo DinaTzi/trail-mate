@@ -149,6 +149,21 @@ void play_message_tone()
     platform::ui::device::play_message_tone();
 }
 
+bool message_light_enabled()
+{
+    return target_board::instance().messageKeyboardLightEnabled();
+}
+
+void set_message_light_enabled(bool enabled)
+{
+    target_board::instance().setMessageKeyboardLightEnabled(enabled);
+}
+
+void play_message_light()
+{
+    target_board::instance().blinkMessageKeyboardLight(2);
+}
+
 uint8_t status_led_color_index()
 {
     return target_board::instance().statusLedColor();
@@ -300,6 +315,9 @@ bool initialize()
     callbacks.set_message_tone_volume_fn = set_message_tone_volume;
 #if defined(TRAILMATE_TARGET_T_ECHO_LITE)
     callbacks.play_message_tone_fn = play_message_tone;
+    callbacks.message_light_enabled_fn = message_light_enabled;
+    callbacks.set_message_light_enabled_fn = set_message_light_enabled;
+    callbacks.play_message_light_fn = play_message_light;
     callbacks.status_led_color_index_fn = status_led_color_index;
     callbacks.set_status_led_color_index_fn = set_status_led_color_index;
     callbacks.status_led_color_count_fn = status_led_color_count;

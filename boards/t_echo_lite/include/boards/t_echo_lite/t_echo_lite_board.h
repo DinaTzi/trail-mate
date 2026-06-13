@@ -182,6 +182,9 @@ class TEchoLiteBoard final : public BoardBase
     uint32_t currentEpochSeconds() const;
     void setKeyboardLightEnabled(bool enabled);
     bool keyboardLightEnabled() const;
+    void setMessageKeyboardLightEnabled(bool enabled);
+    bool messageKeyboardLightEnabled() const;
+    void blinkMessageKeyboardLight(uint8_t blink_count = 2);
 
   private:
     TEchoLiteBoard();
@@ -204,6 +207,7 @@ class TEchoLiteBoard final : public BoardBase
     uint8_t brightness_ = DEVICE_MAX_BRIGHTNESS_LEVEL;
     uint8_t keyboard_brightness_ = DEVICE_MAX_BRIGHTNESS_LEVEL;
     bool keyboard_light_enabled_ = false;
+    bool message_keyboard_light_enabled_ = true;
     uint8_t status_led_color_index_ = 0;
     uint8_t message_tone_volume_ = 45;
     std::unique_ptr<GpsRuntime> gps_runtime_;

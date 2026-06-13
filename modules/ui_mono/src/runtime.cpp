@@ -102,26 +102,67 @@ constexpr const char* kSettingsMenuItems[] = {
     "ACTIONS",
 };
 
-constexpr const char* kMeshtasticRadioItems[] = {
-    "PROTOCOL",
-    "REGION",
-    "TX POWER",
-    "MODEM",
-    "CH SLOT",
-    "ENCRYPT",
+enum class RadioSettingItem
+{
+    Protocol,
+    MtRegion,
+    MtMode,
+    MtPreset,
+    MtBandwidth,
+    MtSpreadFactor,
+    MtCodingRate,
+    MtTxPower,
+    MtChannelSlot,
+    MtOverrideFrequency,
+    MtFrequencyOffset,
+    McRegion,
+    McFrequency,
+    McBandwidth,
+    McSpreadFactor,
+    McCodingRate,
+    McTxPower,
+    McChannelSlot,
+    McChannelName,
+    Encrypt,
 };
 
-constexpr const char* kMeshCoreRadioItems[] = {
-    "PROTOCOL",
-    "REGION",
-    "TX POWER",
-    "PRESET",
-    "SLOT",
-    "ENCRYPT",
-    "NAME",
+struct RadioSettingDef
+{
+    RadioSettingItem item;
+    const char* label;
+};
+
+constexpr RadioSettingDef kRadioItems[] = {
+    {RadioSettingItem::Protocol, "PROTO"},
+    {RadioSettingItem::MtRegion, "MT REGION"},
+    {RadioSettingItem::MtMode, "MT MODE"},
+    {RadioSettingItem::MtPreset, "MT PRESET"},
+    {RadioSettingItem::MtBandwidth, "MT BW"},
+    {RadioSettingItem::MtSpreadFactor, "MT SF"},
+    {RadioSettingItem::MtCodingRate, "MT CR"},
+    {RadioSettingItem::MtTxPower, "MT TX"},
+    {RadioSettingItem::MtChannelSlot, "MT SLOT"},
+    {RadioSettingItem::MtOverrideFrequency, "MT FREQ"},
+    {RadioSettingItem::MtFrequencyOffset, "MT OFFSET"},
+    {RadioSettingItem::McRegion, "MC REGION"},
+    {RadioSettingItem::McFrequency, "MC FREQ"},
+    {RadioSettingItem::McBandwidth, "MC BW"},
+    {RadioSettingItem::McSpreadFactor, "MC SF"},
+    {RadioSettingItem::McCodingRate, "MC CR"},
+    {RadioSettingItem::McTxPower, "MC TX"},
+    {RadioSettingItem::McChannelSlot, "MC SLOT"},
+    {RadioSettingItem::McChannelName, "MC NAME"},
+    {RadioSettingItem::Encrypt, "ENCRYPT"},
 };
 
 constexpr uint16_t kMeshtasticChannelNumMax = 16;
+constexpr float kRadioFrequencyMinMhz = 400.0f;
+constexpr float kRadioFrequencyMaxMhz = 2500.0f;
+constexpr float kRadioFrequencyStepMhz = 0.1f;
+constexpr float kMeshtasticFrequencyOffsetStepMhz = 0.025f;
+constexpr float kMeshtasticFrequencyOffsetMinMhz = -5.0f;
+constexpr float kMeshtasticFrequencyOffsetMaxMhz = 5.0f;
+constexpr float kLoRaBandwidthOptionsKhz[] = {31.25f, 62.5f, 125.0f, 250.0f, 500.0f};
 constexpr uint32_t kScreenTimeoutAlwaysMs = 300000UL;
 constexpr uint32_t kScreenTimeoutOptionsMs[] = {15000UL, 30000UL, 60000UL, kScreenTimeoutAlwaysMs};
 
@@ -159,6 +200,7 @@ enum class DeviceSettingItem
 #endif
 #if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
     MessageTone,
+    MessageLight,
     LedColor,
     KeyboardLight,
 #endif
@@ -175,6 +217,7 @@ constexpr const char* kDeviceItems[] = {
 #endif
 #if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
     "MSG TONE",
+    "MSG LIGHT",
     "LED COLOR",
     "KEY LIGHT",
 #endif
@@ -191,6 +234,7 @@ constexpr DeviceSettingItem kDeviceItemIds[] = {
 #endif
 #if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
     DeviceSettingItem::MessageTone,
+    DeviceSettingItem::MessageLight,
     DeviceSettingItem::LedColor,
     DeviceSettingItem::KeyboardLight,
 #endif
@@ -219,10 +263,14 @@ constexpr const char* kWeekdays[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "
 constexpr const char* kComposeCharset =
     " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?-_/:#@+*=()[]";
 constexpr const char* kHexCharset = "0123456789ABCDEF";
+constexpr const char* kComposeAlphaKeys = "QWERTYUIOPASDFGHJKLZXCVBNM";
 constexpr const char* kComposeAbcKeys = " ETAOINSHRDLUCMFWYPVBGKQJXZ";
 constexpr const char* kComposeNumKeys = "0123456789";
 constexpr const char* kComposeSymKeys = " .,!?/-:@#()[]+=";
 constexpr const char* kComposeActionLabels[] = {"ABC", "SP", "BACK", "DEL", "SEND"};
+constexpr size_t kVirtualKeyboardCols = 3;
+constexpr size_t kVirtualKeyboardRows = 3;
+constexpr size_t kVirtualKeyboardPageSize = kVirtualKeyboardCols * kVirtualKeyboardRows;
 
 struct PinyinCandidateEntry
 {
@@ -232,24 +280,6 @@ struct PinyinCandidateEntry
 constexpr uint32_t kConversationScrollStartPauseMs = 500;
 constexpr uint32_t kConversationScrollStepMs = 250;
 constexpr uint32_t kConversationScrollEndPauseMs = 800;
-struct ComposeGroupDef
-{
-    const char* input;
-    const char* label;
-};
-
-constexpr ComposeGroupDef kComposeAbcGroups[] = {
-    {"ABC", "ABC"},
-    {"DEF", "DEF"},
-    {"GHI", "GHI"},
-    {"JKL", "JKL"},
-    {"!/-", "!/-"},
-    {"MNO", "MNO"},
-    {"PQRS", "PQRS"},
-    {"TUV", "TUV"},
-    {"WXYZ", "WXYZ"},
-    {".,?", ".,?"},
-};
 constexpr uint32_t kBootMinMs = 1800;
 constexpr uint32_t kComposeMultiTapWindowMs = 1500;
 constexpr uint32_t kLargeScreensaverRefreshMs = 60000;
@@ -415,8 +445,24 @@ constexpr size_t arrayCount(const T (&)[N])
     return N;
 }
 
+static_assert(arrayCount(kRadioItems) > 0, "radio settings must not be empty");
 static_assert(arrayCount(kDeviceItems) == arrayCount(kDeviceItemIds),
               "device settings labels and ids must stay aligned");
+
+size_t radioItemCount()
+{
+    return arrayCount(kRadioItems);
+}
+
+RadioSettingItem radioSettingItem(size_t index)
+{
+    return index < arrayCount(kRadioItems) ? kRadioItems[index].item : RadioSettingItem::Protocol;
+}
+
+const char* radioSettingLabel(size_t index)
+{
+    return index < arrayCount(kRadioItems) ? kRadioItems[index].label : "LORA";
+}
 
 DeviceSettingItem deviceSettingItem(size_t index)
 {
@@ -427,6 +473,30 @@ template <typename T>
 constexpr T clampValue(T value, T low, T high)
 {
     return value < low ? low : (value > high ? high : value);
+}
+
+template <size_t N>
+float stepOption(float current, const float (&options)[N], int delta)
+{
+    size_t nearest = 0;
+    float nearest_diff = std::fabs(current - options[0]);
+    for (size_t i = 1; i < N; ++i)
+    {
+        const float diff = std::fabs(current - options[i]);
+        if (diff < nearest_diff)
+        {
+            nearest = i;
+            nearest_diff = diff;
+        }
+    }
+
+    const int next = clampValue<int>(static_cast<int>(nearest) + delta, 0, static_cast<int>(N) - 1);
+    return options[next];
+}
+
+float stepClampedFloat(float current, int delta, float step, float low, float high)
+{
+    return clampValue(current + (static_cast<float>(delta) * step), low, high);
 }
 
 uint32_t normalizedScreenTimeoutMs(uint32_t timeout_ms)
@@ -568,11 +638,11 @@ const char* composeKeysetForMode(ui::mono::Runtime::ComposeMode mode)
     case ui::mono::Runtime::ComposeMode::Sym:
         return kComposeSymKeys;
     case ui::mono::Runtime::ComposeMode::Cn:
-        return kComposeAbcKeys;
+        return kComposeAlphaKeys;
     case ui::mono::Runtime::ComposeMode::AbcUpper:
     case ui::mono::Runtime::ComposeMode::AbcLower:
     default:
-        return kComposeAbcKeys;
+        return kComposeAlphaKeys;
     }
 }
 
@@ -581,17 +651,16 @@ const char* composeModeLabel(ui::mono::Runtime::ComposeMode mode)
     switch (mode)
     {
     case ui::mono::Runtime::ComposeMode::AbcLower:
-        return "abc";
     case ui::mono::Runtime::ComposeMode::AbcUpper:
-        return "ABC";
+        return "EN";
     case ui::mono::Runtime::ComposeMode::Num:
         return "123";
     case ui::mono::Runtime::ComposeMode::Sym:
-        return "SYM";
+        return "SYN";
     case ui::mono::Runtime::ComposeMode::Cn:
         return "CN";
     default:
-        return "ABC";
+        return "EN";
     }
 }
 
@@ -1061,16 +1130,6 @@ void pushFormattedLine(char (&lines)[N][40], size_t& line_count, const char* fmt
     ++line_count;
 }
 
-const char* composeAbcGroupLetters(size_t index)
-{
-    return index < arrayCount(kComposeAbcGroups) ? kComposeAbcGroups[index].input : "";
-}
-
-const char* composeAbcGroupLabel(size_t index)
-{
-    return index < arrayCount(kComposeAbcGroups) ? kComposeAbcGroups[index].label : "";
-}
-
 const char* protocolShortLabel(chat::MeshProtocol protocol)
 {
     return protocol == chat::MeshProtocol::MeshCore ? "MC" : "MT";
@@ -1081,27 +1140,26 @@ const char* protocolLabel(chat::MeshProtocol protocol)
     return protocol == chat::MeshProtocol::MeshCore ? "MeshCore" : "Meshtastic";
 }
 
-const char* const* radioItemsFor(chat::MeshProtocol protocol)
+bool encryptEnabled(const app::AppConfig& config);
+
+const char* meshtasticRegionLabel(const chat::MeshConfig& config)
 {
-    return protocol == chat::MeshProtocol::MeshCore ? kMeshCoreRadioItems : kMeshtasticRadioItems;
+    const auto* region = chat::meshtastic::findRegion(
+        static_cast<meshtastic_Config_LoRaConfig_RegionCode>(config.region));
+    return region ? region->label : "-";
 }
 
-size_t radioItemCount(chat::MeshProtocol protocol)
+const char* meshCoreRegionLabel(const chat::MeshConfig& config)
 {
-    return protocol == chat::MeshProtocol::MeshCore ? arrayCount(kMeshCoreRadioItems) : arrayCount(kMeshtasticRadioItems);
+    const auto* preset = chat::meshcore::findRegionPresetById(config.meshcore_region_preset);
+    return preset ? preset->title : "Custom";
 }
 
 const char* radioRegionLabel(const app::AppConfig& cfg)
 {
-    if (cfg.mesh_protocol == chat::MeshProtocol::Meshtastic)
-    {
-        const auto* region = chat::meshtastic::findRegion(
-            static_cast<meshtastic_Config_LoRaConfig_RegionCode>(cfg.meshtastic_config.region));
-        return region ? region->label : "-";
-    }
-
-    const auto* preset = chat::meshcore::findRegionPresetById(cfg.meshcore_config.meshcore_region_preset);
-    return preset ? preset->title : "Custom";
+    return cfg.mesh_protocol == chat::MeshProtocol::Meshtastic
+               ? meshtasticRegionLabel(cfg.meshtastic_config)
+               : meshCoreRegionLabel(cfg.meshcore_config);
 }
 
 void applyMeshCoreRegionPreset(chat::MeshConfig& config, const chat::meshcore::RegionPreset& preset)
@@ -1112,6 +1170,167 @@ void applyMeshCoreRegionPreset(chat::MeshConfig& config, const chat::meshcore::R
     config.meshcore_sf = preset.sf;
     config.meshcore_cr = preset.cr;
     config.tx_power = preset.tx_power_dbm;
+}
+
+void adjustMeshCoreRegionPreset(chat::MeshConfig& config, int delta)
+{
+    size_t count = 0;
+    const auto* table = chat::meshcore::getRegionPresetTable(&count);
+    if (!table || count == 0)
+    {
+        return;
+    }
+
+    int index = -1;
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (table[i].id == config.meshcore_region_preset)
+        {
+            index = static_cast<int>(i);
+            break;
+        }
+    }
+
+    if (index < 0 && delta <= 0)
+    {
+        config.meshcore_region_preset = 0;
+        return;
+    }
+
+    const int min_index = -1;
+    const int max_index = static_cast<int>(count) - 1;
+    index = clampValue(index + delta, min_index, max_index);
+    if (index < 0)
+    {
+        config.meshcore_region_preset = 0;
+        return;
+    }
+
+    applyMeshCoreRegionPreset(config, table[index]);
+}
+
+void formatBandwidth(char* out, size_t out_len, float bw_khz)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+
+    const float rounded = std::round(bw_khz);
+    if (std::fabs(bw_khz - rounded) < 0.01f)
+    {
+        std::snprintf(out, out_len, "%.0fk", rounded);
+    }
+    else if (std::fabs((bw_khz * 10.0f) - std::round(bw_khz * 10.0f)) < 0.01f)
+    {
+        std::snprintf(out, out_len, "%.1fk", bw_khz);
+    }
+    else
+    {
+        std::snprintf(out, out_len, "%.2fk", bw_khz);
+    }
+}
+
+void formatFrequency(char* out, size_t out_len, float freq_mhz)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+    std::snprintf(out, out_len, "%.3f", static_cast<double>(freq_mhz));
+}
+
+void formatOffset(char* out, size_t out_len, float offset_mhz)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+    std::snprintf(out, out_len, "%+.3f", static_cast<double>(offset_mhz));
+}
+
+void formatRadioSettingValue(const app::AppConfig& cfg, RadioSettingItem item, char* out, size_t out_len)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+    out[0] = '\0';
+
+    const auto& mt = cfg.meshtastic_config;
+    const auto& mc = cfg.meshcore_config;
+    switch (item)
+    {
+    case RadioSettingItem::Protocol:
+        std::snprintf(out, out_len, "%s", protocolLabel(cfg.mesh_protocol));
+        return;
+    case RadioSettingItem::MtRegion:
+        std::snprintf(out, out_len, "%s", meshtasticRegionLabel(mt));
+        return;
+    case RadioSettingItem::MtMode:
+        std::snprintf(out, out_len, "%s", mt.use_preset ? "PRESET" : "MANUAL");
+        return;
+    case RadioSettingItem::MtPreset:
+        std::snprintf(out, out_len, "%s",
+                      chat::meshtastic::presetDisplayName(
+                          static_cast<meshtastic_Config_LoRaConfig_ModemPreset>(mt.modem_preset)));
+        return;
+    case RadioSettingItem::MtBandwidth:
+        formatBandwidth(out, out_len, mt.bandwidth_khz);
+        return;
+    case RadioSettingItem::MtSpreadFactor:
+        std::snprintf(out, out_len, "SF%u", static_cast<unsigned>(mt.spread_factor));
+        return;
+    case RadioSettingItem::MtCodingRate:
+        std::snprintf(out, out_len, "4/%u", static_cast<unsigned>(mt.coding_rate));
+        return;
+    case RadioSettingItem::MtTxPower:
+        std::snprintf(out, out_len, "%ddBm", static_cast<int>(mt.tx_power));
+        return;
+    case RadioSettingItem::MtChannelSlot:
+        formatMeshtasticChannelSlot(out, out_len, mt.channel_num);
+        return;
+    case RadioSettingItem::MtOverrideFrequency:
+        if (mt.override_frequency_mhz <= 0.0f)
+        {
+            std::snprintf(out, out_len, "AUTO");
+        }
+        else
+        {
+            formatFrequency(out, out_len, mt.override_frequency_mhz);
+        }
+        return;
+    case RadioSettingItem::MtFrequencyOffset:
+        formatOffset(out, out_len, mt.frequency_offset_mhz);
+        return;
+    case RadioSettingItem::Encrypt:
+        std::snprintf(out, out_len, "%s", encryptEnabled(cfg) ? "ON" : "OFF");
+        return;
+    case RadioSettingItem::McRegion:
+        std::snprintf(out, out_len, "%s", meshCoreRegionLabel(mc));
+        return;
+    case RadioSettingItem::McFrequency:
+        formatFrequency(out, out_len, mc.meshcore_freq_mhz);
+        return;
+    case RadioSettingItem::McBandwidth:
+        formatBandwidth(out, out_len, mc.meshcore_bw_khz);
+        return;
+    case RadioSettingItem::McSpreadFactor:
+        std::snprintf(out, out_len, "SF%u", static_cast<unsigned>(mc.meshcore_sf));
+        return;
+    case RadioSettingItem::McCodingRate:
+        std::snprintf(out, out_len, "4/%u", static_cast<unsigned>(mc.meshcore_cr));
+        return;
+    case RadioSettingItem::McTxPower:
+        std::snprintf(out, out_len, "%ddBm", static_cast<int>(mc.tx_power));
+        return;
+    case RadioSettingItem::McChannelSlot:
+        std::snprintf(out, out_len, "%u", static_cast<unsigned>(mc.meshcore_channel_slot));
+        return;
+    case RadioSettingItem::McChannelName:
+        std::snprintf(out, out_len, "%s", mc.meshcore_channel_name);
+        return;
+    }
 }
 
 const char* gpsSatMaskLabel(uint8_t mask)
@@ -1450,6 +1669,10 @@ void Runtime::onIncomingText(const chat::MeshIncomingText& msg)
     if (host_.play_message_tone_fn)
     {
         host_.play_message_tone_fn();
+    }
+    if (host_.play_message_light_fn)
+    {
+        host_.play_message_light_fn();
     }
 }
 
@@ -1831,88 +2054,46 @@ void Runtime::handleInput(InputAction action)
         }
         else if (compose_focus_ == ComposeFocus::Body)
         {
-            if (isAlphaComposeMode(compose_mode_))
+            const char* keyset = composeKeysetForMode(compose_mode_);
+            const size_t key_count = std::strlen(keyset);
+            const size_t page_start = key_count == 0 ? 0U : ((compose_charset_index_ / kVirtualKeyboardPageSize) * kVirtualKeyboardPageSize);
+            const size_t page_end = std::min(key_count, page_start + kVirtualKeyboardPageSize);
+            if (key_count == 0)
             {
-                if (action == InputAction::Up)
-                {
-                    if (compose_abc_group_index_ >= 5U)
-                    {
-                        compose_abc_group_index_ -= 5U;
-                    }
-                    else if (compose_candidate_count_ > 0)
-                    {
-                        compose_focus_ = ComposeFocus::Candidate;
-                    }
-                }
-                else if (action == InputAction::Down)
-                {
-                    if (compose_abc_group_index_ < 5U)
-                    {
-                        compose_abc_group_index_ += 5U;
-                    }
-                    else
-                    {
-                        compose_focus_ = ComposeFocus::Action;
-                    }
-                }
-                else if (action == InputAction::Left)
-                {
-                    compose_abc_group_index_ = (compose_abc_group_index_ % 5U == 0U)
-                                                   ? (compose_abc_group_index_ + 4U)
-                                                   : (compose_abc_group_index_ - 1U);
-                }
-                else if (action == InputAction::Right)
-                {
-                    compose_abc_group_index_ = (compose_abc_group_index_ % 5U == 4U)
-                                                   ? (compose_abc_group_index_ - 4U)
-                                                   : (compose_abc_group_index_ + 1U);
-                }
-                else if (action == InputAction::Select || action == InputAction::Primary)
-                {
-                    const char* letters = composeAbcGroupLetters(compose_abc_group_index_);
-                    const size_t letter_count = std::strlen(letters);
-                    if (letter_count > 0)
-                    {
-                        const uint32_t now = nowMs();
-                        const bool can_cycle = compose_preedit_len_ > 0 &&
-                                               compose_abc_last_group_index_ == static_cast<int>(compose_abc_group_index_) &&
-                                               (now - compose_abc_last_tap_ms_) <= kComposeMultiTapWindowMs;
-                        if (can_cycle)
-                        {
-                            compose_abc_tap_index_ = (compose_abc_tap_index_ + 1U) % letter_count;
-                            compose_preedit_[compose_preedit_len_ - 1U] = letters[compose_abc_tap_index_];
-                            compose_abc_last_tap_ms_ = now;
-                            rebuildComposeCandidates();
-                        }
-                        else
-                        {
-                            compose_abc_tap_index_ = 0;
-                            appendComposeChar(letters[0]);
-                            compose_abc_last_group_index_ = static_cast<int>(compose_abc_group_index_);
-                            compose_abc_last_tap_ms_ = now;
-                        }
-                    }
-                }
-                else if (action == InputAction::Secondary)
-                {
-                    appendComposeChar(' ');
-                }
+                compose_charset_index_ = 0;
             }
-            else if (action == InputAction::Up && compose_candidate_count_ > 0)
+            else if (action == InputAction::Up)
             {
-                compose_focus_ = ComposeFocus::Candidate;
+                if (compose_charset_index_ >= page_start + kVirtualKeyboardCols)
+                {
+                    compose_charset_index_ -= kVirtualKeyboardCols;
+                }
+                else if (compose_candidate_count_ > 0)
+                {
+                    compose_focus_ = ComposeFocus::Candidate;
+                }
             }
             else if (action == InputAction::Down)
             {
-                compose_focus_ = ComposeFocus::Action;
+                const size_t next = compose_charset_index_ + kVirtualKeyboardCols;
+                if (next < page_end)
+                {
+                    compose_charset_index_ = next;
+                }
+                else
+                {
+                    compose_focus_ = ComposeFocus::Action;
+                }
             }
             else if (action == InputAction::Left)
             {
-                adjustComposeSelection(-1);
+                compose_charset_index_ = (compose_charset_index_ == page_start) ? (page_end - 1U)
+                                                                                 : (compose_charset_index_ - 1U);
             }
             else if (action == InputAction::Right)
             {
-                adjustComposeSelection(1);
+                compose_charset_index_ = (compose_charset_index_ + 1U >= page_end) ? page_start
+                                                                                   : (compose_charset_index_ + 1U);
             }
             else if (action == InputAction::Select || action == InputAction::Primary)
             {
@@ -2020,7 +2201,7 @@ void Runtime::handleInput(InputAction action)
         {
             --radio_index_;
         }
-        else if (action == InputAction::Down && radio_index_ + 1 < radioItemCount(app()->getConfig().mesh_protocol))
+        else if (action == InputAction::Down && radio_index_ + 1 < radioItemCount())
         {
             ++radio_index_;
         }
@@ -2030,8 +2211,7 @@ void Runtime::handleInput(InputAction action)
         }
         else if (action == InputAction::Right || action == InputAction::Select || action == InputAction::Primary)
         {
-            if (app()->getConfig().mesh_protocol == chat::MeshProtocol::MeshCore &&
-                radio_index_ + 1 == radioItemCount(app()->getConfig().mesh_protocol))
+            if (radioSettingItem(radio_index_) == RadioSettingItem::McChannelName)
             {
                 openCompose(EditTarget::MeshCoreChannelName, app()->getConfig().meshcore_config.meshcore_channel_name);
             }
@@ -3195,52 +3375,29 @@ void Runtime::renderCompose()
     }
     drawTextClipped(0, line_h * 3, display_.width(), candidate_line, false);
 
-    if (isAlphaComposeMode(compose_mode_))
+    const char* keyset = composeKeysetForMode(compose_mode_);
+    const size_t key_count = std::strlen(keyset);
+    const size_t page_start = key_count == 0 ? 0U : ((compose_charset_index_ / kVirtualKeyboardPageSize) * kVirtualKeyboardPageSize);
+    const int cell_w = std::max(1, display_.width() / static_cast<int>(kVirtualKeyboardCols));
+    for (size_t row = 0; row < kVirtualKeyboardRows; ++row)
     {
-        constexpr int kGroupCols = 5;
-        constexpr int kGroupX[kGroupCols] = {0, 26, 52, 78, 104};
-        constexpr int kGroupCellW[kGroupCols] = {26, 26, 26, 26, 24};
-        for (int row = 0; row < 2; ++row)
+        for (size_t col = 0; col < kVirtualKeyboardCols; ++col)
         {
-            for (int col = 0; col < kGroupCols; ++col)
+            const size_t key_index = page_start + row * kVirtualKeyboardCols + col;
+            if (key_index >= key_count)
             {
-                const size_t group_index = static_cast<size_t>(row * kGroupCols + col);
-                if (group_index >= arrayCount(kComposeAbcGroups))
-                {
-                    continue;
-                }
-
-                char cell[8] = {};
-                std::snprintf(cell, sizeof(cell), "%s", composeAbcGroupLabel(group_index));
-                const bool selected = compose_focus_ == ComposeFocus::Body && compose_abc_group_index_ == group_index;
-                drawTextClipped(kGroupX[col], line_h * (5 + row), kGroupCellW[col], cell, selected);
+                continue;
             }
-        }
-    }
-    else
-    {
-        const char* keyset = composeKeysetForMode(compose_mode_);
-        const size_t key_count = std::strlen(keyset);
-        const size_t page_start = key_count == 0 ? 0U : ((compose_charset_index_ / 12U) * 12U);
-        constexpr int kKeyCols = 6;
-        constexpr int kKeyCellW = 20;
-        for (int row = 0; row < 2; ++row)
-        {
-            for (int col = 0; col < kKeyCols; ++col)
-            {
-                const size_t key_index = page_start + static_cast<size_t>(row * kKeyCols + col);
-                if (key_index >= key_count)
-                {
-                    continue;
-                }
 
-                const bool selected = compose_focus_ == ComposeFocus::Body && key_index == compose_charset_index_;
-                const char key_char = keyset[key_index];
-                char cell[8] = {};
-                std::snprintf(cell, sizeof(cell), selected ? "[%c]" : " %c ",
-                              key_char == ' ' ? '_' : key_char);
-                text_renderer_.drawText(display_, col * kKeyCellW, line_h * (5 + row), cell, false);
-            }
+            const bool selected = compose_focus_ == ComposeFocus::Body && key_index == compose_charset_index_;
+            const char key_char = keyset[key_index];
+            char cell[8] = {};
+            std::snprintf(cell, sizeof(cell), " %c ", key_char == ' ' ? '_' : key_char);
+            drawTextClipped(static_cast<int>(col) * cell_w,
+                            line_h * (4 + static_cast<int>(row)),
+                            cell_w,
+                            cell,
+                            selected);
         }
     }
 
@@ -3264,8 +3421,7 @@ void Runtime::renderSettingsMenu()
 void Runtime::renderRadioSettings()
 {
     const auto protocol = app()->getConfig().mesh_protocol;
-    const char* const* items = radioItemsFor(protocol);
-    const size_t item_count = radioItemCount(protocol);
+    const size_t item_count = radioItemCount();
     if (item_count == 0)
     {
         return;
@@ -3279,58 +3435,27 @@ void Runtime::renderRadioSettings()
     char value[40] = {};
     auto& cfg = app()->getConfig();
     const int row_y = 12;
-    const int row_h = rowStrideFor(item_count, row_y, 4);
-    for (size_t i = 0; i < item_count; ++i)
+    const int row_h = std::max(1, text_renderer_.lineHeight());
+    const size_t visible = std::min(item_count, visibleRowsFrom(row_y, 4));
+    size_t start = 0;
+    if (item_count > visible)
     {
-        value[0] = '\0';
-        switch (i)
+        start = (radio_index_ + 1 > visible) ? (radio_index_ + 1 - visible) : 0U;
+        if (start + visible > item_count)
         {
-        case 0:
-            copyText(value, protocolLabel(cfg.mesh_protocol));
-            break;
-        case 1:
-            copyText(value, radioRegionLabel(cfg));
-            break;
-        case 2:
-            std::snprintf(value, sizeof(value), "%ddBm", static_cast<int>(cfg.activeMeshConfig().tx_power));
-            break;
-        case 3:
-            if (cfg.mesh_protocol == chat::MeshProtocol::Meshtastic)
-            {
-                copyText(value,
-                         chat::meshtastic::presetDisplayName(
-                             static_cast<meshtastic_Config_LoRaConfig_ModemPreset>(cfg.meshtastic_config.modem_preset)));
-            }
-            else
-            {
-                copyText(value, radioRegionLabel(cfg));
-            }
-            break;
-        case 4:
-            if (cfg.mesh_protocol == chat::MeshProtocol::Meshtastic)
-            {
-                formatMeshtasticChannelSlot(value, sizeof(value), cfg.meshtastic_config.channel_num);
-            }
-            else
-            {
-                std::snprintf(value, sizeof(value), "%u",
-                              static_cast<unsigned>(cfg.meshcore_config.meshcore_channel_slot));
-            }
-            break;
-        case 5:
-            copyText(value, encryptEnabled(cfg) ? "On" : "Off");
-            break;
-        case 6:
-            if (cfg.mesh_protocol == chat::MeshProtocol::MeshCore)
-            {
-                copyText(value, cfg.meshcore_config.meshcore_channel_name);
-            }
-            break;
+            start = item_count - visible;
         }
+    }
 
-        char line[48] = {};
-        std::snprintf(line, sizeof(line), "%s: %s", items[i], value);
-        drawTextClipped(0, row_y + static_cast<int>(i * static_cast<size_t>(row_h)),
+    for (size_t row = 0; row < visible && start + row < item_count; ++row)
+    {
+        const size_t i = start + row;
+        value[0] = '\0';
+        formatRadioSettingValue(cfg, radioSettingItem(i), value, sizeof(value));
+
+        char line[64] = {};
+        std::snprintf(line, sizeof(line), "%s: %s", radioSettingLabel(i), value);
+        drawTextClipped(0, row_y + static_cast<int>(row * static_cast<size_t>(row_h)),
                         display_.width(), line, i == radio_index_);
     }
 }
@@ -3374,6 +3499,12 @@ void Runtime::renderDeviceSettings()
         {
             const uint8_t volume = host_.message_tone_volume_fn ? host_.message_tone_volume_fn() : 0;
             std::snprintf(line, sizeof(line), "MSG TONE: %u%%", static_cast<unsigned>(volume));
+            break;
+        }
+        case DeviceSettingItem::MessageLight:
+        {
+            const bool enabled = host_.message_light_enabled_fn ? host_.message_light_enabled_fn() : false;
+            std::snprintf(line, sizeof(line), "MSG LIGHT: %s", enabled ? "ON" : "OFF");
             break;
         }
         case DeviceSettingItem::LedColor:
@@ -3435,14 +3566,11 @@ void Runtime::renderSettingPopup()
 
     if (is_radio)
     {
-        const auto protocol = setting_popup_config_.mesh_protocol;
-        const auto* items = (protocol == chat::MeshProtocol::Meshtastic) ? kMeshtasticRadioItems : kMeshCoreRadioItems;
-        const size_t count = radioItemCount(protocol);
-        if (setting_popup_index_ >= count)
+        if (setting_popup_index_ >= radioItemCount())
         {
             return;
         }
-        std::snprintf(title, sizeof(title), "%s", items[setting_popup_index_]);
+        std::snprintf(title, sizeof(title), "%s", radioSettingLabel(setting_popup_index_));
     }
     else if (is_device)
     {
@@ -4618,6 +4746,7 @@ void Runtime::beginSettingPopup(Page owner, size_t index)
     setting_popup_screen_timeout_ms_ = platform::ui::screen::timeout_ms();
     setting_popup_timezone_min_ = host_.timezone_offset_min_fn ? host_.timezone_offset_min_fn() : 0;
     setting_popup_message_tone_volume_ = host_.message_tone_volume_fn ? host_.message_tone_volume_fn() : 0;
+    setting_popup_message_light_enabled_ = host_.message_light_enabled_fn ? host_.message_light_enabled_fn() : true;
     setting_popup_status_led_color_index_ = host_.status_led_color_index_fn ? host_.status_led_color_index_fn() : 0;
     setting_popup_keyboard_light_enabled_ = host_.keyboard_light_enabled_fn ? host_.keyboard_light_enabled_fn() : false;
 }
@@ -4678,6 +4807,10 @@ void Runtime::confirmSettingPopup()
     {
         host_.set_message_tone_volume_fn(setting_popup_message_tone_volume_);
     }
+    if (host_.set_message_light_enabled_fn)
+    {
+        host_.set_message_light_enabled_fn(setting_popup_message_light_enabled_);
+    }
     if (host_.set_status_led_color_index_fn)
     {
         host_.set_status_led_color_index_fn(setting_popup_status_led_color_index_);
@@ -4717,106 +4850,148 @@ void Runtime::adjustSettingPopup(int delta)
     if (setting_popup_owner_ == Page::RadioSettings)
     {
         auto& cfg = setting_popup_config_;
-        switch (setting_popup_index_)
+        switch (radioSettingItem(setting_popup_index_))
         {
-        case 0:
+        case RadioSettingItem::Protocol:
             cfg.mesh_protocol = (cfg.mesh_protocol == chat::MeshProtocol::Meshtastic)
                                     ? chat::MeshProtocol::MeshCore
                                     : chat::MeshProtocol::Meshtastic;
             break;
-        case 1:
-            if (cfg.mesh_protocol == chat::MeshProtocol::Meshtastic)
+        case RadioSettingItem::MtRegion:
+        {
+            size_t count = 0;
+            const auto* table = chat::meshtastic::getRegionTable(&count);
+            if (count > 0)
             {
-                size_t count = 0;
-                const auto* table = chat::meshtastic::getRegionTable(&count);
-                if (count > 0)
+                size_t index = 0;
+                for (size_t i = 0; i < count; ++i)
                 {
-                    size_t index = 0;
-                    for (size_t i = 0; i < count; ++i)
+                    if (table[i].code ==
+                        static_cast<meshtastic_Config_LoRaConfig_RegionCode>(cfg.meshtastic_config.region))
                     {
-                        if (table[i].code ==
-                            static_cast<meshtastic_Config_LoRaConfig_RegionCode>(cfg.meshtastic_config.region))
-                        {
-                            index = i;
-                            break;
-                        }
+                        index = i;
+                        break;
                     }
-                    index = static_cast<size_t>(
-                        clampValue<int>(static_cast<int>(index) + delta, 0, static_cast<int>(count) - 1));
-                    cfg.meshtastic_config.region = static_cast<uint8_t>(table[index].code);
                 }
-            }
-            else
-            {
-                size_t count = 0;
-                const auto* table = chat::meshcore::getRegionPresetTable(&count);
-                if (count > 0)
-                {
-                    int index = -1;
-                    for (size_t i = 0; i < count; ++i)
-                    {
-                        if (table[i].id == cfg.meshcore_config.meshcore_region_preset)
-                        {
-                            index = static_cast<int>(i);
-                            break;
-                        }
-                    }
-                    index = clampValue(index + delta, 0, static_cast<int>(count) - 1);
-                    applyMeshCoreRegionPreset(cfg.meshcore_config, table[index]);
-                }
+                index = static_cast<size_t>(
+                    clampValue<int>(static_cast<int>(index) + delta, 0, static_cast<int>(count) - 1));
+                cfg.meshtastic_config.region = static_cast<uint8_t>(table[index].code);
             }
             break;
-        case 2:
-            cfg.activeMeshConfig().tx_power = static_cast<int8_t>(clampValue<int>(
-                static_cast<int>(cfg.activeMeshConfig().tx_power) + delta,
+        }
+        case RadioSettingItem::MtMode:
+            cfg.meshtastic_config.use_preset = !cfg.meshtastic_config.use_preset;
+            break;
+        case RadioSettingItem::MtPreset:
+        {
+            constexpr int kPresetMin = static_cast<int>(meshtastic_Config_LoRaConfig_ModemPreset_LONG_FAST);
+            constexpr int kPresetMax = static_cast<int>(meshtastic_Config_LoRaConfig_ModemPreset_LONG_TURBO);
+            cfg.meshtastic_config.modem_preset = static_cast<uint8_t>(clampValue(
+                static_cast<int>(cfg.meshtastic_config.modem_preset) + delta, kPresetMin, kPresetMax));
+            cfg.meshtastic_config.use_preset = true;
+            break;
+        }
+        case RadioSettingItem::MtBandwidth:
+            cfg.meshtastic_config.bandwidth_khz =
+                stepOption(cfg.meshtastic_config.bandwidth_khz, kLoRaBandwidthOptionsKhz, delta);
+            cfg.meshtastic_config.use_preset = false;
+            break;
+        case RadioSettingItem::MtSpreadFactor:
+            cfg.meshtastic_config.spread_factor = static_cast<uint8_t>(
+                clampValue<int>(static_cast<int>(cfg.meshtastic_config.spread_factor) + delta, 5, 12));
+            cfg.meshtastic_config.use_preset = false;
+            break;
+        case RadioSettingItem::MtCodingRate:
+            cfg.meshtastic_config.coding_rate = static_cast<uint8_t>(
+                clampValue<int>(static_cast<int>(cfg.meshtastic_config.coding_rate) + delta, 5, 8));
+            cfg.meshtastic_config.use_preset = false;
+            break;
+        case RadioSettingItem::MtTxPower:
+            cfg.meshtastic_config.tx_power = static_cast<int8_t>(clampValue<int>(
+                static_cast<int>(cfg.meshtastic_config.tx_power) + delta,
                 static_cast<int>(app::AppConfig::kTxPowerMinDbm),
                 static_cast<int>(app::AppConfig::kTxPowerMaxDbm)));
             break;
-        case 3:
-            if (cfg.mesh_protocol == chat::MeshProtocol::Meshtastic)
+        case RadioSettingItem::MtChannelSlot:
+        {
+            const int current = static_cast<int>(normalizedMeshtasticChannelNum(cfg.meshtastic_config.channel_num));
+            cfg.meshtastic_config.channel_num = static_cast<uint16_t>(clampValue<int>(
+                current + delta, 0, static_cast<int>(kMeshtasticChannelNumMax)));
+            break;
+        }
+        case RadioSettingItem::MtOverrideFrequency:
+            if (cfg.meshtastic_config.override_frequency_mhz <= 0.0f)
             {
-                constexpr int kPresetMin = static_cast<int>(meshtastic_Config_LoRaConfig_ModemPreset_LONG_FAST);
-                constexpr int kPresetMax = static_cast<int>(meshtastic_Config_LoRaConfig_ModemPreset_LONG_TURBO);
-                cfg.meshtastic_config.modem_preset = static_cast<uint8_t>(clampValue(
-                    static_cast<int>(cfg.meshtastic_config.modem_preset) + delta, kPresetMin, kPresetMax));
-                cfg.meshtastic_config.use_preset = true;
+                if (delta > 0)
+                {
+                    cfg.meshtastic_config.override_frequency_mhz =
+                        clampValue(chat::meshtastic::estimateFrequencyMhz(cfg.meshtastic_config.region,
+                                                                          cfg.meshtastic_config.modem_preset),
+                                   kRadioFrequencyMinMhz,
+                                   kRadioFrequencyMaxMhz);
+                }
             }
             else
             {
-                size_t count = 0;
-                const auto* table = chat::meshcore::getRegionPresetTable(&count);
-                if (count > 0)
+                const float next = cfg.meshtastic_config.override_frequency_mhz +
+                                   (static_cast<float>(delta) * kRadioFrequencyStepMhz);
+                if (next < kRadioFrequencyMinMhz)
                 {
-                    int index = -1;
-                    for (size_t i = 0; i < count; ++i)
-                    {
-                        if (table[i].id == cfg.meshcore_config.meshcore_region_preset)
-                        {
-                            index = static_cast<int>(i);
-                            break;
-                        }
-                    }
-                    index = clampValue(index + delta, 0, static_cast<int>(count) - 1);
-                    applyMeshCoreRegionPreset(cfg.meshcore_config, table[index]);
+                    cfg.meshtastic_config.override_frequency_mhz = 0.0f;
+                }
+                else
+                {
+                    cfg.meshtastic_config.override_frequency_mhz =
+                        clampValue(next, kRadioFrequencyMinMhz, kRadioFrequencyMaxMhz);
                 }
             }
             break;
-        case 4:
-            if (cfg.mesh_protocol == chat::MeshProtocol::Meshtastic)
-            {
-                const int current = static_cast<int>(normalizedMeshtasticChannelNum(cfg.meshtastic_config.channel_num));
-                cfg.meshtastic_config.channel_num = static_cast<uint16_t>(clampValue<int>(
-                    current + delta, 0, static_cast<int>(kMeshtasticChannelNumMax)));
-            }
-            else
-            {
-                cfg.meshcore_config.meshcore_channel_slot = static_cast<uint8_t>(clampValue<int>(
-                    static_cast<int>(cfg.meshcore_config.meshcore_channel_slot) + delta, 0, 15));
-            }
+        case RadioSettingItem::MtFrequencyOffset:
+            cfg.meshtastic_config.frequency_offset_mhz =
+                stepClampedFloat(cfg.meshtastic_config.frequency_offset_mhz,
+                                 delta,
+                                 kMeshtasticFrequencyOffsetStepMhz,
+                                 kMeshtasticFrequencyOffsetMinMhz,
+                                 kMeshtasticFrequencyOffsetMaxMhz);
             break;
-        case 5:
+        case RadioSettingItem::Encrypt:
             setEncryptEnabled(cfg, !encryptEnabled(cfg));
             break;
+        case RadioSettingItem::McRegion:
+            adjustMeshCoreRegionPreset(cfg.meshcore_config, delta);
+            break;
+        case RadioSettingItem::McFrequency:
+            cfg.meshcore_config.meshcore_freq_mhz =
+                stepClampedFloat(cfg.meshcore_config.meshcore_freq_mhz <= 0.0f ? 869.525f
+                                                                                : cfg.meshcore_config.meshcore_freq_mhz,
+                                 delta,
+                                 kRadioFrequencyStepMhz,
+                                 kRadioFrequencyMinMhz,
+                                 kRadioFrequencyMaxMhz);
+            break;
+        case RadioSettingItem::McBandwidth:
+            cfg.meshcore_config.meshcore_bw_khz =
+                stepOption(cfg.meshcore_config.meshcore_bw_khz, kLoRaBandwidthOptionsKhz, delta);
+            break;
+        case RadioSettingItem::McSpreadFactor:
+            cfg.meshcore_config.meshcore_sf = static_cast<uint8_t>(
+                clampValue<int>(static_cast<int>(cfg.meshcore_config.meshcore_sf) + delta, 5, 12));
+            break;
+        case RadioSettingItem::McCodingRate:
+            cfg.meshcore_config.meshcore_cr = static_cast<uint8_t>(
+                clampValue<int>(static_cast<int>(cfg.meshcore_config.meshcore_cr) + delta, 5, 8));
+            break;
+        case RadioSettingItem::McTxPower:
+            cfg.meshcore_config.tx_power = static_cast<int8_t>(clampValue<int>(
+                static_cast<int>(cfg.meshcore_config.tx_power) + delta,
+                static_cast<int>(app::AppConfig::kTxPowerMinDbm),
+                static_cast<int>(app::AppConfig::kTxPowerMaxDbm)));
+            break;
+        case RadioSettingItem::McChannelSlot:
+            cfg.meshcore_config.meshcore_channel_slot = static_cast<uint8_t>(clampValue<int>(
+                static_cast<int>(cfg.meshcore_config.meshcore_channel_slot) + delta, 0, 15));
+            break;
+        case RadioSettingItem::McChannelName:
         default:
             break;
         }
@@ -4836,6 +5011,9 @@ void Runtime::adjustSettingPopup(int delta)
         case DeviceSettingItem::MessageTone:
             setting_popup_message_tone_volume_ = static_cast<uint8_t>(
                 clampValue<int>(static_cast<int>(setting_popup_message_tone_volume_) + delta * 10, 0, 100));
+            break;
+        case DeviceSettingItem::MessageLight:
+            setting_popup_message_light_enabled_ = !setting_popup_message_light_enabled_;
             break;
         case DeviceSettingItem::LedColor:
         {
@@ -4899,45 +5077,8 @@ void Runtime::formatSettingPopupValue(char* out, size_t out_len) const
     if (setting_popup_owner_ == Page::RadioSettings)
     {
         const auto& cfg = setting_popup_config_;
-        switch (setting_popup_index_)
-        {
-        case 0:
-            std::snprintf(out, out_len, "%s", protocolShortLabel(cfg.mesh_protocol));
-            return;
-        case 1:
-            std::snprintf(out, out_len, "%s", radioRegionLabel(cfg));
-            return;
-        case 2:
-            std::snprintf(out, out_len, "%ddBm", static_cast<int>(cfg.activeMeshConfig().tx_power));
-            return;
-        case 3:
-            if (cfg.mesh_protocol == chat::MeshProtocol::Meshtastic)
-            {
-                std::snprintf(out, out_len, "%s",
-                              chat::meshtastic::presetDisplayName(
-                                  static_cast<meshtastic_Config_LoRaConfig_ModemPreset>(cfg.meshtastic_config.modem_preset)));
-            }
-            else
-            {
-                std::snprintf(out, out_len, "%s", radioRegionLabel(cfg));
-            }
-            return;
-        case 4:
-            if (cfg.mesh_protocol == chat::MeshProtocol::Meshtastic)
-            {
-                formatMeshtasticChannelSlot(out, out_len, cfg.meshtastic_config.channel_num);
-            }
-            else
-            {
-                std::snprintf(out, out_len, "SLOT %u", static_cast<unsigned>(cfg.meshcore_config.meshcore_channel_slot));
-            }
-            return;
-        case 5:
-            std::snprintf(out, out_len, "%s", encryptEnabled(cfg) ? "ON" : "OFF");
-            return;
-        default:
-            break;
-        }
+        formatRadioSettingValue(cfg, radioSettingItem(setting_popup_index_), out, out_len);
+        return;
     }
 
     if (setting_popup_owner_ == Page::DeviceSettings)
@@ -4952,6 +5093,9 @@ void Runtime::formatSettingPopupValue(char* out, size_t out_len) const
 #if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
         case DeviceSettingItem::MessageTone:
             std::snprintf(out, out_len, "%u%%", static_cast<unsigned>(setting_popup_message_tone_volume_));
+            return;
+        case DeviceSettingItem::MessageLight:
+            std::snprintf(out, out_len, "%s", setting_popup_message_light_enabled_ ? "ON" : "OFF");
             return;
         case DeviceSettingItem::LedColor:
         {
@@ -5143,21 +5287,21 @@ void Runtime::cycleComposeMode()
             compose_mode_ = ComposeMode::Num;
         }
     }
-    else if (compose_mode_ == ComposeMode::AbcLower)
-    {
-        compose_mode_ = ComposeMode::AbcUpper;
-    }
-    else if (compose_mode_ == ComposeMode::AbcUpper)
-    {
-        compose_mode_ = ComposeMode::Num;
-    }
     else if (compose_mode_ == ComposeMode::Num)
+    {
+        compose_mode_ = ComposeMode::AbcLower;
+    }
+    else if (compose_mode_ == ComposeMode::AbcLower || compose_mode_ == ComposeMode::AbcUpper)
+    {
+        compose_mode_ = ComposeMode::Cn;
+    }
+    else if (compose_mode_ == ComposeMode::Cn)
     {
         compose_mode_ = ComposeMode::Sym;
     }
     else
     {
-        compose_mode_ = ComposeMode::AbcLower;
+        compose_mode_ = ComposeMode::Num;
     }
     compose_charset_index_ = 0;
     compose_abc_tap_index_ = 0;
@@ -5315,7 +5459,7 @@ void Runtime::rebuildComposeCandidates()
         return;
     }
 
-    if (usesPhysicalTextInput() && compose_mode_ == ComposeMode::Cn)
+    if ((usesPhysicalTextInput() || usesSmartCompose()) && compose_mode_ == ComposeMode::Cn)
     {
         auto add_candidate = [this](const char* word) -> bool
         {
@@ -5432,7 +5576,7 @@ void Runtime::appendComposeChar(char ch)
         return;
     }
 
-    if (isAlphaComposeMode(compose_mode_) && isAlphaAscii(ch))
+    if ((isAlphaComposeMode(compose_mode_) || compose_mode_ == ComposeMode::Cn) && isAlphaAscii(ch))
     {
         appendChar(compose_preedit_, sizeof(compose_preedit_), compose_preedit_len_, upperAscii(ch));
         rebuildComposeCandidates();

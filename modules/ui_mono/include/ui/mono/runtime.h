@@ -76,6 +76,9 @@ struct HostCallbacks
     uint8_t (*message_tone_volume_fn)() = nullptr;
     void (*set_message_tone_volume_fn)(uint8_t volume_percent) = nullptr;
     void (*play_message_tone_fn)() = nullptr;
+    bool (*message_light_enabled_fn)() = nullptr;
+    void (*set_message_light_enabled_fn)(bool enabled) = nullptr;
+    void (*play_message_light_fn)() = nullptr;
     uint8_t (*status_led_color_index_fn)() = nullptr;
     void (*set_status_led_color_index_fn)(uint8_t color_index) = nullptr;
     uint8_t (*status_led_color_count_fn)() = nullptr;
@@ -275,6 +278,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver
     uint32_t setting_popup_screen_timeout_ms_ = 30000;
     int setting_popup_timezone_min_ = 0;
     uint8_t setting_popup_message_tone_volume_ = 45;
+    bool setting_popup_message_light_enabled_ = true;
     uint8_t setting_popup_status_led_color_index_ = 0;
     bool setting_popup_keyboard_light_enabled_ = false;
     size_t info_scroll_ = 0;

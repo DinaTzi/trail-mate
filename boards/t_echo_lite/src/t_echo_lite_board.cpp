@@ -104,7 +104,7 @@ constexpr uint8_t kAw21009Reset = 0x70;
 constexpr uint8_t kAw21009ChannelCount = 9;
 
 constexpr uint32_t kMessageToneSampleRateHz = 16129;
-constexpr uint16_t kMessageToneI2sWords = 512;
+constexpr uint16_t kMessageToneI2sWords = 2048;
 constexpr uint32_t kEpaperPresentMinIntervalMs = 250UL;
 constexpr int kEpaperMirrorPixels = ::boards::t_echo_lite::kBoardProfile.epaper.width *
                                     ::boards::t_echo_lite::kBoardProfile.epaper.height;
@@ -295,6 +295,7 @@ uint32_t TEchoLiteBoard::begin(uint32_t disable_hw_init)
     status_led_color_index_ = static_cast<uint8_t>(
         ::boards::t_echo_lite::settings_store::loadStatusLedColor() % statusLedColorCount());
     keyboard_light_enabled_ = ::boards::t_echo_lite::settings_store::loadKeyboardLightEnabled();
+    message_keyboard_light_enabled_ = ::boards::t_echo_lite::settings_store::loadMessageKeyboardLightEnabled();
     writeLedColor(status_led_color_index_, status_led_color_index_ != 0U);
     applyKeyboardBacklight();
     initialized_ = true;
@@ -415,6 +416,51 @@ void TEchoLiteBoard::setKeyboardLightEnabled(bool enabled)
 bool TEchoLiteBoard::keyboardLightEnabled() const
 {
     return keyboard_light_enabled_;
+}
+
+void TEchoLiteBoard::setMessageKeyboardLightEnabled(bool enabled)
+{
+    message_keyboard_light_enabled_ = enabled;
+    ::boards::t_echo_lite::settings_store::queueSaveMessageKeyboardLightEnabled(enabled);
+}
+
+bool TEchoLiteBoard::messageKeyboardLightEnabled() const
+{
+    return message_keyboard_light_enabled_;
+}
+
+void TEchoLiteBoard::blinkMessageKeyboardLight(uint8_t blink_count)
+{
+    if (!message_keyboard_light_enabled_ || blink_count == 0)
+    {
+        return;
+    }
+
+    if (!ensureKeyboardBacklightReady())
+    {
+        return;
+    }
+
+    const uint16_t configured_brightness =
+        static_cast<uint16_t>((static_cast<uint32_t>(keyboard_brightness_) *
+                               kBoardProfile.keyboard_backlight.max_brightness) /
+                              DEVICE_MAX_BRIGHTNESS_LEVEL);
+    const uint16_t visible_brightness =
+        std::max<uint16_t>(configured_brightness,
+                           static_cast<uint16_t>(kBoardProfile.keyboard_backlight.max_brightness / 2U));
+
+    for (uint8_t i = 0; i < blink_count; ++i)
+    {
+        (void)applyAw21009Brightness(*this, visible_brightness);
+        delay(90);
+        (void)applyAw21009Brightness(*this, 0);
+        if (i + 1 < blink_count)
+        {
+            delay(90);
+        }
+    }
+
+    applyKeyboardBacklight();
 }
 
 bool TEchoLiteBoard::ensureKeyboardBacklightReady()
