@@ -31,6 +31,8 @@
 #include "chat/infra/meshtastic/mt_radio_config.h"
 #include "chat/infra/meshtastic/mt_region.h"
 #include "chat/runtime/meshtastic_protocol_policy.h"
+#include "chat/runtime/meshtastic_self_announcement_core.h"
+#include "chat/runtime/self_identity_policy.h"
 #include "meshtastic/config.pb.h"
 #include "meshtastic/mqtt.pb.h"
 #include <Curve25519.h>
@@ -283,7 +285,6 @@ using chat::meshtastic::decodeKeyVerificationMessage;
 using chat::meshtastic::decodeTextMessage;
 using chat::meshtastic::decryptPayload;
 using chat::meshtastic::encodeAppData;
-using chat::meshtastic::encodeNodeInfoMessage;
 using chat::meshtastic::encodeTextMessage;
 using chat::meshtastic::PacketHeaderWire;
 using chat::meshtastic::parseWirePacket;
@@ -2586,38 +2587,22 @@ bool MtAdapter::sendNodeInfo()
 
 bool MtAdapter::sendNodeInfoTo(uint32_t dest, bool want_response, ChannelId channel)
 {
-    uint8_t data_buffer[256];
-    size_t data_size = sizeof(data_buffer);
+    chat::runtime::EffectiveSelfIdentity identity{};
+    chat::runtime::SelfIdentityInput identity_input{};
+    identity_input.node_id = node_id_;
+    identity_input.configured_long_name = user_long_name_.c_str();
+    identity_input.configured_short_name = user_short_name_.c_str();
+    identity_input.fallback_long_prefix = "lilygo";
+    identity_input.fallback_ble_prefix = "lilygo";
+    identity_input.allow_short_hex_fallback = true;
+    (void)chat::runtime::resolveEffectiveSelfIdentity(identity_input, &identity);
 
-    char user_id[16];
-    snprintf(user_id, sizeof(user_id), "!%08lX", (unsigned long)node_id_);
+    char user_id_override[16] = {};
     const app::AppConfig& cfg = app::configFacade().getConfig();
     if (cfg.aprs.self_enable && cfg.aprs.self_callsign[0] != '\0')
     {
-        strncpy(user_id, cfg.aprs.self_callsign, sizeof(user_id) - 1);
-        user_id[sizeof(user_id) - 1] = '\0';
-    }
-
-    char long_name[32];
-    char short_name[5];
-    uint16_t suffix = static_cast<uint16_t>(node_id_ & 0x0ffff);
-    if (!user_long_name_.empty())
-    {
-        strncpy(long_name, user_long_name_.c_str(), sizeof(long_name) - 1);
-        long_name[sizeof(long_name) - 1] = '\0';
-    }
-    else
-    {
-        snprintf(long_name, sizeof(long_name), "lilygo-%04X", suffix);
-    }
-    if (!user_short_name_.empty())
-    {
-        strncpy(short_name, user_short_name_.c_str(), sizeof(short_name) - 1);
-        short_name[sizeof(short_name) - 1] = '\0';
-    }
-    else
-    {
-        snprintf(short_name, sizeof(short_name), "%04X", suffix);
+        strncpy(user_id_override, cfg.aprs.self_callsign, sizeof(user_id_override) - 1);
+        user_id_override[sizeof(user_id_override) - 1] = '\0';
     }
 
     meshtastic_HardwareModel hw_model = meshtastic_HardwareModel_UNSET;
@@ -2630,49 +2615,45 @@ bool MtAdapter::sendNodeInfoTo(uint32_t dest, bool want_response, ChannelId chan
     hw_model = meshtastic_HardwareModel_T_LORA_PAGER;
 #endif
 
-    if (!encodeNodeInfoMessage(
-            user_id,
-            long_name,
-            short_name,
-            hw_model,
-            mac_addr_,
-            pki_public_key_.data(),
-            pki_ready_ ? pki_public_key_.size() : 0,
-            want_response,
-            data_buffer,
-            &data_size))
+    chat::runtime::MeshtasticAnnouncementRequest request{};
+    request.identity = identity;
+    request.mesh_config = config_;
+    request.channel = channel;
+    request.packet_id = next_packet_id_++;
+    request.dest_node = dest;
+    request.hop_limit = config_.hop_limit;
+    request.want_response = want_response;
+    request.want_ack = want_response && (dest != kBroadcastNodeId);
+    request.user_id_override = user_id_override[0] != '\0' ? user_id_override : nullptr;
+    request.hw_model = hw_model;
+    request.mac_addr = mac_addr_;
+    if (pki_ready_)
+    {
+        request.public_key = pki_public_key_.data();
+        request.public_key_len = pki_public_key_.size();
+    }
+
+    chat::runtime::MeshtasticAnnouncementPacket packet{};
+    if (!chat::runtime::MeshtasticSelfAnnouncementCore::buildNodeInfoPacket(request, &packet))
     {
         return false;
     }
 
+    const char* logged_user_id = request.user_id_override ? request.user_id_override : "";
+    char default_user_id[16] = {};
+    if (!request.user_id_override)
+    {
+        snprintf(default_user_id, sizeof(default_user_id), "!%08lX", (unsigned long)node_id_);
+        logged_user_id = default_user_id;
+    }
     LORA_LOG("[LORA] NodeInfo user_id=%s short=%s long=%s\n",
-             user_id, short_name, long_name);
-
-    uint8_t wire_buffer[512];
-    size_t wire_size = sizeof(wire_buffer);
-
-    uint8_t channel_hash =
-        (channel == ChannelId::SECONDARY) ? secondary_channel_hash_ : primary_channel_hash_;
-    uint8_t hop_limit = config_.hop_limit;
-    bool want_ack = want_response && (dest != 0xFFFFFFFF);
-    const uint8_t* psk =
-        (channel == ChannelId::SECONDARY) ? secondary_psk_ : primary_psk_;
-    size_t psk_len =
-        (channel == ChannelId::SECONDARY) ? secondary_psk_len_ : primary_psk_len_;
-    const uint32_t msg_id = next_packet_id_++;
-
-    if (!buildWirePacket(data_buffer, data_size, node_id_, msg_id,
-                         dest, channel_hash, hop_limit, want_ack,
-                         psk, psk_len, wire_buffer, &wire_size))
-    {
-        return false;
-    }
+             logged_user_id, identity.short_name, identity.long_name);
     LORA_LOG("[LORA] TX nodeinfo wire ch=0x%02X idx=%u hop=%u wire=%u\n",
-             channel_hash,
+             packet.channel_hash,
              (unsigned)(channel == ChannelId::SECONDARY ? 1 : 0),
-             hop_limit,
-             (unsigned)wire_size);
-    std::string nodeinfo_full_hex = toHex(wire_buffer, wire_size, wire_size);
+             request.hop_limit,
+             (unsigned)packet.wire_size);
+    std::string nodeinfo_full_hex = toHex(packet.wire, packet.wire_size, packet.wire_size);
     LORA_LOG("[LORA] TX nodeinfo full packet hex: %s\n", nodeinfo_full_hex.c_str());
 
     if (!board_.isRadioOnline())
@@ -2680,14 +2661,14 @@ bool MtAdapter::sendNodeInfoTo(uint32_t dest, bool want_response, ChannelId chan
         return false;
     }
 
-    bool ok = transmitWirePacket(wire_buffer, wire_size);
-    if (ok && dest == 0xFFFFFFFF)
+    bool ok = transmitWirePacket(packet.wire, packet.wire_size);
+    if (ok && dest == kBroadcastNodeId)
     {
         last_nodeinfo_ms_ = millis();
     }
     LORA_LOG("[LORA] TX nodeinfo id=%08lX len=%u ok=%d\n",
-             (unsigned long)msg_id,
-             (unsigned)wire_size,
+             (unsigned long)request.packet_id,
+             (unsigned)packet.wire_size,
              ok ? 1 : 0);
     return ok;
 }

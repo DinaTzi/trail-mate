@@ -17,8 +17,8 @@ Primary root cause:
 | --- | --- | --- | --- |
 | Meshtastic NodeInfo peer reannounce | Shared policy in working tree | Medium | ESP32 and nRF now call the same reannounce gate; platform adapters still own the actual queue/send IO. |
 | Meshtastic broadcast `want_response` | Shared policy in working tree | High | ESP32 and nRF now share the app-data destination/ACK/response decision; broadcast air ACK is suppressed while request response intent is preserved. |
-| Meshtastic request/reply core | Partially shared | Medium | NodeInfo/Position reply gating, TraceRoute reply gating, TraceRoute payload mutation, and TraceRoute/Position action lifecycle tracking are shared; actual reply send still lives in adapters/UI. |
-| Meshtastic duplicated policy ownership | Mostly shared | Medium | App-data send intent, NodeInfo reannounce gate, NodeInfo/Position reply gates, TraceRoute reply gate, TraceRoute payload mutation, TraceRoute/Position result lifecycle, and PKI/NO_CHANNEL resync decisions now live in shared runtime/policy. Packet construction and radio IO still live in adapters. |
+| Meshtastic request/reply core | Partially shared | Medium | NodeInfo/Position reply gating, TraceRoute reply gating, TraceRoute payload mutation, and TraceRoute/Position action lifecycle tracking are shared; NodeInfo reply packet construction is shared, while Position reply send still lives in adapters/UI. |
+| Meshtastic duplicated policy ownership | Mostly shared | Medium | App-data send intent, NodeInfo reannounce gate, NodeInfo/Position reply gates, NodeInfo self-announcement packet construction, TraceRoute reply gate, TraceRoute payload mutation, TraceRoute/Position result lifecycle, and PKI/NO_CHANNEL resync decisions now live in shared runtime/policy. Position packet construction and radio IO still live in adapters. |
 | MeshCore NodeInfo query/reply | Shared runtime/effects | Medium | ESP32 and nRF now route `requestNodeInfo()` through `MeshCoreRuntime` and shared control payload codecs; platform adapters still own packet IO/projection. |
 | MeshCore trace | Shared lifecycle, platform-limited routing | Medium | ESP32 and nRF use native `PAYLOAD_TYPE_TRACE` and shared completion/timeout policy; nRF still uses a minimal one-hop hash route. |
 | MeshCore app-data ACK/capability | Shared lifecycle | Medium | ESP32 and nRF now declare ACK tracking only when runtime pending/completion handling is wired. ACK frame scheduling remains adapter IO. |
@@ -73,9 +73,17 @@ Current state:
   `nodeinfo_reply_ms_` now tracks reply suppression separately.
 - Platform adapters still own the IO side: building, queueing, logging, and channel choice.
 
+Current state:
+
+- NodeInfo reply packet construction now routes through
+  `chat::runtime::MeshtasticSelfAnnouncementCore` on nRF52, ESP32 Arduino, and the ESP-IDF radio shim.
+- The shared request carries platform-provided user-id override and air ACK intent so ESP32 APRS callsign
+  override and unicast NodeInfo ACK behavior remain explicit inputs instead of hidden adapter branches.
+- Platform adapters still own radio IO, channel availability, and when to transmit the resulting wire packet.
+
 Residual risk:
 
-- NodeInfo reply packet construction and direct send still live in platform adapters, even though
+- Position reply packet construction and direct send still live in platform adapters, even though
   the reply gate and nRF state separation now match the intended concepts.
 
 ### MT-002 Broadcast `want_response`
@@ -202,8 +210,8 @@ Current state:
 
 Residual risk:
 
-- NodeInfo payload construction still lives in platform adapters, so PKI resync is shared at decision
-  level but not yet at packet-builder level.
+- PKI resync now uses shared NodeInfo packet construction when it emits `SendNodeInfoEffect`; Position
+  availability and payload construction remain platform-owned.
 
 ## MeshCore Drift Items
 
@@ -313,7 +321,7 @@ Residual risk:
 
 1. Add parity tests that assert ESP32 and nRF adapters advertise the fine-grained capabilities they actually
    execute.
-2. Extract shared Meshtastic NodeInfo/Position packet construction and availability policy.
+2. Extract shared Meshtastic Position packet construction and availability policy.
 3. Move MeshCore direct route / identity-key policy toward shared runtime before expanding nRF behavior.
 4. Add capability fields for MeshCore direct-route tables, identity/key exchange, and rich trace projection if UI
    needs to expose those actions directly.
