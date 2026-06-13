@@ -290,8 +290,6 @@ set(TRAIL_MATE_LINUX_UI_SHELL_SOURCES
     "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/ui/shell_ui_runner.cpp"
     "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/ui/ui_common.cpp"
     "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/ui_status.cpp"
-    "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/ui/gps_shared_compat.cpp"
-    "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/ui/mt_protocol_air_compat.cpp"
     "${TRAIL_MATE_LINUX_COMMON_SRC_ROOT}/ui/widgets/map/map_tiles.cpp"
     # modules/ui_shared �?assets
     "${TRAIL_MATE_UI_SHARED_SRC_ROOT}/ui/assets/Chat.c"

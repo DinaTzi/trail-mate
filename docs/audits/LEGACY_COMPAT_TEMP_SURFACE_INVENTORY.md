@@ -711,36 +711,38 @@ Category:
 - compatibility shims
 
 Current location:
-- `modules/ui_shared/include/ui/presentation_sources/legacy_*`
-- `modules/ui_shared/include/ui/map_tiles/legacy_filesystem_map_tile_source.h`
-- `modules/ui_shared/include/ui/team_actions/legacy_team_action_bridge.h`
-- `docs/audits/UI_SHARED_COMPATIBILITY_SHIM_POLICY.md`
+- removed from active include and build surfaces.
 
 Current callers:
-- `cmake/TrailMateLinuxSources.cmake`
-- compatibility tests and historical include paths
-- docs and checker policy
+- none from active source or build inputs.
+- docs and checker policy assert the shim surface stays retired.
 
 Current responsibility:
-- preserves old include paths while stable runtime modules own replacements.
+- historical record of removed forwarding shims and Linux compatibility
+  translation units.
 
 Is this final architecture?
-- No.
+- Yes.
 
 Final owner:
 - stable modules such as `ui_chat_runtime`, `ui_key_verification_runtime`,
-  `ui_map_runtime`, `ui_presentation`, and `ui_legacy_adapters` only where
-  compatibility aliasing is explicitly allowed.
+  `ui_map_runtime`, `ui_presentation`, `platform/linux/common`, and
+  docs/archive for history.
 
 Disposition:
-- Keep as Deprecated Alias Temporarily.
+- Deleted.
+
+Final status:
+- Retired from active include and build surfaces.
 
 Delete condition:
-- no production or downstream include path uses the old `ui_shared` forwarding
-  headers and compatibility tests can be removed or relocated.
+- Satisfied: no production include path uses the old `ui_shared` forwarding
+  headers, and Linux `gps_shared_compat.cpp` / `mt_protocol_air_compat.cpp`
+  have left `cmake/TrailMateLinuxSources.cmake`.
 
 Risk:
-- medium; deleting early breaks downstream includes.
+- low-medium; downstream consumers must use the stable runtime/module headers
+  directly.
 
 ## Surface: LegacyChatDeliveryActionBridge
 
