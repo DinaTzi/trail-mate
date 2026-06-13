@@ -382,10 +382,9 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     runtime::RuntimeContext buildRuntimeContext() const;
     bool executeProtocolEffects(const runtime::ProtocolEffects& effects);
     bool executeProtocolEffect(const runtime::ProtocolEffect& effect);
+    MeshActionResult executeDiscoverIntentDetailed(MeshDiscoveryAction action);
     MeshActionResult executeDiscoveryEffectsDetailed(const runtime::ProtocolEffects& effects);
-    MeshActionResult sendDiscoverRequestLocalDetailed();
     MeshActionResult sendDiscoverRequestLocalDetailed(const runtime::SendDiscoverRequestEffect& effect);
-    bool sendDiscoverRequestLocal();
     MeshActionResult sendIdentityAdvertDetailed(bool broadcast);
     MeshActionResult sendIdentityAdvertDetailed(bool broadcast, bool include_location,
                                                 int32_t lat_i6, int32_t lon_i6);

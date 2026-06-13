@@ -370,6 +370,8 @@ Current C++17 migration state:
 - Direct-route send decision for ESP32 MeshCore direct text/app-data now uses shared
   `MeshCoreDirectRoutePolicy`: missing peer pubkey triggers discover/failure, selected routes use direct path,
   and route/channel fallback remains explicit without redefining direct-secret material.
+- ESP32 MeshCore direct text/app-data no longer fires missing-key discover through an adapter-local send shortcut;
+  it enters `DiscoverIntent -> MeshCoreRuntime -> SendDiscoverRequestEffect`, then the adapter executes the effect.
 - Incoming MeshCore discover request/response control payloads now flow through `MeshCoreRuntime`: filter/since
   matching emits `SendDiscoverResponseEffect`, and discover responses emit `PublishNodeInfoEffect` plus
   `UpdatePeerRouteEffect`.

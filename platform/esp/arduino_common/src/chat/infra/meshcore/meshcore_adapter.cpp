@@ -1444,7 +1444,7 @@ void MeshCoreAdapter::maybeAutoDiscoverMissingPeer(uint8_t peer_hash, uint32_t n
         return;
     }
 
-    if (sendDiscoverRequestLocal())
+    if (executeDiscoverIntentDetailed(MeshDiscoveryAction::ScanLocal).ok)
     {
         last_auto_discover_hash_ = peer_hash;
         last_auto_discover_ms_ = now_ms;
@@ -2281,6 +2281,11 @@ bool MeshCoreAdapter::triggerDiscoveryAction(MeshDiscoveryAction action)
 
 MeshActionResult MeshCoreAdapter::triggerDiscoveryActionDetailed(MeshDiscoveryAction action)
 {
+    return executeDiscoverIntentDetailed(action);
+}
+
+MeshActionResult MeshCoreAdapter::executeDiscoverIntentDetailed(MeshDiscoveryAction action)
+{
     runtime::DiscoverIntent intent{};
     intent.action = action;
     intent.type_filter = kMeshCoreDiscoverTypeFilterAll;
@@ -2308,16 +2313,6 @@ MeshActionResult MeshCoreAdapter::executeDiscoveryEffectsDetailed(const runtime:
         }
     }
     return result;
-}
-
-MeshActionResult MeshCoreAdapter::sendDiscoverRequestLocalDetailed()
-{
-    runtime::SendDiscoverRequestEffect effect{};
-    effect.protocol = MeshProtocol::MeshCore;
-    effect.tag = static_cast<uint32_t>(esp_random());
-    effect.type_filter = kMeshCoreDiscoverTypeFilterAll;
-    effect.rx_guard_ms = kDiscoverRxGuardMs;
-    return sendDiscoverRequestLocalDetailed(effect);
 }
 
 MeshActionResult MeshCoreAdapter::sendDiscoverRequestLocalDetailed(const runtime::SendDiscoverRequestEffect& effect)
@@ -2370,11 +2365,6 @@ MeshActionResult MeshCoreAdapter::sendDiscoverRequestLocalDetailed(const runtime
                  result.detail,
                  toHex(frame, frame_len, frame_len).c_str());
     return result;
-}
-
-bool MeshCoreAdapter::sendDiscoverRequestLocal()
-{
-    return sendDiscoverRequestLocalDetailed().ok;
 }
 
 bool MeshCoreAdapter::sendIdentityAdvert(bool broadcast)
@@ -3109,7 +3099,7 @@ MeshActionResult MeshCoreAdapter::sendDirectTextDetailed(ChannelId channel, cons
     {
         if (route_decision.should_discover)
         {
-            sendDiscoverRequestLocal();
+            executeDiscoverIntentDetailed(MeshDiscoveryAction::ScanLocal);
         }
         return MeshActionResult::fail(MeshOperationFailure::PeerKeyMissing);
     }
@@ -3288,7 +3278,7 @@ bool MeshCoreAdapter::sendAppData(ChannelId channel, uint32_t portnum,
                          static_cast<unsigned>(portnum));
             if (route_decision.should_discover)
             {
-                sendDiscoverRequestLocal();
+                executeDiscoverIntentDetailed(MeshDiscoveryAction::ScanLocal);
             }
             return false;
         }
