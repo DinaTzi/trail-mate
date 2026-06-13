@@ -31,12 +31,52 @@ void shared_spi_unlock()
 
 bool LilyGoDispArduinoSPI::lock(TickType_t xTicksToWait)
 {
-    return xSemaphoreTake(_lock, xTicksToWait) == pdTRUE;
+    if (_lock == nullptr)
+    {
+        return false;
+    }
+
+    if (xSemaphoreTakeRecursive(_lock, xTicksToWait) != pdTRUE)
+    {
+        return false;
+    }
+
+    TaskHandle_t current = xTaskGetCurrentTaskHandle();
+    if (_lock_owner == current)
+    {
+        _lock_depth++;
+    }
+    else
+    {
+        _lock_owner = current;
+        _lock_depth = 1;
+    }
+    return true;
 }
 
 void LilyGoDispArduinoSPI::unlock()
 {
-    xSemaphoreGive(_lock);
+    if (_lock == nullptr)
+    {
+        return;
+    }
+
+    TaskHandle_t current = xTaskGetCurrentTaskHandle();
+    if (_lock_owner != current || _lock_depth == 0)
+    {
+        return;
+    }
+
+    if (xSemaphoreGiveRecursive(_lock) != pdTRUE)
+    {
+        return;
+    }
+
+    _lock_depth--;
+    if (_lock_depth == 0)
+    {
+        _lock_owner = nullptr;
+    }
 }
 
 void LilyGoDispArduinoSPI::setBrightness(uint8_t level)
@@ -54,7 +94,12 @@ bool LilyGoDispArduinoSPI::init(int sck,
                                 uint32_t freq_Mhz,
                                 SPIClass& spi)
 {
-    _lock = xSemaphoreCreateMutex();
+    _lock = xSemaphoreCreateRecursiveMutex();
+    if (_lock == nullptr)
+    {
+        return false;
+    }
+
     _spi = &spi;
     g_display_spi = this;
 
@@ -107,7 +152,6 @@ bool LilyGoDispArduinoSPI::init(int sck,
     {
         digitalWrite(_backlight, (_brightness > 0) ? HIGH : LOW);
     }
-    xSemaphoreGive(_lock);
     return true;
 }
 
@@ -135,7 +179,16 @@ void LilyGoDispArduinoSPI::setRotation(uint8_t rotation)
 
 void LilyGoDispArduinoSPI::pushColors(uint16_t* data, uint32_t len)
 {
-    xSemaphoreTake(_lock, portMAX_DELAY);
+    if (!lock(portMAX_DELAY))
+    {
+        return;
+    }
+    pushColorsLocked(data, len);
+    unlock();
+}
+
+void LilyGoDispArduinoSPI::pushColorsLocked(uint16_t* data, uint32_t len)
+{
     digitalWrite(_cs, LOW);
     _spi->beginTransaction(SPISettings(_spi_freq, MSBFIRST, SPI_MODE0));
     digitalWrite(_dc, HIGH);
@@ -169,13 +222,17 @@ void LilyGoDispArduinoSPI::pushColors(uint16_t* data, uint32_t len)
     }
     _spi->endTransaction();
     digitalWrite(_cs, HIGH);
-    xSemaphoreGive(_lock);
 }
 
 void LilyGoDispArduinoSPI::pushColors(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t* color)
 {
-    setAddrWindow(x1, y1, x1 + x2 - 1, y1 + y2 - 1);
-    pushColors(color, x2 * y2);
+    if (!lock(portMAX_DELAY))
+    {
+        return;
+    }
+    setAddrWindowLocked(x1, y1, x1 + x2 - 1, y1 + y2 - 1);
+    pushColorsLocked(color, x2 * y2);
+    unlock();
 }
 
 void LilyGoDispArduinoSPI::sleep()
@@ -190,6 +247,16 @@ void LilyGoDispArduinoSPI::wakeup()
 
 void LilyGoDispArduinoSPI::setAddrWindow(uint16_t xs, uint16_t ys, uint16_t xe, uint16_t ye)
 {
+    if (!lock(portMAX_DELAY))
+    {
+        return;
+    }
+    setAddrWindowLocked(xs, ys, xe, ye);
+    unlock();
+}
+
+void LilyGoDispArduinoSPI::setAddrWindowLocked(uint16_t xs, uint16_t ys, uint16_t xe, uint16_t ye)
+{
     xs += _offset_x;
     ys += _offset_y;
     xe += _offset_x;
@@ -201,13 +268,22 @@ void LilyGoDispArduinoSPI::setAddrWindow(uint16_t xs, uint16_t ys, uint16_t xe, 
     };
     for (uint32_t i = 0; i < 3; i++)
     {
-        writeParams(t[i].cmd, t[i].data, t[i].len);
+        writeParamsLocked(t[i].cmd, t[i].data, t[i].len);
     }
 }
 
 void LilyGoDispArduinoSPI::writeCommand(uint8_t cmd)
 {
-    xSemaphoreTake(_lock, portMAX_DELAY);
+    if (!lock(portMAX_DELAY))
+    {
+        return;
+    }
+    writeCommandLocked(cmd);
+    unlock();
+}
+
+void LilyGoDispArduinoSPI::writeCommandLocked(uint8_t cmd)
+{
     digitalWrite(_cs, LOW);
     _spi->beginTransaction(SPISettings(_spi_freq, MSBFIRST, SPI_MODE0));
     digitalWrite(_dc, LOW);
@@ -215,29 +291,46 @@ void LilyGoDispArduinoSPI::writeCommand(uint8_t cmd)
     digitalWrite(_dc, HIGH);
     _spi->endTransaction();
     digitalWrite(_cs, HIGH);
-    xSemaphoreGive(_lock);
 }
 
 void LilyGoDispArduinoSPI::writeData(uint8_t data)
 {
-    xSemaphoreTake(_lock, portMAX_DELAY);
+    if (!lock(portMAX_DELAY))
+    {
+        return;
+    }
+    writeDataLocked(data);
+    unlock();
+}
+
+void LilyGoDispArduinoSPI::writeDataLocked(uint8_t data)
+{
     digitalWrite(_cs, LOW);
     _spi->beginTransaction(SPISettings(_spi_freq, MSBFIRST, SPI_MODE0));
     digitalWrite(_dc, HIGH);
     _spi->write(data);
     _spi->endTransaction();
     digitalWrite(_cs, HIGH);
-    xSemaphoreGive(_lock);
 }
 
 void LilyGoDispArduinoSPI::writeParams(uint8_t cmd, uint8_t* data, size_t length)
 {
-    writeCommand(cmd);
+    if (!lock(portMAX_DELAY))
+    {
+        return;
+    }
+    writeParamsLocked(cmd, data, length);
+    unlock();
+}
+
+void LilyGoDispArduinoSPI::writeParamsLocked(uint8_t cmd, uint8_t* data, size_t length)
+{
+    writeCommandLocked(cmd);
     if (data != nullptr)
     {
         for (size_t i = 0; i < length; i++)
         {
-            writeData(data[i]);
+            writeDataLocked(data[i]);
         }
     }
 }

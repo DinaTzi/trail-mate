@@ -2,6 +2,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "platform/esp/common/shared_spi_lock.h"
 
 #include <stddef.h>
@@ -131,6 +132,14 @@ class LilyGoDispArduinoSPI
     const DispRotationConfig_t* _rotation_configs;
     DispTransferConfig_t _transfer_config{};
     SemaphoreHandle_t _lock = nullptr;
+    TaskHandle_t _lock_owner = nullptr;
+    uint32_t _lock_depth = 0;
+
+    void pushColorsLocked(uint16_t* data, uint32_t len);
+    void writeParamsLocked(uint8_t cmd, uint8_t* data = nullptr, size_t length = 0);
+    void writeDataLocked(uint8_t data);
+    void writeCommandLocked(uint8_t cmd);
+    void setAddrWindowLocked(uint16_t xs, uint16_t ys, uint16_t xe, uint16_t ye);
 
   public:
     uint16_t _width = 0;

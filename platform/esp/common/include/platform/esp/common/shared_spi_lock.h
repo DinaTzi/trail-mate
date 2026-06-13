@@ -19,6 +19,11 @@ class SharedSpiLockGuard
     {
     }
 
+    SharedSpiLockGuard(const SharedSpiLockGuard&) = delete;
+    SharedSpiLockGuard& operator=(const SharedSpiLockGuard&) = delete;
+    SharedSpiLockGuard(SharedSpiLockGuard&&) = delete;
+    SharedSpiLockGuard& operator=(SharedSpiLockGuard&&) = delete;
+
     ~SharedSpiLockGuard()
     {
         if (locked_)
