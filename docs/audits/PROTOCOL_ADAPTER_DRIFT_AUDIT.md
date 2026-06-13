@@ -22,7 +22,7 @@ Primary root cause:
 | MeshCore NodeInfo query/reply | Shared runtime/effects | Medium | ESP32 and nRF now route `requestNodeInfo()` through `MeshCoreRuntime` and shared control payload codecs; platform adapters still own packet IO/projection. |
 | MeshCore trace | Shared lifecycle, platform-limited routing | Medium | ESP32 and nRF use native `PAYLOAD_TYPE_TRACE` and shared completion/timeout policy; nRF still uses a minimal one-hop hash route. |
 | MeshCore app-data ACK/capability | Shared lifecycle | Medium | ESP32 and nRF now declare ACK tracking only when runtime pending/completion handling is wired. ACK frame scheduling remains adapter IO. |
-| MeshCore direct routing/identity | Confirmed platform gap | High | ESP32 has richer peer routes, identity, secrets, and direct path behavior; nRF path is simplified. |
+| MeshCore direct routing/identity | Capability-split platform gap | High | ESP32 advertises direct route table, identity keys, peer secret derivation, and rich trace projection; nRF advertises identity keys and peer secret derivation only. |
 | MeshCore duplicated/incomplete ownership | Confirmed architecture debt | Critical | MeshCore protocol truth is split between shared helpers, ESP32 adapter, and nRF simplified adapter. |
 | Capability granularity | Fine-grained flags added | Medium | Coarse legacy fields remain for compatibility; new flags describe NodeInfo, Position, TraceRoute, app response, and ACK tracking separately. |
 
@@ -318,8 +318,8 @@ Current state:
 
 Residual risk:
 
-- There are still no separate capability fields for MeshCore direct route tables, identity-key exchange, peer
-  secret derivation, or rich trace route projection. Those remain documented platform differences.
+- MeshCore direct route tables, identity keys, peer secret derivation, and rich trace route projection now have
+  separate capability fields. The remaining debt is policy ownership, not capability visibility.
 
 ## Immediate Recommended Fix Order
 
@@ -327,8 +327,8 @@ Residual risk:
    execute.
 2. Extract shared Meshtastic Position availability policy.
 3. Move MeshCore direct route / identity-key policy toward shared runtime before expanding nRF behavior.
-4. Add capability fields for MeshCore direct-route tables, identity/key exchange, and rich trace projection if UI
-   needs to expose those actions directly.
+4. Move MeshCore direct-route and peer-secret decision policy out of ESP32 adapter branches into shared runtime
+   policy/effects before exposing richer MeshCore direct actions through UI.
 
 ## Guardrail
 

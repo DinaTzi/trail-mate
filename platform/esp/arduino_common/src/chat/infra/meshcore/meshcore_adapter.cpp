@@ -322,6 +322,10 @@ MeshCapabilities MeshCoreAdapter::getCapabilities() const
     caps.supports_trace_route_reply = true;
     caps.supports_protocol_app_response = true;
     caps.supports_protocol_ack_tracking = true;
+    caps.supports_meshcore_direct_route_table = true;
+    caps.supports_meshcore_identity_keys = true;
+    caps.supports_meshcore_peer_secret_derivation = true;
+    caps.supports_meshcore_rich_trace_projection = true;
     return caps;
 }
 

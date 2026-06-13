@@ -34,6 +34,10 @@ struct MeshCapabilities
     bool supports_trace_route_reply = false;
     bool supports_protocol_app_response = false;
     bool supports_protocol_ack_tracking = false;
+    bool supports_meshcore_direct_route_table = false;
+    bool supports_meshcore_identity_keys = false;
+    bool supports_meshcore_peer_secret_derivation = false;
+    bool supports_meshcore_rich_trace_projection = false;
 };
 
 /**

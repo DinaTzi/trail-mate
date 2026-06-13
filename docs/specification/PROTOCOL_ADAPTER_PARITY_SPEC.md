@@ -182,7 +182,11 @@ prefer these fine-grained flags over generic app-data support:
 - `supports_trace_route_request`;
 - `supports_trace_route_reply`;
 - `supports_protocol_app_response`;
-- `supports_protocol_ack_tracking`.
+- `supports_protocol_ack_tracking`;
+- `supports_meshcore_direct_route_table`;
+- `supports_meshcore_identity_keys`;
+- `supports_meshcore_peer_secret_derivation`;
+- `supports_meshcore_rich_trace_projection`.
 
 When a fine-grained flag is false, UI must be conservative and protocol-specific specs, such as
 `NODE_ACTION_PROTOCOL_SPEC.md`, remain authoritative.

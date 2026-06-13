@@ -95,6 +95,8 @@ MeshCoreRadioAdapter::MeshCoreRadioAdapter(const ::chat::runtime::SelfIdentityPr
     caps.supports_node_info_reannounce = true;
     caps.supports_trace_route_request = true;
     caps.supports_protocol_ack_tracking = true;
+    caps.supports_meshcore_identity_keys = true;
+    caps.supports_meshcore_peer_secret_derivation = true;
     return caps;
 }
 
