@@ -35,12 +35,12 @@ Readiness summary:
 
 | Surface | Phase 9 status | Stable owner | Remaining compatibility |
 | --- | --- | --- | --- |
-| ChatDelivery | main runtime callers removed; burned down to formal adapters | `ChatDeliveryActionPortAdapter`, `ChatDeliveryEventProjectionAdapter`, `IChatDeliveryActionPort`, `IChatDeliveryEventPort` in `modules/ui_chat_runtime` | deprecated alias headers and legacy alias tests only |
-| KeyVerification | main runtime callers removed; burned down to formal source/sink/session adapter | `KeyVerificationPresentationSource`, `KeyVerificationActionSink`, `KeyVerificationSessionAdapter` in `modules/ui_key_verification_runtime` | deprecated alias headers and legacy alias tests only |
-| MapOverlay | main runtime callers removed; burned down to stable snapshot/projection adapters | `MapOverlaySnapshotSource`, `MapOverlayProjectionAdapter` in `modules/ui_map_runtime` | deprecated alias headers and legacy alias tests only |
+| ChatDelivery | main runtime callers removed; burned down to formal adapters | `ChatDeliveryActionPortAdapter`, `ChatDeliveryEventProjectionAdapter`, `IChatDeliveryActionPort`, `IChatDeliveryEventPort` in `modules/ui_chat_runtime` | alias build include surface removed |
+| KeyVerification | main runtime callers removed; burned down to formal source/sink/session adapter | `KeyVerificationPresentationSource`, `KeyVerificationActionSink`, `KeyVerificationSessionAdapter` in `modules/ui_key_verification_runtime` | alias build include surface removed |
+| MapOverlay | main runtime callers removed; burned down to stable snapshot/projection adapters | `MapOverlaySnapshotSource`, `MapOverlayProjectionAdapter` in `modules/ui_map_runtime` | alias build include surface removed |
 
-Legacy headers are not primary runtime APIs. Their deletion window opens after
-downstream compatibility includes are gone.
+Legacy headers are not primary runtime APIs. The migrated alias headers have
+been removed from the active build include surface.
 
 ## Remaining Fallback
 
@@ -65,7 +65,7 @@ Phase 9 final readiness requires the following documents to agree:
 
 The shared status for ChatDelivery, KeyVerification, and MapOverlay is:
 
-main runtime callers removed; deprecated aliases only
+main runtime callers removed; alias build include surface removed
 
 The shared status for LinuxSim, GTK, and LVGL hardcoded UI paths is:
 

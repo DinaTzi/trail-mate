@@ -10,9 +10,9 @@ status are explicit.
 | LinuxSim hardcoded runtime routing | final `apps/linux_sim_shell` runtime entry plus historical simulator runtime | the simulator renderer still has old routing available for failed adoption | `LinuxSimRuntimeEntry -> LinuxSimRuntimeEntryAdoptionProbe -> AsciiRuntimeEntryAdoption` | simulator renderer no longer needs hardcoded routing | fallback-only after Phase 10.1 |
 | GTK hardcoded page registry | final `apps/linux_uconsole_gtk` page registry adoption plus historical GTK page registry | GTK page switching still owns existing widget creation and page list behavior | `LinuxUConsoleGtkPageRegistryAdoption -> GtkRuntimeEntryAdoption -> GtkUConsoleScreenGraphPresenter` | GTK page registry consumes descriptors as primary page source | fallback-only after Phase 10.2 |
 | LVGL hardcoded menu/page creation | `modules/ui_lvgl_ux_packs` compatibility runtime | device-specific LVGL renderers still own menu and screen creation | `LvglPrimaryScreenGraphRuntime -> LvglRuntimeEntryAdoption -> LvglRuntimeScreenGraphPresenter` | LVGL renderers consume descriptor runtime before creating menu/page objects | fallback-only after Phase 10.3 |
-| Chat LegacyDelivery bridges | deprecated alias headers in `modules/ui_legacy_adapters` and `modules/ui_shared` | downstream compatibility include paths may still exist outside main runtime | `ChatDeliveryActionPortAdapter` and `ChatDeliveryEventProjectionAdapter` in `modules/ui_chat_runtime` | remove alias headers after downstream compatibility includes are gone | burned down to deprecated alias |
-| KeyVerification legacy source/sink | deprecated alias headers in `modules/ui_legacy_adapters` and `modules/ui_shared` | downstream compatibility include paths may still exist outside main runtime | `KeyVerificationPresentationSource`, `KeyVerificationActionSink`, and `KeyVerificationSessionAdapter` in `modules/ui_key_verification_runtime` | remove alias headers after downstream compatibility includes are gone | burned down to deprecated alias |
-| MapOverlay legacy source | deprecated alias headers in `modules/ui_legacy_adapters` and `modules/ui_shared` | downstream compatibility include paths may still exist outside main runtime | `MapOverlaySnapshotSource` and `MapOverlayProjectionAdapter` in `modules/ui_map_runtime` | remove alias headers after downstream compatibility includes are gone and map renderers consume stable snapshots only | burned down to deprecated alias |
+| Chat LegacyDelivery bridges | alias build include surface removed | runtime modules own all active includes | `ChatDeliveryActionPortAdapter` and `ChatDeliveryEventProjectionAdapter` in `modules/ui_chat_runtime` | keep runtime headers as the only build-visible API | retired from build include surface |
+| KeyVerification legacy source/sink | alias build include surface removed | runtime modules own all active includes | `KeyVerificationPresentationSource`, `KeyVerificationActionSink`, and `KeyVerificationSessionAdapter` in `modules/ui_key_verification_runtime` | keep runtime headers as the only build-visible API | retired from build include surface |
+| MapOverlay legacy source | alias build include surface removed | runtime modules own all active includes | `MapOverlaySnapshotSource` and `MapOverlayProjectionAdapter` in `modules/ui_map_runtime` | keep runtime headers as the only build-visible API | retired from build include surface |
 
 ## Phase 9.6 Final Readiness Alignment
 
@@ -26,9 +26,9 @@ The runtime fallbacks that carry into Phase 10 are:
 
 The legacy adapter rows are not primary UI fallback rows anymore:
 
-- Chat LegacyDelivery bridges: main runtime callers removed; deprecated aliases
-  only.
-- KeyVerification legacy source/sink: main runtime callers removed; deprecated
-  aliases only.
-- MapOverlay legacy source: main runtime callers removed; deprecated aliases
-  only.
+- Chat LegacyDelivery bridges: main runtime callers removed; alias build include
+  surface removed.
+- KeyVerification legacy source/sink: main runtime callers removed; alias build
+  include surface removed.
+- MapOverlay legacy source: main runtime callers removed; alias build include
+  surface removed.

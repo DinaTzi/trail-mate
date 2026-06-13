@@ -64,15 +64,9 @@ def iter_code_files(root: Path):
 
 
 def is_allowed_legacy_alias_path(path: Path) -> bool:
-    rel = path.relative_to(ROOT).as_posix()
     name = path.name
-    allowed_prefixes = [
-        "modules/ui_legacy_adapters/include/ui_legacy_adapters/",
-        "modules/ui_shared/include/ui/presentation_sources/",
-    ]
     return (
-        any(rel.startswith(prefix) for prefix in allowed_prefixes)
-        or name.endswith("_legacy_alias.cpp")
+        name.endswith("_legacy_alias.cpp")
         or name.endswith("_legacy_alias_test.cpp")
         or name.endswith("_compatibility_test.cpp")
     )
@@ -155,6 +149,11 @@ def check_no_main_code_includes_burned_down_legacy_headers(
         '#include "ui_legacy_adapters/legacy_key_verification_action_sink.h"',
         '#include "ui_legacy_adapters/legacy_key_verification_session.h"',
         '#include "ui_legacy_adapters/legacy_map_overlay_source.h"',
+        '#include "ui/presentation_sources/legacy_chat_delivery_action_bridge.h"',
+        '#include "ui/presentation_sources/legacy_key_verification_source.h"',
+        '#include "ui/presentation_sources/legacy_key_verification_action_sink.h"',
+        '#include "ui/presentation_sources/legacy_key_verification_session.h"',
+        '#include "ui/presentation_sources/legacy_map_overlay_source.h"',
     ]
     for root_name in ["apps", "legacy/app_implementations", "modules", "platform", "boards"]:
         for path in iter_code_files(ROOT / root_name):
@@ -185,7 +184,7 @@ def check_phase12_docs(failures: list[str]) -> None:
             "Chat legacy alias headers",
             "KeyVerification legacy alias headers",
             "MapOverlay legacy alias header",
-            "`ui_shared` forwarding shims",
+            "`ui_shared` legacy presentation forwarding shims",
             "`legacy/app_implementations` roots",
             "Safe to delete now?",
             "Deletion condition",
@@ -200,7 +199,7 @@ def check_phase12_docs(failures: list[str]) -> None:
             "LegacyKeyVerificationActionSink",
             "LegacyKeyVerificationSession",
             "LegacyMapOverlaySource",
-            "Main code must not include deprecated alias headers",
+            "Legacy alias headers are retired from build include surface",
         ],
         failures,
     )

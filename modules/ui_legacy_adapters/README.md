@@ -1,21 +1,23 @@
 # ui_legacy_adapters
 
-Bounded compatibility adapters and anti-corruption bridges.
+Retired legacy adapter module.
 
-May contain:
+This module name remains only as a documented legacy boundary. Runtime-owned UI
+adapters now live in their runtime modules:
 
-- legacy source/sink adapters
-- compatibility bridges
-- anti-corruption wrappers around existing runtime APIs
+- chat delivery: `modules/ui_chat_runtime`
+- key verification: `modules/ui_key_verification_runtime`
+- map overlay: `modules/ui_map_runtime`
 
 Must not contain:
 
-- new product behavior
+- forwarding headers for runtime-owned adapters
+- source/sink implementations
+- alias smoke tests
+- product behavior
 - renderer widgets
 - app composition roots
 - build entrypoints
 - board facts
 
-This module was split from `modules/ui_shared` during the Phase 8 structural
-migration batch. The old `ui/presentation_sources/legacy_*` headers remain
-forwarding headers for migrated adapters.
+Active build manifests must not expose `modules/ui_legacy_adapters/include`.

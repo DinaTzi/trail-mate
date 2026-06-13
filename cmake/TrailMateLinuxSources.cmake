@@ -99,12 +99,6 @@ function(_trailmate_set_linux_paths)
     set(TRAIL_MATE_UI_GPS_RUNTIME_SRC_ROOT
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_gps_runtime/src"
         PARENT_SCOPE)
-    set(TRAIL_MATE_UI_LEGACY_ADAPTERS_INCLUDE_ROOT
-        "${TRAIL_MATE_REPO_ROOT}/modules/ui_legacy_adapters/include"
-        PARENT_SCOPE)
-    set(TRAIL_MATE_UI_LEGACY_ADAPTERS_SRC_ROOT
-        "${TRAIL_MATE_REPO_ROOT}/modules/ui_legacy_adapters/src"
-        PARENT_SCOPE)
     set(TRAIL_MATE_UI_LVGL_CORE_INCLUDE_ROOT
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_lvgl_core/include"
         PARENT_SCOPE)

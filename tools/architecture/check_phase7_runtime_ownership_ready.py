@@ -6,8 +6,6 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 
 PATH_ALIASES = {
-    "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_action_bridge.h":
-        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_chat_delivery_action_bridge.h",
     "modules/ui_shared/src/ui/presentation_sources/legacy_chat_delivery_action_bridge.cpp":
         "modules/ui_chat_runtime/src/chat_delivery_action_port_adapter.cpp",
     "modules/ui_shared/tests/test_legacy_chat_delivery_action_bridge.cpp":
@@ -16,20 +14,12 @@ PATH_ALIASES = {
         "modules/ui_chat_runtime/src/chat_delivery_event_projection_adapter.cpp",
     "modules/ui_shared/tests/test_legacy_chat_delivery_event_bridge.cpp":
         "modules/ui_chat_runtime/tests/test_chat_delivery_event_projection_adapter.cpp",
-    "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_session.h":
-        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_key_verification_session.h",
-    "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_source.h":
-        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_key_verification_source.h",
-    "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_action_sink.h":
-        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_key_verification_action_sink.h",
     "modules/ui_shared/src/ui/presentation_sources/legacy_key_verification_source.cpp":
         "modules/ui_key_verification_runtime/src/key_verification_presentation_source.cpp",
     "modules/ui_shared/src/ui/presentation_sources/legacy_key_verification_action_sink.cpp":
         "modules/ui_key_verification_runtime/src/key_verification_action_sink.cpp",
     "modules/ui_shared/tests/test_legacy_key_verification_adapters.cpp":
         "modules/ui_key_verification_runtime/tests/test_key_verification_runtime_adapters.cpp",
-    "modules/ui_shared/include/ui/presentation_sources/legacy_map_overlay_source.h":
-        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_map_overlay_source.h",
     "modules/ui_shared/src/ui/presentation_sources/legacy_map_overlay_source.cpp":
         "modules/ui_map_runtime/src/map_overlay_snapshot_source.cpp",
     "modules/ui_shared/tests/test_legacy_map_overlay_source.cpp":
@@ -187,7 +177,6 @@ def check_required_files() -> int:
         "modules/core_chat/tests/test_chat_delivery_action_service.cpp",
         "modules/core_chat/tests/test_chat_delivery_message_projection.cpp",
         "modules/core_chat/tests/test_chat_delivery_send_result_projection.cpp",
-        "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_action_bridge.h",
         "modules/ui_shared/src/ui/presentation_sources/legacy_chat_delivery_action_bridge.cpp",
         "modules/ui_shared/tests/test_legacy_chat_delivery_action_bridge.cpp",
         "modules/ui_shared/include/ui/team_actions/team_action_types.h",
@@ -211,9 +200,6 @@ def check_required_files() -> int:
         "modules/ui_presentation/include/ui_presentation/key_verification/key_verification_model.h",
         "modules/ui_presentation/src/key_verification/key_verification_model.cpp",
         "modules/ui_presentation/tests/test_key_verification_model.cpp",
-        "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_session.h",
-        "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_source.h",
-        "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_action_sink.h",
         "modules/ui_shared/src/ui/presentation_sources/legacy_key_verification_source.cpp",
         "modules/ui_shared/src/ui/presentation_sources/legacy_key_verification_action_sink.cpp",
         "modules/ui_shared/tests/test_legacy_key_verification_adapters.cpp",
@@ -238,7 +224,6 @@ def check_required_files() -> int:
         "modules/ui_presentation/include/ui_presentation/map/map_overlay_source.h",
         "modules/ui_shared/include/ui/map_overlay/map_overlay_projector.h",
         "modules/ui_shared/src/ui/map_overlay/map_overlay_projector.cpp",
-        "modules/ui_shared/include/ui/presentation_sources/legacy_map_overlay_source.h",
         "modules/ui_shared/src/ui/presentation_sources/legacy_map_overlay_source.cpp",
         "modules/ui_shared/tests/test_map_overlay_projector.cpp",
         "modules/ui_shared/tests/test_legacy_map_overlay_source.cpp",
@@ -738,6 +723,7 @@ def check_legacy_burndown_register() -> int:
             "contained",
             "burned-down",
             "burned-down to deprecated alias",
+            "retired from build include surface",
             "remaining legacy",
         }:
             failures += fail(f"{surface} has unsupported burn-down status: {status}")
@@ -1144,7 +1130,6 @@ def check_delivery_event_bridge_boundary() -> int:
 def check_delivery_action_bridge_boundary() -> int:
     failures = 0
     bridge_files = [
-        "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_action_bridge.h",
         "modules/ui_chat_runtime/src/chat_delivery_action_port_adapter.cpp",
     ]
     for path in bridge_files:
@@ -1168,14 +1153,7 @@ def check_delivery_action_bridge_boundary() -> int:
 
     header = "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_action_bridge.h"
     if exists(header):
-        text = read_text(header)
-        for token in [
-            "LegacyChatDeliveryActionBridge",
-            "ChatDeliveryActionPortAdapter",
-            "[[deprecated",
-        ]:
-            if token not in text:
-                failures += fail(f"LegacyChatDeliveryActionBridge header missing token: {token}")
+        failures += fail(f"LegacyChatDeliveryActionBridge header must stay absent: {header}")
 
     source = "modules/ui_chat_runtime/src/chat_delivery_action_port_adapter.cpp"
     if exists(source):
@@ -3956,19 +3934,7 @@ def check_map_overlay_route_tracker_boundary() -> int:
                 failures += fail(f"MapOverlayProjector source missing token: {token}")
 
     if exists(legacy_header):
-        text = strip_cpp_comments(read_text(legacy_header))
-        for token in [
-            "IMapOverlayGpsSource",
-            "IMapOverlayTeamSource",
-            "LegacyMapOverlaySource",
-            "MapOverlaySnapshotSource",
-            "[[deprecated",
-        ]:
-            if token not in text:
-                failures += fail(f"LegacyMapOverlaySource header missing token: {token}")
-        for token in ["lvgl.h", "lv_obj_t", "platform::ui::gps::get_data", "team_ui_chatlog_load_recent", "decodeTeamChatLocation"]:
-            if token in text:
-                failures += fail(f"LegacyMapOverlaySource header exposes forbidden token: {token}")
+        failures += fail(f"LegacyMapOverlaySource header must stay absent: {legacy_header}")
 
     if exists(legacy_source):
         text = strip_cpp_comments(read_text(legacy_source))
@@ -4077,7 +4043,7 @@ def check_map_overlay_route_tracker_boundary() -> int:
             "TeamMapOverlaySource",
             "Map route/tracker overlay projection",
             "MapOverlayProjector",
-            "map renderers consume `MapOverlaySnapshotSource` only",
+            "keep runtime map overlay headers as the only build-visible API",
         ]:
             if token not in text:
                 failures += fail(f"LEGACY_BURNDOWN_REGISTER missing map overlay token: {token}")
@@ -4653,9 +4619,7 @@ def check_key_verification_type_shape() -> int:
 def check_key_verification_bridge_boundary() -> int:
     failures = 0
     bridge_files = [
-        "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_source.h",
         "modules/ui_shared/src/ui/presentation_sources/legacy_key_verification_source.cpp",
-        "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_action_sink.h",
         "modules/ui_shared/src/ui/presentation_sources/legacy_key_verification_action_sink.cpp",
     ]
     for path in bridge_files:
@@ -4680,14 +4644,7 @@ def check_key_verification_bridge_boundary() -> int:
     source_header = "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_source.h"
     source_impl = "modules/ui_shared/src/ui/presentation_sources/legacy_key_verification_source.cpp"
     if exists(source_header):
-        text = read_text(source_header)
-        for token in [
-            "LegacyKeyVerificationSource",
-            "KeyVerificationPresentationSource",
-            "[[deprecated",
-        ]:
-            if token not in text:
-                failures += fail(f"LegacyKeyVerificationSource header missing token: {token}")
+        failures += fail(f"LegacyKeyVerificationSource header must stay absent: {source_header}")
     if exists(source_impl):
         text = read_text(source_impl)
         for token in [
@@ -4707,14 +4664,7 @@ def check_key_verification_bridge_boundary() -> int:
     sink_header = "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_action_sink.h"
     sink_impl = "modules/ui_shared/src/ui/presentation_sources/legacy_key_verification_action_sink.cpp"
     if exists(sink_header):
-        text = read_text(sink_header)
-        for token in [
-            "LegacyKeyVerificationActionSink",
-            "KeyVerificationActionSink",
-            "[[deprecated",
-        ]:
-            if token not in text:
-                failures += fail(f"LegacyKeyVerificationActionSink header missing token: {token}")
+        failures += fail(f"LegacyKeyVerificationActionSink header must stay absent: {sink_header}")
     if exists(sink_impl):
         text = read_text(sink_impl)
         for token in [

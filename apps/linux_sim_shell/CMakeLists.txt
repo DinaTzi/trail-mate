@@ -97,19 +97,6 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_ascii_descriptor_renderer_smoke
              COMMAND trailmate_ascii_descriptor_renderer_smoke)
 
-    add_executable(trailmate_legacy_chat_delivery_action_bridge_alias_smoke
-        "${TRAIL_MATE_REPO_ROOT}/modules/ui_legacy_adapters/tests/test_legacy_chat_delivery_action_bridge_legacy_alias.cpp")
-    target_include_directories(trailmate_legacy_chat_delivery_action_bridge_alias_smoke
-        PRIVATE
-            "${TRAIL_MATE_REPO_ROOT}/modules/ui_legacy_adapters/include"
-            "${TRAIL_MATE_REPO_ROOT}/modules/ui_chat_runtime/include"
-            "${TRAIL_MATE_REPO_ROOT}/modules/ui_presentation/include"
-            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
-    target_compile_features(trailmate_legacy_chat_delivery_action_bridge_alias_smoke
-        PRIVATE cxx_std_17)
-    add_test(NAME trailmate_legacy_chat_delivery_action_bridge_alias_smoke
-             COMMAND trailmate_legacy_chat_delivery_action_bridge_alias_smoke)
-
     add_executable(trailmate_chat_presentation_source_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_chat_presentation_source.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/domain/chat_model.cpp"
@@ -241,19 +228,6 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_key_verification_runtime_adapters_smoke
              COMMAND trailmate_key_verification_runtime_adapters_smoke)
 
-    add_executable(trailmate_legacy_key_verification_adapters_alias_smoke
-        "${TRAIL_MATE_REPO_ROOT}/modules/ui_legacy_adapters/tests/test_legacy_key_verification_adapters_legacy_alias.cpp")
-    target_include_directories(trailmate_legacy_key_verification_adapters_alias_smoke
-        PRIVATE
-            "${TRAIL_MATE_REPO_ROOT}/modules/ui_legacy_adapters/include"
-            "${TRAIL_MATE_REPO_ROOT}/modules/ui_key_verification_runtime/include"
-            "${TRAIL_MATE_REPO_ROOT}/modules/ui_presentation/include"
-            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
-    target_compile_features(trailmate_legacy_key_verification_adapters_alias_smoke
-        PRIVATE cxx_std_17)
-    add_test(NAME trailmate_legacy_key_verification_adapters_alias_smoke
-             COMMAND trailmate_legacy_key_verification_adapters_alias_smoke)
-
     add_executable(trailmate_map_overlay_snapshot_source_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_map_runtime/tests/test_map_overlay_snapshot_source.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_map_runtime/src/map_overlay_snapshot_source.cpp"
@@ -283,18 +257,6 @@ if(BUILD_TESTING)
         PRIVATE cxx_std_17)
     add_test(NAME trailmate_runtime_map_presentation_adapters_smoke
              COMMAND trailmate_runtime_map_presentation_adapters_smoke)
-
-    add_executable(trailmate_legacy_map_overlay_source_alias_smoke
-        "${TRAIL_MATE_REPO_ROOT}/modules/ui_legacy_adapters/tests/test_legacy_map_overlay_source_legacy_alias.cpp")
-    target_include_directories(trailmate_legacy_map_overlay_source_alias_smoke
-        PRIVATE
-            "${TRAIL_MATE_REPO_ROOT}/modules/ui_legacy_adapters/include"
-            "${TRAIL_MATE_REPO_ROOT}/modules/ui_map_runtime/include"
-            "${TRAIL_MATE_REPO_ROOT}/modules/ui_presentation/include")
-    target_compile_features(trailmate_legacy_map_overlay_source_alias_smoke
-        PRIVATE cxx_std_17)
-    add_test(NAME trailmate_legacy_map_overlay_source_alias_smoke
-             COMMAND trailmate_legacy_map_overlay_source_alias_smoke)
 
     add_executable(trailmate_ui_presentation_screen_binding_registry_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_presentation/tests/test_screen_binding_registry.cpp")

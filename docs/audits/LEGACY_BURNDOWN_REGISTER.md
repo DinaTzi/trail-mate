@@ -16,10 +16,10 @@ A legacy surface may remain temporarily only if it has:
 
 | Legacy surface | New owner | Remaining callers | Removal condition | Target phase | Status |
 | --- | --- | --- | --- | --- | --- |
-| `LegacyChatDeliveryActionBridge` | `ChatDeliveryActionPortAdapter` / `IChatDeliveryActionPort` | no main runtime callers; deprecated alias headers and legacy alias tests only | remove alias headers after downstream includes of `LegacyChatDeliveryActionBridge` are gone | 9.4 | burned-down to deprecated alias |
+| `LegacyChatDeliveryActionBridge` | `ChatDeliveryActionPortAdapter` / `IChatDeliveryActionPort` | no main runtime callers; alias headers and alias tests removed from build include surface | keep runtime headers as the only build-visible API | 9.4 | retired from build include surface |
 | `LegacyTeamActionBridge` | `TeamActionRuntimeSink` / `TeamActionRequest` / `ITeamActionSink` / Team runtime command port | none; Chat runtime and Contacts compose own `TeamActionRuntimeSink` instances through composition roots | legacy bridge file/class/test removed and renderers/controllers only submit `TeamActionRequest` | Team legacy burn-down | burned-down |
-| `LegacyKeyVerificationSource` | `KeyVerificationPresentationSource` / `IKeyVerificationPresentationSource` in `modules/ui_key_verification_runtime` | no main runtime callers; deprecated alias headers and legacy alias tests only | remove alias headers after downstream includes of `LegacyKeyVerificationSource` are gone | 9.5 | burned-down to deprecated alias |
-| `LegacyKeyVerificationActionSink` | `KeyVerificationActionSink` / `IKeyVerificationActionSink` in `modules/ui_key_verification_runtime` | no main runtime callers; deprecated alias headers and legacy alias tests only | remove alias headers after downstream includes of `LegacyKeyVerificationActionSink` are gone | 9.5 | burned-down to deprecated alias |
+| `LegacyKeyVerificationSource` | `KeyVerificationPresentationSource` / `IKeyVerificationPresentationSource` in `modules/ui_key_verification_runtime` | no main runtime callers; alias headers and alias tests removed from build include surface | keep runtime headers as the only build-visible API | 9.5 | retired from build include surface |
+| `LegacyKeyVerificationActionSink` | `KeyVerificationActionSink` / `IKeyVerificationActionSink` in `modules/ui_key_verification_runtime` | no main runtime callers; alias headers and alias tests removed from build include surface | keep runtime headers as the only build-visible API | 9.5 | retired from build include surface |
 | `ChatUiController` key verification modal rendering | `KeyVerificationModalRenderer` helper consumes `KeyVerificationSnapshot` | `ChatUiController` opens/closes modal and forwards submit/trust callbacks | Full modal view object owns widget lifecycle and controller keeps only workflow routing | 7.x | burned-down |
 | `ChatUiController` Team payload/action send special case | `ChatTeamWorkflow` / `TeamActionRuntimeSink` | None expected for send path; controller delegates Team text/location actions through workflow | Checker forbids `TeamActionRequest`, `sendTeamAction`, payload encoders, and raw `TeamChatMessage` send encoding in controller | Team legacy burn-down | burned-down |
 | `ChatUiController` delivery mutation | `ChatDeliveryReadModel` / `ChatDeliveryActionService` | None expected; event pump forwards send-result events to `ChatDeliveryEventProjectionAdapter` | Checker forbids direct `ChatDeliveryReadModel`, `ChatDeliveryEventProjector`, and `ChatDeliveryActionService` ownership in controller | 7.6 / 7.7 | burned-down |
@@ -40,7 +40,7 @@ A legacy surface may remain temporarily only if it has:
 | `Map tile path/cache legacy runtime` | `MapTileResolver` / `LegacyFilesystemMapTileSource` / map tile cache owner | Platform LVGL map tile runtimes call source/resolver; ESP decoded cache, Linux downloader cache, and uConsole path fields remain contained | Renderer consumes tile refs/source without direct path/cache ownership, and decoded/downloader caches are moved behind stable runtime adapters | 7.10 / 7.x | contained |
 | `Map tile visible plan in platform renderer` | `MapTileRenderQueue` | Platform map tile runtimes still populate queue from legacy `MapTile` records | Dedicated map runtime computes visible queue and renderer consumes queue rows without mutating plan state | 7.11 / 7.x | contained |
 | `ESP decoded LVGL tile cache` | `LvglDecodedTileCache` / `IMapTileDecoderCache` | ESP map tile runtime still asks the LVGL cache adapter for decoded handles | Runtime-owned decoder cache is injected into a dedicated map tile renderer | 7.11 / 7.x | contained |
-| `Map overlay current/team marker projection` | `MapOverlaySnapshotSource` / `MapOverlayProjectionAdapter` / `MapOverlayProjector` in `modules/ui_map_runtime` | no main runtime callers of `LegacyMapOverlaySource`; deprecated alias headers and legacy alias tests only | remove alias headers after downstream includes of `LegacyMapOverlaySource` are gone, and map renderers consume `MapOverlaySnapshotSource` only | 9.5 | burned-down to deprecated alias |
+| `Map overlay current/team marker projection` | `MapOverlaySnapshotSource` / `MapOverlayProjectionAdapter` / `MapOverlayProjector` in `modules/ui_map_runtime` | no main runtime callers of `LegacyMapOverlaySource`; alias headers and alias tests removed from build include surface | keep runtime map overlay headers as the only build-visible API | 9.5 | retired from build include surface |
 | `Map route/tracker overlay projection` | deferred route/tracker presentation source | ESP route/tracker draw callbacks still own route/tracker widget drawing | Route/tracker stores expose presentation sources and renderer consumes overlay snapshot rows | 7.12 / 7.x | contained |
 | `GPS page refresh cadence` | `GpsPageRuntimePump` / `IGpsUiRefreshSink` | ESP and Linux GPS page timers tick `GpsPageRuntimePump`; page-local adapters preserve legacy refresh behavior | Page-local adapters are replaced by GPS presentation refresh models and renderers consume snapshots only | 7.13 / 7.x | contained |
 
@@ -52,9 +52,9 @@ A legacy surface may remain temporarily only if it has:
 | `legacy/app_implementations/linux_uconsole` GTK descriptor adapters | `modules/ui_gtk_runtime` | moved out of legacy; legacy uConsole CMake links module-owned sources for compatibility smoke coverage | real GTK page switch path consumes `GtkUConsoleScreenGraphPresenter` and old hardcoded routing is fallback-only | 9.2 | burned-down |
 | Runtime entry adoption helpers under `legacy/app_implementations` | `modules/ui_ascii_runtime`, `modules/ui_gtk_runtime`, `modules/ui_lvgl_ux_packs`, final app-shell probes | none; Phase 9.2 keeps entry adoption helpers out of legacy | checker forbids `*RuntimeEntryAdoption` files and tokens under `legacy/app_implementations` | 9.2 | burned-down |
 | Runtime entry bridges under `legacy/app_implementations` | final app-shell runtime entry/page-registry adoption and `modules/ui_lvgl_ux_packs` | none; Phase 9.3 keeps real entry adoption out of legacy | checker forbids Phase 9 runtime adoption bridge files under `legacy/app_implementations` | 9.3 | burned-down |
-| Chat delivery legacy bridge pair | `modules/ui_chat_runtime` formal ports and adapters | no main runtime callers; `ui_legacy_adapters` and `ui_shared` headers are deprecated aliases only | remove alias headers after downstream compatibility includes are gone | 9.4 | burned-down to deprecated alias |
-| Key verification legacy source/sink/session | `modules/ui_key_verification_runtime` stable `KeyVerificationPresentationSource`, `KeyVerificationActionSink`, and `KeyVerificationSessionAdapter` | no main runtime callers; `ui_legacy_adapters` and `ui_shared` headers are deprecated aliases only | remove alias headers after downstream compatibility includes are gone | 9.5 | burned-down to deprecated alias |
-| Map overlay legacy source | `modules/ui_map_runtime` stable snapshot source and projection adapter | no main runtime callers; `ui_legacy_adapters` and `ui_shared` headers are deprecated aliases only | remove alias headers after downstream compatibility includes are gone | 9.5 | burned-down to deprecated alias |
+| Chat delivery legacy bridge pair | `modules/ui_chat_runtime` formal ports and adapters | no main runtime callers; alias build include surface removed | keep runtime headers as the only build-visible API | 9.4 | retired from build include surface |
+| Key verification legacy source/sink/session | `modules/ui_key_verification_runtime` stable `KeyVerificationPresentationSource`, `KeyVerificationActionSink`, and `KeyVerificationSessionAdapter` | no main runtime callers; alias build include surface removed | keep runtime headers as the only build-visible API | 9.5 | retired from build include surface |
+| Map overlay legacy source | `modules/ui_map_runtime` stable snapshot source and projection adapter | no main runtime callers; alias build include surface removed | keep runtime headers as the only build-visible API | 9.5 | retired from build include surface |
 
 ## Checker Status
 
@@ -90,14 +90,14 @@ A legacy surface may remain temporarily only if it has:
 Phase 9.6 does not add new legacy surfaces. It aligns the register with the
 Phase 9 final readiness report:
 
-- Chat delivery legacy bridge pair: main runtime callers removed; deprecated
-  aliases only; stable owner is `ChatDeliveryActionPortAdapter` and
+- Chat delivery legacy bridge pair: main runtime callers removed; alias build
+  include surface removed; stable owner is `ChatDeliveryActionPortAdapter` and
   `ChatDeliveryEventProjectionAdapter`.
 - Key verification legacy source/sink/session: main runtime callers removed;
-  deprecated aliases only; stable owner is `KeyVerificationPresentationSource`,
+  alias build include surface removed; stable owner is `KeyVerificationPresentationSource`,
   `KeyVerificationActionSink`, and `KeyVerificationSessionAdapter`.
-- Map overlay legacy source: main runtime callers removed; deprecated aliases
-  only; stable owner is `MapOverlaySnapshotSource` and
+- Map overlay legacy source: main runtime callers removed; alias build include
+  surface removed; stable owner is `MapOverlaySnapshotSource` and
   `MapOverlayProjectionAdapter`.
 
 The remaining Phase 10-facing UI fallbacks are not legacy adapter burn-down items.

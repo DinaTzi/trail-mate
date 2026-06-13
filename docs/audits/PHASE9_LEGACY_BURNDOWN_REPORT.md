@@ -23,13 +23,13 @@ compatibility alias has since been deleted completely.
 
 | Surface | Previous owner | New owner | Status |
 | --- | --- | --- | --- |
-| `LegacyChatDeliveryActionBridge` | `modules/ui_legacy_adapters` real bridge implementation | `ChatDeliveryActionPortAdapter` and `IChatDeliveryActionPort` in `modules/ui_chat_runtime` | main runtime callers removed; old headers are deprecated aliases |
+| `LegacyChatDeliveryActionBridge` | `modules/ui_legacy_adapters` real bridge implementation | `ChatDeliveryActionPortAdapter` and `IChatDeliveryActionPort` in `modules/ui_chat_runtime` | main runtime callers removed; alias build include surface removed |
 | `LegacyChatDeliveryEventBridge` | `modules/ui_legacy_adapters` real bridge implementation | `ChatDeliveryEventProjectionAdapter` and `IChatDeliveryEventPort` in `modules/ui_chat_runtime` | implementation, forwarding headers, and alias tests removed |
 
 The former `modules/ui_legacy_adapters/src/legacy_chat_delivery_*_bridge.cpp`
 implementation files are removed from the build. The action compatibility
-headers remain only as forwarding aliases for downstream includes; the event
-compatibility headers are removed.
+headers have also been removed from the active build include surface; the event
+compatibility headers were already removed.
 
 ## Burned Down In Phase 9.5
 
@@ -38,15 +38,15 @@ adapters from main runtime ownership into stable runtime modules.
 
 | Surface | Previous owner | New owner | Status |
 | --- | --- | --- | --- |
-| `LegacyKeyVerificationSession` | `modules/ui_legacy_adapters` compatibility session state | `KeyVerificationSessionAdapter` in `modules/ui_key_verification_runtime` | main runtime callers removed; old headers are deprecated aliases |
-| `LegacyKeyVerificationSource` | `modules/ui_legacy_adapters` real presentation source implementation | `KeyVerificationPresentationSource` in `modules/ui_key_verification_runtime` | main runtime callers removed; old headers are deprecated aliases |
-| `LegacyKeyVerificationActionSink` | `modules/ui_legacy_adapters` real action sink implementation | `KeyVerificationActionSink` in `modules/ui_key_verification_runtime` | main runtime callers removed; old headers are deprecated aliases |
-| `LegacyMapOverlaySource` | `modules/ui_legacy_adapters` real map overlay source implementation | `MapOverlaySnapshotSource` and `MapOverlayProjectionAdapter` in `modules/ui_map_runtime` | main runtime callers removed; old headers are deprecated aliases |
+| `LegacyKeyVerificationSession` | `modules/ui_legacy_adapters` compatibility session state | `KeyVerificationSessionAdapter` in `modules/ui_key_verification_runtime` | main runtime callers removed; alias build include surface removed |
+| `LegacyKeyVerificationSource` | `modules/ui_legacy_adapters` real presentation source implementation | `KeyVerificationPresentationSource` in `modules/ui_key_verification_runtime` | main runtime callers removed; alias build include surface removed |
+| `LegacyKeyVerificationActionSink` | `modules/ui_legacy_adapters` real action sink implementation | `KeyVerificationActionSink` in `modules/ui_key_verification_runtime` | main runtime callers removed; alias build include surface removed |
+| `LegacyMapOverlaySource` | `modules/ui_legacy_adapters` real map overlay source implementation | `MapOverlaySnapshotSource` and `MapOverlayProjectionAdapter` in `modules/ui_map_runtime` | main runtime callers removed; alias build include surface removed |
 
 The former `modules/ui_legacy_adapters/src/legacy_key_verification_*` and
 `modules/ui_legacy_adapters/src/legacy_map_overlay_source.cpp` implementation
-files are removed from the build. Compatibility headers remain only as
-forwarding aliases for downstream includes.
+files are removed from the build. Compatibility headers and alias smoke tests
+are removed from the active build include surface.
 
 ## Still Contained
 
@@ -64,8 +64,7 @@ burn-down and is no longer a remaining Phase 9 target.
 The next Phase 9 legacy burn-down target should be selected from the remaining
 non-Chat, non-KeyVerification, non-MapOverlay compatibility surfaces in the
 register. Chat delivery, KeyVerification, and MapOverlay are no longer main
-runtime fallbacks; remaining work is compatibility alias deletion where an
-alias still exists.
+runtime fallbacks; the active build now consumes the runtime headers directly.
 
 ## Rule
 
@@ -104,9 +103,9 @@ Phase 9.6 keeps the legacy burn-down status aligned with
 
 | Surface | Final Phase 9 status | Stable owner | Deletion window |
 | --- | --- | --- | --- |
-| ChatDelivery legacy bridges | main runtime callers removed; deprecated aliases only | `ChatDeliveryActionPortAdapter` and `ChatDeliveryEventProjectionAdapter` | remove alias headers after downstream compatibility includes are gone |
-| KeyVerification legacy source/sink/session | main runtime callers removed; deprecated aliases only | `KeyVerificationPresentationSource`, `KeyVerificationActionSink`, and `KeyVerificationSessionAdapter` | remove alias headers after downstream compatibility includes are gone |
-| MapOverlay legacy source | main runtime callers removed; deprecated aliases only | `MapOverlaySnapshotSource` and `MapOverlayProjectionAdapter` | remove alias headers after downstream compatibility includes are gone and map renderers consume stable snapshots only |
+| ChatDelivery legacy bridges | main runtime callers removed; alias build include surface removed | `ChatDeliveryActionPortAdapter` and `ChatDeliveryEventProjectionAdapter` | keep runtime headers as the only build-visible API |
+| KeyVerification legacy source/sink/session | main runtime callers removed; alias build include surface removed | `KeyVerificationPresentationSource`, `KeyVerificationActionSink`, and `KeyVerificationSessionAdapter` | keep runtime headers as the only build-visible API |
+| MapOverlay legacy source | main runtime callers removed; alias build include surface removed | `MapOverlaySnapshotSource` and `MapOverlayProjectionAdapter` | keep runtime headers as the only build-visible API |
 
 The remaining LinuxSim, GTK, and LVGL hardcoded runtime paths are not reported as burned down.
 They remain contained fallback until Phase 10 makes one adopted runtime path

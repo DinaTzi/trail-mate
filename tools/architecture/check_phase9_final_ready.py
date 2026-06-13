@@ -53,14 +53,7 @@ def iter_code_files(root: Path):
 
 
 def is_allowed_alias_path(path: Path) -> bool:
-    rel = path.relative_to(ROOT).as_posix()
     name = path.name
-    allowed_prefixes = [
-        "modules/ui_legacy_adapters/include/ui_legacy_adapters/",
-        "modules/ui_shared/include/ui/presentation_sources/",
-    ]
-    if any(rel.startswith(prefix) for prefix in allowed_prefixes):
-        return True
     return (
         name.endswith("_legacy_alias_test.cpp")
         or name.endswith("_legacy_alias.cpp")
@@ -76,6 +69,11 @@ def check_no_main_code_includes_burned_down_legacy_headers(failures: list[str]) 
         '#include "ui_legacy_adapters/legacy_key_verification_action_sink.h"',
         '#include "ui_legacy_adapters/legacy_key_verification_session.h"',
         '#include "ui_legacy_adapters/legacy_map_overlay_source.h"',
+        '#include "ui/presentation_sources/legacy_chat_delivery_action_bridge.h"',
+        '#include "ui/presentation_sources/legacy_key_verification_source.h"',
+        '#include "ui/presentation_sources/legacy_key_verification_action_sink.h"',
+        '#include "ui/presentation_sources/legacy_key_verification_session.h"',
+        '#include "ui/presentation_sources/legacy_map_overlay_source.h"',
     ]
     for root_name in ["apps", "legacy/app_implementations", "modules", "platform", "boards"]:
         for path in iter_code_files(ROOT / root_name):
@@ -156,7 +154,10 @@ def check_cross_doc_consistency(failures: list[str]) -> None:
         )
         require_any_token(
             rel,
-            ["deprecated aliases", "deprecated alias", "deprecated aliases only"],
+            [
+                "alias build include surface removed",
+                "retired from build include surface",
+            ],
             failures,
         )
 
@@ -210,6 +211,16 @@ def check_required_files(failures: list[str]) -> None:
         "modules/ui_legacy_adapters/src/legacy_key_verification_action_sink.cpp",
         "modules/ui_legacy_adapters/src/legacy_key_verification_session.cpp",
         "modules/ui_legacy_adapters/src/legacy_map_overlay_source.cpp",
+        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_chat_delivery_action_bridge.h",
+        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_key_verification_source.h",
+        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_key_verification_action_sink.h",
+        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_key_verification_session.h",
+        "modules/ui_legacy_adapters/include/ui_legacy_adapters/legacy_map_overlay_source.h",
+        "modules/ui_shared/include/ui/presentation_sources/legacy_chat_delivery_action_bridge.h",
+        "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_source.h",
+        "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_action_sink.h",
+        "modules/ui_shared/include/ui/presentation_sources/legacy_key_verification_session.h",
+        "modules/ui_shared/include/ui/presentation_sources/legacy_map_overlay_source.h",
     ]:
         require_absent(rel, failures)
 
