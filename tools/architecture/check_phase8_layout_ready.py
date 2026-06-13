@@ -29,6 +29,8 @@ def check_post_root_legacy_removed() -> int:
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()
         return fail(f"post-root legacy removal check failed:\n{output}")
+    if check_retired_ui_legacy_adapters_module():
+        return 1
     print("[phase8-layout-ready] OK (root legacy removed)")
     return 0
 
@@ -167,8 +169,6 @@ def check_required_files() -> int:
         "modules/ui_key_verification_runtime/src/key_verification_presentation_source.cpp",
         "modules/ui_key_verification_runtime/src/key_verification_action_sink.cpp",
         "modules/ui_key_verification_runtime/tests/test_key_verification_runtime_adapters.cpp",
-        "modules/ui_legacy_adapters/README.md",
-        "modules/ui_legacy_adapters/library.json",
         "modules/ui_chat_runtime/tests/test_chat_delivery_event_projection_adapter.cpp",
         "modules/ui_chat_runtime/tests/test_chat_delivery_action_port_adapter.cpp",
         "modules/ui_lvgl_core/README.md",
@@ -317,7 +317,7 @@ def check_specification_language() -> int:
             "modules/ui_chat_runtime",
             "modules/ui_map_runtime",
             "modules/ui_gps_runtime",
-            "modules/ui_legacy_adapters",
+            "retired `modules/ui_legacy_adapters/` module must not reappear",
             "modules/ui_lvgl_core",
             "modules/ui_lvgl_ux_packs",
         ],
@@ -2249,8 +2249,6 @@ def check_build_manifest_authority() -> int:
             "TRAIL_MATE_UI_GPS_RUNTIME_SRC_ROOT",
             "TRAIL_MATE_UI_KEY_VERIFICATION_RUNTIME_INCLUDE_ROOT",
             "TRAIL_MATE_UI_KEY_VERIFICATION_RUNTIME_SRC_ROOT",
-            "TRAIL_MATE_UI_LEGACY_ADAPTERS_INCLUDE_ROOT",
-            "TRAIL_MATE_UI_LEGACY_ADAPTERS_SRC_ROOT",
             "TRAIL_MATE_UI_LVGL_CORE_INCLUDE_ROOT",
             "TRAIL_MATE_UI_LVGL_UX_PACKS_INCLUDE_ROOT",
             "TRAIL_MATE_UI_LVGL_UX_PACKS_SRC_ROOT",
@@ -2323,13 +2321,6 @@ def check_runtime_module_boundaries() -> int:
             "boards/",
             "boards\\",
         ],
-        "modules/ui_legacy_adapters": [
-            "apps/",
-            "apps\\",
-            "builds/",
-            "boards/",
-            "boards\\",
-        ],
         "modules/ui_lvgl_ux_packs": [
             "apps/",
             "apps\\",
@@ -2394,6 +2385,27 @@ def check_runtime_module_boundaries() -> int:
                 failures += fail(
                     f"{path.relative_to(ROOT)} contains forbidden portable presentation token {token}"
                 )
+
+    return failures
+
+
+def check_retired_ui_legacy_adapters_module() -> int:
+    failures = 0
+    retired_root = ROOT / "modules/ui_legacy_adapters"
+    if retired_root.exists():
+        failures += fail("retired modules/ui_legacy_adapters module must stay absent")
+
+    forbidden_active_refs = [
+        ".github/workflows/linux-simulator.yml",
+        "variants/gat562_mesh_evb_pro/envs/gat562_mesh_evb_pro.ini",
+    ]
+    for rel_path in forbidden_active_refs:
+        path = ROOT / rel_path
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if "ui_legacy_adapters" in text or "TRAIL_MATE_UI_LEGACY_ADAPTERS" in text:
+            failures += fail(f"{rel_path} still references retired ui_legacy_adapters module")
 
     return failures
 
@@ -2490,6 +2502,7 @@ def main() -> int:
     failures += check_authoritative_include_paths()
     failures += check_build_manifest_authority()
     failures += check_runtime_module_boundaries()
+    failures += check_retired_ui_legacy_adapters_module()
     failures += check_deprecated_alias_usage()
     failures += check_transitional_app_markers()
 
