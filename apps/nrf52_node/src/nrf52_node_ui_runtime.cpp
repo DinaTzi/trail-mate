@@ -313,6 +313,7 @@ bool initialize()
     callbacks.flash_usage_fn = flash_usage;
     callbacks.message_tone_volume_fn = message_tone_volume;
     callbacks.set_message_tone_volume_fn = set_message_tone_volume;
+    callbacks.virtual_keyboard_layout = ui::mono::HostCallbacks::VirtualKeyboardLayout::FullKeyboard;
 #if defined(TRAILMATE_TARGET_T_ECHO_LITE)
     callbacks.play_message_tone_fn = play_message_tone;
     callbacks.message_light_enabled_fn = message_light_enabled;

@@ -409,35 +409,35 @@ class Ssd1306MonoDisplay final : public ::ui::mono::MonoDisplay
     int height() const override { return kMonoScreenHeight; }
     void clear() override
     {
-        if (online_)
+        if (online_ && !power_save_)
         {
             display_.clearDisplay();
         }
     }
     void drawPixel(int x, int y, bool on) override
     {
-        if (online_)
+        if (online_ && !power_save_)
         {
             display_.drawPixel(x, y, on ? SSD1306_WHITE : SSD1306_BLACK);
         }
     }
     void drawHLine(int x, int y, int w) override
     {
-        if (online_)
+        if (online_ && !power_save_)
         {
             display_.drawFastHLine(x, y, w, SSD1306_WHITE);
         }
     }
     void fillRect(int x, int y, int w, int h, bool on) override
     {
-        if (online_)
+        if (online_ && !power_save_)
         {
             display_.fillRect(x, y, w, h, on ? SSD1306_WHITE : SSD1306_BLACK);
         }
     }
     void present() override
     {
-        if (!online_)
+        if (!online_ || power_save_)
         {
             return;
         }
@@ -448,11 +448,28 @@ class Ssd1306MonoDisplay final : public ::ui::mono::MonoDisplay
             display_.display();
         }
     }
+    bool powerSavesOnSleep() const override { return true; }
+    void setPowerSave(bool enabled) override
+    {
+        if (!online_ || power_save_ == enabled)
+        {
+            return;
+        }
+        auto& board = ::boards::gat562_mesh_evb_pro::Gat562Board::instance();
+        Gat562Board::I2cGuard guard(board, 100);
+        if (!guard)
+        {
+            return;
+        }
+        display_.ssd1306_command(enabled ? SSD1306_DISPLAYOFF : SSD1306_DISPLAYON);
+        power_save_ = enabled;
+    }
 
   private:
     Adafruit_SSD1306 display_;
     bool initialized_ = false;
     bool online_ = false;
+    bool power_save_ = false;
 };
 
 bool Ssd1306MonoDisplay::begin()

@@ -29,6 +29,8 @@ class MonoDisplay
     virtual void drawHLine(int x, int y, int w) = 0;
     virtual void fillRect(int x, int y, int w, int h, bool on) = 0;
     virtual void present() = 0;
+    virtual bool powerSavesOnSleep() const { return false; }
+    virtual void setPowerSave(bool enabled) { (void)enabled; }
 };
 
 enum class InputAction : uint8_t
@@ -46,6 +48,12 @@ enum class InputAction : uint8_t
 
 struct HostCallbacks
 {
+    enum class VirtualKeyboardLayout : uint8_t
+    {
+        PagedGrid = 0,
+        FullKeyboard,
+    };
+
     struct ResourceUsage
     {
         bool available = false;
@@ -87,6 +95,7 @@ struct HostCallbacks
     void (*set_keyboard_light_enabled_fn)(bool enabled) = nullptr;
     void (*debug_log_fn)(const char* text) = nullptr;
     bool physical_text_input = false;
+    VirtualKeyboardLayout virtual_keyboard_layout = VirtualKeyboardLayout::PagedGrid;
 };
 
 class Runtime : public chat::ChatService::IncomingTextObserver
@@ -235,6 +244,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver
     bool editUsesHexCharset() const;
     bool usesSmartCompose() const;
     bool usesPhysicalTextInput() const;
+    bool usesFullVirtualKeyboard() const;
     bool usesLargeScreensaverLayout() const;
     bool shouldRenderForTick(InputAction action);
     void executeActionPageItem(size_t index);

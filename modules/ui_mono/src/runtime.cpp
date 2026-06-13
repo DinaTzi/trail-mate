@@ -271,6 +271,9 @@ constexpr const char* kComposeActionLabels[] = {"ABC", "SP", "BACK", "DEL", "SEN
 constexpr size_t kVirtualKeyboardCols = 3;
 constexpr size_t kVirtualKeyboardRows = 3;
 constexpr size_t kVirtualKeyboardPageSize = kVirtualKeyboardCols * kVirtualKeyboardRows;
+constexpr const char* kFullAlphaRows[] = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
+constexpr const char* kFullNumRows[] = {"1234567890"};
+constexpr const char* kFullSymRows[] = {".,!?/-:@#", "()[]+="};
 
 struct PinyinCandidateEntry
 {
@@ -448,6 +451,94 @@ constexpr size_t arrayCount(const T (&)[N])
 static_assert(arrayCount(kRadioItems) > 0, "radio settings must not be empty");
 static_assert(arrayCount(kDeviceItems) == arrayCount(kDeviceItemIds),
               "device settings labels and ids must stay aligned");
+
+struct VirtualKeyboardRows
+{
+    const char* const* rows = nullptr;
+    size_t row_count = 0;
+};
+
+VirtualKeyboardRows fullKeyboardRowsForMode(ui::mono::Runtime::ComposeMode mode)
+{
+    switch (mode)
+    {
+    case ui::mono::Runtime::ComposeMode::Num:
+        return {kFullNumRows, arrayCount(kFullNumRows)};
+    case ui::mono::Runtime::ComposeMode::Sym:
+        return {kFullSymRows, arrayCount(kFullSymRows)};
+    case ui::mono::Runtime::ComposeMode::Cn:
+    case ui::mono::Runtime::ComposeMode::AbcUpper:
+    case ui::mono::Runtime::ComposeMode::AbcLower:
+    default:
+        return {kFullAlphaRows, arrayCount(kFullAlphaRows)};
+    }
+}
+
+size_t fullKeyboardKeyCount(VirtualKeyboardRows grid)
+{
+    size_t count = 0;
+    for (size_t row = 0; row < grid.row_count; ++row)
+    {
+        count += std::strlen(grid.rows[row]);
+    }
+    return count;
+}
+
+bool fullKeyboardIndexToCell(VirtualKeyboardRows grid, size_t index, size_t& out_row, size_t& out_col)
+{
+    size_t base = 0;
+    for (size_t row = 0; row < grid.row_count; ++row)
+    {
+        const size_t len = std::strlen(grid.rows[row]);
+        if (index < base + len)
+        {
+            out_row = row;
+            out_col = index - base;
+            return true;
+        }
+        base += len;
+    }
+    out_row = 0;
+    out_col = 0;
+    return false;
+}
+
+size_t fullKeyboardCellToIndex(VirtualKeyboardRows grid, size_t target_row, size_t target_col)
+{
+    size_t index = 0;
+    for (size_t row = 0; row < grid.row_count; ++row)
+    {
+        const size_t len = std::strlen(grid.rows[row]);
+        if (row == target_row)
+        {
+            return index + std::min(target_col, len > 0 ? len - 1U : 0U);
+        }
+        index += len;
+    }
+    return 0;
+}
+
+bool fullKeyboardMoveVertical(ui::mono::Runtime::ComposeMode mode, size_t current, int delta, size_t& next)
+{
+    const VirtualKeyboardRows grid = fullKeyboardRowsForMode(mode);
+    size_t row = 0;
+    size_t col = 0;
+    if (grid.row_count == 0 || !fullKeyboardIndexToCell(grid, current, row, col))
+    {
+        next = 0;
+        return false;
+    }
+
+    if ((delta < 0 && row == 0) || (delta > 0 && row + 1U >= grid.row_count))
+    {
+        next = current;
+        return false;
+    }
+
+    const size_t target_row = delta < 0 ? row - 1U : row + 1U;
+    next = fullKeyboardCellToIndex(grid, target_row, col);
+    return true;
+}
 
 size_t radioItemCount()
 {
@@ -2055,53 +2146,105 @@ void Runtime::handleInput(InputAction action)
         else if (compose_focus_ == ComposeFocus::Body)
         {
             const char* keyset = composeKeysetForMode(compose_mode_);
-            const size_t key_count = std::strlen(keyset);
-            const size_t page_start = key_count == 0 ? 0U : ((compose_charset_index_ / kVirtualKeyboardPageSize) * kVirtualKeyboardPageSize);
-            const size_t page_end = std::min(key_count, page_start + kVirtualKeyboardPageSize);
+            size_t key_count = std::strlen(keyset);
+            if (usesFullVirtualKeyboard())
+            {
+                key_count = fullKeyboardKeyCount(fullKeyboardRowsForMode(compose_mode_));
+            }
             if (key_count == 0)
             {
                 compose_charset_index_ = 0;
             }
-            else if (action == InputAction::Up)
+            else if (usesFullVirtualKeyboard())
             {
-                if (compose_charset_index_ >= page_start + kVirtualKeyboardCols)
+                compose_charset_index_ = std::min(compose_charset_index_, key_count - 1U);
+                if (action == InputAction::Up)
                 {
-                    compose_charset_index_ -= kVirtualKeyboardCols;
+                    size_t next = compose_charset_index_;
+                    if (fullKeyboardMoveVertical(compose_mode_, compose_charset_index_, -1, next))
+                    {
+                        compose_charset_index_ = next;
+                    }
+                    else if (compose_candidate_count_ > 0)
+                    {
+                        compose_focus_ = ComposeFocus::Candidate;
+                    }
                 }
-                else if (compose_candidate_count_ > 0)
+                else if (action == InputAction::Down)
                 {
-                    compose_focus_ = ComposeFocus::Candidate;
+                    size_t next = compose_charset_index_;
+                    if (fullKeyboardMoveVertical(compose_mode_, compose_charset_index_, 1, next))
+                    {
+                        compose_charset_index_ = next;
+                    }
+                    else
+                    {
+                        compose_focus_ = ComposeFocus::Action;
+                    }
                 }
-            }
-            else if (action == InputAction::Down)
-            {
-                const size_t next = compose_charset_index_ + kVirtualKeyboardCols;
-                if (next < page_end)
+                else if (action == InputAction::Left)
                 {
-                    compose_charset_index_ = next;
+                    compose_charset_index_ = (compose_charset_index_ == 0) ? (key_count - 1U)
+                                                                             : (compose_charset_index_ - 1U);
                 }
-                else
+                else if (action == InputAction::Right)
                 {
-                    compose_focus_ = ComposeFocus::Action;
+                    compose_charset_index_ = (compose_charset_index_ + 1U) % key_count;
+                }
+                else if (action == InputAction::Select || action == InputAction::Primary)
+                {
+                    addComposeChar();
+                }
+                else if (action == InputAction::Secondary)
+                {
+                    appendComposeChar(' ');
                 }
             }
-            else if (action == InputAction::Left)
+            else
             {
-                compose_charset_index_ = (compose_charset_index_ == page_start) ? (page_end - 1U)
-                                                                                 : (compose_charset_index_ - 1U);
-            }
-            else if (action == InputAction::Right)
-            {
-                compose_charset_index_ = (compose_charset_index_ + 1U >= page_end) ? page_start
-                                                                                   : (compose_charset_index_ + 1U);
-            }
-            else if (action == InputAction::Select || action == InputAction::Primary)
-            {
-                addComposeChar();
-            }
-            else if (action == InputAction::Secondary)
-            {
-                appendComposeChar(' ');
+                const size_t page_start = (compose_charset_index_ / kVirtualKeyboardPageSize) * kVirtualKeyboardPageSize;
+                const size_t page_end = std::min(key_count, page_start + kVirtualKeyboardPageSize);
+                if (action == InputAction::Up)
+                {
+                    if (compose_charset_index_ >= page_start + kVirtualKeyboardCols)
+                    {
+                        compose_charset_index_ -= kVirtualKeyboardCols;
+                    }
+                    else if (compose_candidate_count_ > 0)
+                    {
+                        compose_focus_ = ComposeFocus::Candidate;
+                    }
+                }
+                else if (action == InputAction::Down)
+                {
+                    const size_t next = compose_charset_index_ + kVirtualKeyboardCols;
+                    if (next < page_end)
+                    {
+                        compose_charset_index_ = next;
+                    }
+                    else
+                    {
+                        compose_focus_ = ComposeFocus::Action;
+                    }
+                }
+                else if (action == InputAction::Left)
+                {
+                    compose_charset_index_ = (compose_charset_index_ == page_start) ? (page_end - 1U)
+                                                                                     : (compose_charset_index_ - 1U);
+                }
+                else if (action == InputAction::Right)
+                {
+                    compose_charset_index_ = (compose_charset_index_ + 1U >= page_end) ? page_start
+                                                                                       : (compose_charset_index_ + 1U);
+                }
+                else if (action == InputAction::Select || action == InputAction::Primary)
+                {
+                    addComposeChar();
+                }
+                else if (action == InputAction::Secondary)
+                {
+                    appendComposeChar(' ');
+                }
             }
         }
         else if (compose_focus_ == ComposeFocus::Candidate)
@@ -2289,6 +2432,13 @@ void Runtime::handleInput(InputAction action)
 
 void Runtime::render()
 {
+    if (page_ == Page::Sleep && display_.powerSavesOnSleep())
+    {
+        display_.setPowerSave(true);
+        return;
+    }
+
+    display_.setPowerSave(false);
     display_.clear();
     switch (page_)
     {
@@ -3377,27 +3527,61 @@ void Runtime::renderCompose()
 
     const char* keyset = composeKeysetForMode(compose_mode_);
     const size_t key_count = std::strlen(keyset);
-    const size_t page_start = key_count == 0 ? 0U : ((compose_charset_index_ / kVirtualKeyboardPageSize) * kVirtualKeyboardPageSize);
-    const int cell_w = std::max(1, display_.width() / static_cast<int>(kVirtualKeyboardCols));
-    for (size_t row = 0; row < kVirtualKeyboardRows; ++row)
+    if (usesFullVirtualKeyboard())
     {
-        for (size_t col = 0; col < kVirtualKeyboardCols; ++col)
+        const VirtualKeyboardRows grid = fullKeyboardRowsForMode(compose_mode_);
+        size_t key_index_base = 0;
+        for (size_t row = 0; row < grid.row_count; ++row)
         {
-            const size_t key_index = page_start + row * kVirtualKeyboardCols + col;
-            if (key_index >= key_count)
+            const char* row_keys = grid.rows[row];
+            const size_t row_len = std::strlen(row_keys);
+            if (row_len == 0)
             {
                 continue;
             }
+            const int cell_w = std::max(1, display_.width() / static_cast<int>(row_len));
+            const int row_w = cell_w * static_cast<int>(row_len);
+            const int x0 = std::max(0, (display_.width() - row_w) / 2);
+            for (size_t col = 0; col < row_len; ++col)
+            {
+                const size_t key_index = key_index_base + col;
+                const bool selected = compose_focus_ == ComposeFocus::Body && key_index == compose_charset_index_;
+                const char key_char = row_keys[col];
+                char cell[8] = {};
+                std::snprintf(cell, sizeof(cell), " %c ", key_char == ' ' ? '_' : key_char);
+                drawTextClipped(x0 + static_cast<int>(col) * cell_w,
+                                line_h * (4 + static_cast<int>(row)),
+                                cell_w,
+                                cell,
+                                selected);
+            }
+            key_index_base += row_len;
+        }
+    }
+    else
+    {
+        const size_t page_start = key_count == 0 ? 0U : ((compose_charset_index_ / kVirtualKeyboardPageSize) * kVirtualKeyboardPageSize);
+        const int cell_w = std::max(1, display_.width() / static_cast<int>(kVirtualKeyboardCols));
+        for (size_t row = 0; row < kVirtualKeyboardRows; ++row)
+        {
+            for (size_t col = 0; col < kVirtualKeyboardCols; ++col)
+            {
+                const size_t key_index = page_start + row * kVirtualKeyboardCols + col;
+                if (key_index >= key_count)
+                {
+                    continue;
+                }
 
-            const bool selected = compose_focus_ == ComposeFocus::Body && key_index == compose_charset_index_;
-            const char key_char = keyset[key_index];
-            char cell[8] = {};
-            std::snprintf(cell, sizeof(cell), " %c ", key_char == ' ' ? '_' : key_char);
-            drawTextClipped(static_cast<int>(col) * cell_w,
-                            line_h * (4 + static_cast<int>(row)),
-                            cell_w,
-                            cell,
-                            selected);
+                const bool selected = compose_focus_ == ComposeFocus::Body && key_index == compose_charset_index_;
+                const char key_char = keyset[key_index];
+                char cell[8] = {};
+                std::snprintf(cell, sizeof(cell), " %c ", key_char == ' ' ? '_' : key_char);
+                drawTextClipped(static_cast<int>(col) * cell_w,
+                                line_h * (4 + static_cast<int>(row)),
+                                cell_w,
+                                cell,
+                                selected);
+            }
         }
     }
 
@@ -6243,6 +6427,12 @@ bool Runtime::usesSmartCompose() const
 bool Runtime::usesPhysicalTextInput() const
 {
     return host_.physical_text_input && edit_target_ == EditTarget::Message;
+}
+
+bool Runtime::usesFullVirtualKeyboard() const
+{
+    return usesSmartCompose() &&
+           host_.virtual_keyboard_layout == HostCallbacks::VirtualKeyboardLayout::FullKeyboard;
 }
 
 bool Runtime::usesLargeScreensaverLayout() const
