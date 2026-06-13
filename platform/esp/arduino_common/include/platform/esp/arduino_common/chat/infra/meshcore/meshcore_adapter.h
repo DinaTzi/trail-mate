@@ -8,6 +8,7 @@
 #include "board/LoraBoard.h"
 #include "chat/infra/meshcore/meshcore_ble_backend.h"
 #include "chat/ports/i_mesh_adapter.h"
+#include "chat/runtime/meshcore_runtime.h"
 #include "platform/esp/arduino_common/chat/infra/meshcore/meshcore_identity.h"
 #include <deque>
 #include <limits>
@@ -259,16 +260,6 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
         PathCandidate candidates[kMaxPeerRouteCandidates];
     };
 
-    struct PendingAppAck
-    {
-        uint32_t signature = 0;
-        NodeId dest = 0;
-        uint32_t portnum = 0;
-        MessageId chat_msg_id = 0;
-        uint32_t created_ms = 0;
-        uint32_t expire_ms = 0;
-    };
-
     struct KeyVerifySession
     {
         bool active = false;
@@ -324,7 +315,6 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     bool has_pending_raw_packet_;
     std::deque<ScheduledFrame> scheduled_tx_;
     std::deque<SeenEntry> seen_recent_;
-    std::deque<PendingAppAck> pending_app_acks_;
     std::deque<Event> events_;
     std::vector<PeerRouteEntry> peer_routes_;
     std::vector<NodeId> verified_peers_;
@@ -332,6 +322,9 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
 
     MessageId next_msg_id_;
     std::array<uint8_t, 16> flood_scope_key_ = {};
+    runtime::MeshCoreRuntime protocol_runtime_{};
+
+    static constexpr uint32_t kDiscoverRxGuardDefaultMs = 5000;
 
     TxGateReason checkTxGate(uint32_t now_ms) const;
     static const char* txGateReasonName(TxGateReason reason);
@@ -341,7 +334,7 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     bool transmitFrameNow(const uint8_t* data, size_t len, uint32_t now_ms);
     bool enqueueScheduled(const uint8_t* data, size_t len, uint32_t delay_ms,
                           bool defer_during_discover = false);
-    void armDiscoverRxGuard(uint32_t now_ms);
+    void armDiscoverRxGuard(uint32_t now_ms, uint32_t duration_ms = kDiscoverRxGuardDefaultMs);
     bool isDiscoverRxGuardActive(uint32_t now_ms) const;
     bool resolveGroupSecret(ChannelId channel, uint8_t out_key16[16],
                             uint8_t out_key32[32], uint8_t* out_hash) const;
@@ -388,7 +381,12 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     bool consumePendingAppAck(uint32_t signature, uint32_t now_ms);
     void pushEvent(Event&& ev);
     bool sendNodeInfoFrame(NodeId dest, bool is_query, bool request_reply);
+    runtime::RuntimeContext buildRuntimeContext() const;
+    bool executeProtocolEffects(const runtime::ProtocolEffects& effects);
+    bool executeProtocolEffect(const runtime::ProtocolEffect& effect);
+    MeshActionResult executeDiscoveryEffectsDetailed(const runtime::ProtocolEffects& effects);
     MeshActionResult sendDiscoverRequestLocalDetailed();
+    MeshActionResult sendDiscoverRequestLocalDetailed(const runtime::SendDiscoverRequestEffect& effect);
     bool sendDiscoverRequestLocal();
     MeshActionResult sendIdentityAdvertDetailed(bool broadcast);
     MeshActionResult sendIdentityAdvertDetailed(bool broadcast, bool include_location,

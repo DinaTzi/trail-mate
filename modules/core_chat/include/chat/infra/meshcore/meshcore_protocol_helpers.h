@@ -26,9 +26,35 @@ struct ParsedPacket
     size_t payload_len = 0;
 };
 
+constexpr size_t kMeshCoreTraceBasePayloadSize = 9;
+constexpr uint8_t kMeshCorePayloadTypeTrace = 0x09;
+
+struct DecodedTracePayload
+{
+    bool valid = false;
+    bool terminal = false;
+    uint32_t tag = 0;
+    uint32_t auth = 0;
+    uint8_t flags = 0;
+    size_t path_hash_size = 1;
+    size_t offset = 0;
+    const uint8_t* trace_hashes = nullptr;
+    size_t trace_hashes_len = 0;
+    uint8_t next_hash = 0;
+};
+
 std::string toHex(const uint8_t* data, size_t len, size_t max_len = 128);
 uint8_t buildHeader(uint8_t route_type, uint8_t payload_type, uint8_t payload_ver);
 bool parsePacket(const uint8_t* data, size_t len, ParsedPacket* out);
+size_t tracePathHashSize(uint8_t flags);
+bool isValidTracePathHashBytes(uint8_t flags, size_t path_hashes_len, size_t max_hops);
+bool buildTracePayload(uint32_t tag, uint32_t auth, uint8_t flags,
+                       const uint8_t* path_hashes, size_t path_hashes_len,
+                       uint8_t* out_payload, size_t out_cap, size_t* out_len);
+bool buildTracePayload(uint32_t tag, uint32_t auth, uint8_t flags,
+                       uint8_t* out_payload, size_t out_cap, size_t* out_len);
+bool decodeTracePayload(const uint8_t* payload, size_t payload_len,
+                        size_t path_len, DecodedTracePayload* out);
 uint32_t hashFrame(const uint8_t* data, size_t len);
 uint32_t packetSignature(uint8_t payload_type, size_t path_len,
                          const uint8_t* payload, size_t payload_len);

@@ -3,6 +3,7 @@
 #include "chat/infra/meshcore/meshcore_ble_backend.h"
 #include "chat/infra/meshcore/meshcore_identity_crypto.h"
 #include "chat/ports/i_mesh_adapter.h"
+#include "chat/runtime/meshcore_runtime.h"
 #include "chat/runtime/self_identity_policy.h"
 #include "chat/runtime/self_identity_provider.h"
 
@@ -77,6 +78,13 @@ class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter, public ::chat::m
     void ensureIdentityKeys();
     bool transmitFrame(const uint8_t* data, size_t size);
     bool sendAdvert(bool broadcast);
+    bool handleNodeInfoAppData(const ::chat::MeshIncomingData& incoming);
+    ::chat::runtime::RuntimeContext buildRuntimeContext() const;
+    bool executeProtocolEffects(const ::chat::runtime::ProtocolEffects& effects);
+    bool executeProtocolEffect(const ::chat::runtime::ProtocolEffect& effect);
+    bool executeNodeInfoEffect(const ::chat::runtime::SendNodeInfoEffect& effect);
+    bool executeDiscoverRequestEffect(const ::chat::runtime::SendDiscoverRequestEffect& effect);
+    bool executeSelfAnnouncementEffect(const ::chat::runtime::SendSelfAnnouncementEffect& effect);
 
     ::chat::MeshConfig config_{};
     ::chat::NodeId node_id_ = 0;
@@ -89,6 +97,7 @@ class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter, public ::chat::m
     std::array<uint8_t, 16> flood_scope_key_{};
     std::queue<::chat::MeshIncomingText> text_queue_;
     std::queue<::chat::MeshIncomingData> data_queue_;
+    ::chat::runtime::MeshCoreRuntime protocol_runtime_{};
 };
 
 } // namespace platform::nrf52::arduino_common::chat::meshcore

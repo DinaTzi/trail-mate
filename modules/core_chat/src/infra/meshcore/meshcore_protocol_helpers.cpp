@@ -359,6 +359,88 @@ bool parsePacket(const uint8_t* data, size_t len, ParsedPacket* out)
     return true;
 }
 
+size_t tracePathHashSize(uint8_t flags)
+{
+    const uint8_t path_hash_size_bits = flags & 0x03;
+    size_t path_hash_size = static_cast<size_t>(1U << path_hash_size_bits);
+    if (path_hash_size == 0 || path_hash_size > 4)
+    {
+        path_hash_size = 1;
+    }
+    return path_hash_size;
+}
+
+bool isValidTracePathHashBytes(uint8_t flags, size_t path_hashes_len, size_t max_hops)
+{
+    const size_t path_hash_size = tracePathHashSize(flags);
+    return (path_hashes_len % path_hash_size) == 0 &&
+           (path_hashes_len / path_hash_size) <= max_hops;
+}
+
+bool buildTracePayload(uint32_t tag, uint32_t auth, uint8_t flags,
+                       const uint8_t* path_hashes, size_t path_hashes_len,
+                       uint8_t* out_payload, size_t out_cap, size_t* out_len)
+{
+    if (!out_payload || !out_len ||
+        (path_hashes_len > 0 && !path_hashes) ||
+        out_cap < kMeshCoreTraceBasePayloadSize ||
+        (out_cap - kMeshCoreTraceBasePayloadSize) < path_hashes_len)
+    {
+        return false;
+    }
+
+    memcpy(out_payload, &tag, sizeof(tag));
+    memcpy(out_payload + sizeof(tag), &auth, sizeof(auth));
+    out_payload[8] = flags;
+    if (path_hashes_len > 0)
+    {
+        memcpy(out_payload + kMeshCoreTraceBasePayloadSize, path_hashes, path_hashes_len);
+    }
+    *out_len = kMeshCoreTraceBasePayloadSize + path_hashes_len;
+    return true;
+}
+
+bool buildTracePayload(uint32_t tag, uint32_t auth, uint8_t flags,
+                       uint8_t* out_payload, size_t out_cap, size_t* out_len)
+{
+    return buildTracePayload(tag, auth, flags, nullptr, 0, out_payload, out_cap, out_len);
+}
+
+bool decodeTracePayload(const uint8_t* payload, size_t payload_len,
+                        size_t path_len, DecodedTracePayload* out)
+{
+    if (!out)
+    {
+        return false;
+    }
+
+    *out = DecodedTracePayload{};
+    if (!payload || payload_len < kMeshCoreTraceBasePayloadSize)
+    {
+        return false;
+    }
+
+    DecodedTracePayload decoded{};
+    decoded.valid = true;
+    memcpy(&decoded.tag, payload, sizeof(decoded.tag));
+    memcpy(&decoded.auth, payload + sizeof(decoded.tag), sizeof(decoded.auth));
+    decoded.flags = payload[8];
+
+    decoded.path_hash_size = tracePathHashSize(decoded.flags);
+
+    decoded.trace_hashes = payload + kMeshCoreTraceBasePayloadSize;
+    decoded.trace_hashes_len = payload_len - kMeshCoreTraceBasePayloadSize;
+    decoded.offset = path_len * decoded.path_hash_size;
+    decoded.terminal = decoded.offset >= decoded.trace_hashes_len;
+    if (!decoded.terminal)
+    {
+        decoded.next_hash = decoded.trace_hashes[decoded.offset];
+    }
+
+    *out = decoded;
+    return true;
+}
+
 uint32_t hashFrame(const uint8_t* data, size_t len)
 {
     if (!data || len == 0)

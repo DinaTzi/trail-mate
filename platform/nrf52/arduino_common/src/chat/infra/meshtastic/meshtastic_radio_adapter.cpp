@@ -8,6 +8,7 @@
 #include "chat/infra/meshtastic/mt_protocol_helpers.h"
 #include "chat/infra/meshtastic/mt_radio_config.h"
 #include "chat/infra/meshtastic/mt_region.h"
+#include "chat/runtime/meshtastic_protocol_policy.h"
 #include "chat/runtime/meshtastic_self_announcement_core.h"
 #include "chat/runtime/self_identity_policy.h"
 #include "meshtastic/mqtt.pb.h"
@@ -30,6 +31,7 @@
 #include <cstring>
 #include <ctime>
 #include <string>
+#include <type_traits>
 
 namespace platform::nrf52::arduino_common::chat::meshtastic
 {
@@ -43,8 +45,6 @@ constexpr uint8_t kDefaultAckRetries = 3;
 constexpr uint32_t kRetransmitIntervalMs = 1500;
 constexpr uint32_t kImplicitAckTimeoutMs = 15000;
 constexpr uint32_t kNodeInfoIntervalMs = 3UL * 60UL * 60UL * 1000UL;
-constexpr uint32_t kNodeInfoReplySuppressMs = 12UL * 60UL * 60UL * 1000UL;
-constexpr uint32_t kPositionReplySuppressMs = 3UL * 60UL * 1000UL;
 constexpr uint32_t kKeyVerificationTimeoutMs = 60000UL;
 constexpr uint32_t kPkiNodeSaveDebounceMs = 2000UL;
 constexpr ::chat::NodeId kBroadcastNode = 0xFFFFFFFFUL;
@@ -634,14 +634,9 @@ bool MeshtasticRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t por
         out_channel = ::chat::ChannelId::PRIMARY;
     }
 
-    const bool is_broadcast = (dest == 0 || dest == kBroadcastNode);
-    if (is_broadcast)
-    {
-        want_ack = false;
-        want_response = false;
-    }
-
-    const bool effective_want_response = want_response || want_ack;
+    const auto send_policy =
+        ::chat::runtime::resolveMeshtasticAppDataSendPolicy(dest, want_ack, want_response);
+    const bool effective_want_response = send_policy.effective_want_response;
 
     auto& scratch = tx_scratch_;
     std::fill(scratch.app_data.begin(), scratch.app_data.end(), 0);
@@ -667,7 +662,7 @@ bool MeshtasticRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t por
         }
     }
 
-    const ::chat::NodeId wire_dest = (dest == 0) ? kBroadcastNode : dest;
+    const ::chat::NodeId wire_dest = send_policy.wire_dest;
     size_t key_len = 0;
     const uint8_t* key = selectKey(config_, out_channel, &key_len);
     uint8_t channel_hash = ::chat::meshtastic::computeChannelHash(channelNameFor(config_, out_channel),
@@ -676,7 +671,8 @@ bool MeshtasticRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t por
     const uint8_t* wire_payload = data_pb;
     size_t wire_payload_len = data_pb_size;
     bool use_pki = false;
-    bool track_ack = want_ack;
+    bool wire_want_ack = send_policy.wire_want_ack;
+    bool track_ack = send_policy.track_ack;
     if (shouldRequireDirectPki(encrypt_mode_, wire_dest, portnum))
     {
         if (!pki_ready_ || !allowPkiForPortnum(portnum) || !hasPkiKey(wire_dest))
@@ -697,7 +693,7 @@ bool MeshtasticRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t por
         key_len = 0;
         channel_hash = 0;
         track_ack = true;
-        want_ack = true;
+        wire_want_ack = true;
         use_pki = true;
     }
 
@@ -710,7 +706,7 @@ bool MeshtasticRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t por
                                              wire_dest,
                                              channel_hash,
                                              config_.hop_limit,
-                                             want_ack,
+                                             wire_want_ack,
                                              key,
                                              key_len,
                                              wire,
@@ -738,7 +734,7 @@ bool MeshtasticRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t por
                                 track_ack,
                                 true,
                                 0,
-                                want_ack);
+                                wire_want_ack);
 }
 
 bool MeshtasticRadioAdapter::pollIncomingData(::chat::MeshIncomingData* out)
@@ -977,18 +973,11 @@ void MeshtasticRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
 
         if (!pki_ready_)
         {
-            (void)buildAndQueueNodeInfo(header.from, true, ::chat::ChannelId::PRIMARY);
-
-            size_t primary_key_len = 0;
-            const uint8_t* primary_key = selectKey(config_, ::chat::ChannelId::PRIMARY, &primary_key_len);
-            (void)sendRoutingError(header.from,
+            (void)primary_hash;
+            (void)executePkiResync(::chat::runtime::MeshtasticPkiResyncCause::LocalPkiNotReady,
+                                   header.from,
                                    header.id,
-                                   primary_hash,
-                                   ::chat::ChannelId::PRIMARY,
-                                   primary_key,
-                                   primary_key_len,
-                                   meshtastic_Routing_Error_PKI_UNKNOWN_PUBKEY,
-                                   0);
+                                   ::chat::ChannelId::PRIMARY);
             return;
         }
 
@@ -1050,15 +1039,12 @@ void MeshtasticRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
         {
             if (header.channel == 0)
             {
-                (void)buildAndQueueNodeInfo(header.from, true, ::chat::ChannelId::PRIMARY);
-                (void)sendRoutingError(header.from,
+                (void)primary_key;
+                (void)primary_key_len;
+                (void)executePkiResync(::chat::runtime::MeshtasticPkiResyncCause::PeerKeyMissing,
+                                       header.from,
                                        header.id,
-                                       primary_hash,
-                                       ::chat::ChannelId::PRIMARY,
-                                       primary_key,
-                                       primary_key_len,
-                                       meshtastic_Routing_Error_PKI_UNKNOWN_PUBKEY,
-                                       0);
+                                       ::chat::ChannelId::PRIMARY);
             }
             else if (header.channel != primary_hash && header.channel != secondary_hash)
             {
@@ -1254,6 +1240,10 @@ void MeshtasticRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
                     }
                 }
                 nodeinfo_last_seen_ms_[node.node_id] = millis();
+                maybeBroadcastNodeInfoAfterPeerAnnouncement(node.node_id,
+                                                            millis(),
+                                                            channel,
+                                                            node.via_mqtt);
 
                 if (!node.short_name.empty() || !node.long_name.empty())
                 {
@@ -1349,29 +1339,30 @@ void MeshtasticRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
         }
     }
 
-    if (decoded_ok && want_response && to_us_or_broadcast)
+    if (decoded_ok && decoded.portnum == meshtastic_PortNum_NODEINFO_APP)
     {
-        if (decoded.portnum == meshtastic_PortNum_NODEINFO_APP)
+        const uint32_t now_ms = millis();
+        const auto it = nodeinfo_reply_ms_.find(header.from);
+        const uint32_t last_reply_ms =
+            (it != nodeinfo_reply_ms_.end()) ? it->second : 0;
+        const auto reply_policy = ::chat::runtime::resolveMeshtasticNodeInfoReplyPolicy(
+            want_response, to_us_or_broadcast, now_ms, last_reply_ms);
+        if (reply_policy.should_reply)
         {
-            const uint32_t now_ms = millis();
-            bool allow_reply = true;
-            const auto it = nodeinfo_last_seen_ms_.find(header.from);
-            if (it != nodeinfo_last_seen_ms_.end() && (now_ms - it->second) < kNodeInfoReplySuppressMs)
+            if (buildAndQueueNodeInfo(header.from, false, channel))
             {
-                allow_reply = false;
-            }
-            nodeinfo_last_seen_ms_[header.from] = now_ms;
-            if (allow_reply)
-            {
-                (void)buildAndQueueNodeInfo(header.from, false, channel);
+                nodeinfo_reply_ms_[header.from] = now_ms;
             }
         }
-        else if (decoded.portnum == meshtastic_PortNum_POSITION_APP)
+    }
+    else if (decoded_ok && decoded.portnum == meshtastic_PortNum_POSITION_APP)
+    {
+        const uint32_t now_ms = millis();
+        const auto reply_policy = ::chat::runtime::resolveMeshtasticPositionReplyPolicy(
+            want_response, to_us_or_broadcast, now_ms, last_position_reply_ms_);
+        if (reply_policy.should_reply)
         {
-            const uint32_t now_ms = millis();
-            const bool allow_reply =
-                (last_position_reply_ms_ == 0) || ((now_ms - last_position_reply_ms_) >= kPositionReplySuppressMs);
-            if (allow_reply && sendPositionTo(header.from, channel))
+            if (sendPositionTo(header.from, channel, header.id))
             {
                 last_position_reply_ms_ = now_ms;
             }
@@ -1769,8 +1760,15 @@ bool MeshtasticRadioAdapter::buildAndQueueRoutingPacket(::chat::NodeId dest, uin
     return transmitPreparedWire(wire, wire_size, channel, &data, false, true);
 }
 
-bool MeshtasticRadioAdapter::sendPositionTo(::chat::NodeId dest, ::chat::ChannelId channel)
+bool MeshtasticRadioAdapter::sendPositionTo(::chat::NodeId dest,
+                                            ::chat::ChannelId channel,
+                                            uint32_t request_id)
 {
+    if (!isReady() || !config_.tx_enabled)
+    {
+        return false;
+    }
+
     uint8_t payload[128] = {};
     size_t payload_len = sizeof(payload);
     if (!buildSelfPositionPayload(payload, &payload_len))
@@ -1778,12 +1776,74 @@ bool MeshtasticRadioAdapter::sendPositionTo(::chat::NodeId dest, ::chat::Channel
         return false;
     }
 
-    return sendAppData(channel,
-                       meshtastic_PortNum_POSITION_APP,
-                       payload,
-                       payload_len,
-                       dest,
-                       false);
+    if (request_id == 0)
+    {
+        return sendAppData(channel,
+                           meshtastic_PortNum_POSITION_APP,
+                           payload,
+                           payload_len,
+                           dest,
+                           false);
+    }
+
+    ::chat::ChannelId out_channel = channel;
+    if (encrypt_mode_ == 0 || encrypt_mode_ == 2)
+    {
+        out_channel = ::chat::ChannelId::PRIMARY;
+    }
+
+    uint8_t data_buf[256] = {};
+    size_t data_size = sizeof(data_buf);
+    if (!::chat::meshtastic::encodeAppDataWithRequestId(meshtastic_PortNum_POSITION_APP,
+                                                        payload,
+                                                        payload_len,
+                                                        false,
+                                                        request_id,
+                                                        data_buf,
+                                                        &data_size))
+    {
+        return false;
+    }
+
+    meshtastic_Data data = meshtastic_Data_init_default;
+    data.portnum = meshtastic_PortNum_POSITION_APP;
+    data.want_response = false;
+    data.dest = dest;
+    data.source = node_id_;
+    data.request_id = request_id;
+    data.has_bitfield = true;
+    data.bitfield = 0;
+    data.payload.size = static_cast<pb_size_t>(std::min(payload_len, sizeof(data.payload.bytes)));
+    if (data.payload.size > 0)
+    {
+        std::memcpy(data.payload.bytes, payload, data.payload.size);
+    }
+
+    size_t key_len = 0;
+    const uint8_t* key = selectKey(config_, out_channel, &key_len);
+    const uint8_t channel_hash = ::chat::meshtastic::computeChannelHash(channelNameFor(config_, out_channel),
+                                                                        key,
+                                                                        key_len);
+
+    uint8_t wire[384] = {};
+    size_t wire_size = sizeof(wire);
+    if (!::chat::meshtastic::buildWirePacket(data_buf,
+                                             data_size,
+                                             node_id_,
+                                             next_packet_id_++,
+                                             dest,
+                                             channel_hash,
+                                             config_.hop_limit,
+                                             false,
+                                             key,
+                                             key_len,
+                                             wire,
+                                             &wire_size))
+    {
+        return false;
+    }
+
+    return transmitPreparedWire(wire, wire_size, out_channel, &data, false, true);
 }
 
 void MeshtasticRadioAdapter::maybeBroadcastNodeInfo(uint32_t now_ms)
@@ -1797,6 +1857,44 @@ void MeshtasticRadioAdapter::maybeBroadcastNodeInfo(uint32_t now_ms)
         return;
     }
     (void)buildAndQueueNodeInfo(kBroadcastNode, false, ::chat::ChannelId::PRIMARY);
+}
+
+void MeshtasticRadioAdapter::maybeBroadcastNodeInfoAfterPeerAnnouncement(::chat::NodeId from_node,
+                                                                         uint32_t now_ms,
+                                                                         ::chat::ChannelId channel,
+                                                                         bool from_mqtt)
+{
+    const auto policy = ::chat::runtime::resolveMeshtasticNodeInfoReannouncePolicy(
+        isReady(),
+        config_.tx_enabled,
+        from_mqtt,
+        from_node,
+        node_id_,
+        now_ms,
+        last_nodeinfo_ms_);
+    if (!policy.should_announce)
+    {
+        if (policy.reason == ::chat::runtime::MeshtasticNodeInfoReannounceReason::Suppressed)
+        {
+            logMeshtasticRx("[gat562][mt] nodeinfo announce suppressed from=%08lX age=%lu\n",
+                            static_cast<unsigned long>(from_node),
+                            static_cast<unsigned long>(policy.age_ms));
+        }
+        return;
+    }
+
+    if (buildAndQueueNodeInfo(kBroadcastNode, false, channel))
+    {
+        logMeshtasticRx("[gat562][mt] nodeinfo announce after peer from=%08lX ch=%u\n",
+                        static_cast<unsigned long>(from_node),
+                        static_cast<unsigned>(channel));
+    }
+    else
+    {
+        logMeshtasticRx("[gat562][mt] nodeinfo announce fail after peer from=%08lX ch=%u\n",
+                        static_cast<unsigned long>(from_node),
+                        static_cast<unsigned>(channel));
+    }
 }
 
 bool MeshtasticRadioAdapter::sendRoutingAck(::chat::NodeId dest, uint32_t request_id, uint8_t channel_hash,
@@ -1813,6 +1911,64 @@ bool MeshtasticRadioAdapter::sendRoutingError(::chat::NodeId dest, uint32_t requ
 {
     return buildAndQueueRoutingPacket(dest, request_id, channel_hash, channel,
                                       reason, key, key_len, hop_limit);
+}
+
+bool MeshtasticRadioAdapter::executeProtocolEffects(const ::chat::runtime::ProtocolEffects& effects)
+{
+    bool ok = true;
+    for (const auto& effect : effects.items)
+    {
+        ok = executeProtocolEffect(effect) && ok;
+    }
+    return ok;
+}
+
+bool MeshtasticRadioAdapter::executeProtocolEffect(const ::chat::runtime::ProtocolEffect& effect)
+{
+    bool ok = false;
+    ::chat::runtime::visitProtocolEffect(
+        effect,
+        [this, &ok](const auto& item)
+        {
+            using Effect = std::decay_t<decltype(item)>;
+            if constexpr (std::is_same_v<Effect, ::chat::runtime::SendNodeInfoEffect>)
+            {
+                ok = buildAndQueueNodeInfo(item.peer, item.want_response, item.channel);
+            }
+            else if constexpr (std::is_same_v<Effect, ::chat::runtime::SendRoutingErrorEffect>)
+            {
+                size_t key_len = 0;
+                const uint8_t* key = selectKey(config_, item.channel, &key_len);
+                const uint8_t channel_hash = channelHashFor(config_, item.channel);
+                ok = sendRoutingError(item.peer,
+                                      item.request_id,
+                                      channel_hash,
+                                      item.channel,
+                                      key,
+                                      key_len,
+                                      static_cast<meshtastic_Routing_Error>(item.error_code),
+                                      0);
+            }
+            else if constexpr (std::is_same_v<Effect, ::chat::runtime::ForgetPeerKeyEffect>)
+            {
+                forgetNodePublicKey(item.peer);
+                ok = true;
+            }
+        });
+    return ok;
+}
+
+bool MeshtasticRadioAdapter::executePkiResync(::chat::runtime::MeshtasticPkiResyncCause cause,
+                                              ::chat::NodeId peer,
+                                              ::chat::MessageId request_id,
+                                              ::chat::ChannelId channel)
+{
+    ::chat::runtime::MeshtasticPkiResyncInput input{};
+    input.cause = cause;
+    input.peer = peer;
+    input.request_id = request_id;
+    input.channel = channel;
+    return executeProtocolEffects(protocol_runtime_.handlePkiResync(input));
 }
 
 bool MeshtasticRadioAdapter::sendTraceRouteResponse(::chat::NodeId dest, uint32_t request_id,
@@ -1873,38 +2029,26 @@ bool MeshtasticRadioAdapter::handleTraceRoutePacket(const ::chat::meshtastic::Pa
         return false;
     }
 
-    meshtastic_RouteDiscovery route = meshtastic_RouteDiscovery_init_zero;
-    pb_istream_t istream = pb_istream_from_buffer(decoded->payload.bytes, decoded->payload.size);
-    if (!pb_decode(&istream, meshtastic_RouteDiscovery_fields, &route))
-    {
-        return false;
-    }
-
     const bool is_response = decoded->request_id != 0;
     const bool is_broadcast = header.to == kBroadcastNode;
     const bool to_us = header.to == node_id_;
 
-    ::chat::meshtastic::insertTraceRouteUnknownHops(header.flags, &route, !is_response);
-    ::chat::meshtastic::appendTraceRouteNodeAndSnr(&route, node_id_, rx_meta, !is_response, to_us);
-
-    pb_ostream_t ostream = pb_ostream_from_buffer(decoded->payload.bytes, sizeof(decoded->payload.bytes));
-    if (!pb_encode(&ostream, meshtastic_RouteDiscovery_fields, &route))
+    meshtastic_RouteDiscovery route = meshtastic_RouteDiscovery_init_zero;
+    if (!::chat::meshtastic::updateTraceRoutePayload(
+            decoded, header.flags, node_id_, rx_meta, is_response, to_us, &route))
     {
         return false;
     }
-    decoded->payload.size = static_cast<pb_size_t>(ostream.bytes_written);
 
-    if (!is_response && want_response && (to_us || is_broadcast))
+    const uint8_t hop_limit = header.flags & ::chat::meshtastic::PACKET_FLAGS_HOP_LIMIT_MASK;
+    const uint8_t hop_start =
+        (header.flags & ::chat::meshtastic::PACKET_FLAGS_HOP_START_MASK) >>
+        ::chat::meshtastic::PACKET_FLAGS_HOP_START_SHIFT;
+    const auto reply_policy = ::chat::runtime::resolveMeshtasticTraceRouteReplyPolicy(
+        is_response, want_response, to_us, is_broadcast, hop_limit, hop_start);
+    if (reply_policy.should_reply)
     {
-        const uint8_t hop_limit = header.flags & ::chat::meshtastic::PACKET_FLAGS_HOP_LIMIT_MASK;
-        const uint8_t hop_start =
-            (header.flags & ::chat::meshtastic::PACKET_FLAGS_HOP_START_MASK) >>
-            ::chat::meshtastic::PACKET_FLAGS_HOP_START_SHIFT;
-        const bool ignore_broadcast_request = is_broadcast && hop_limit < hop_start;
-        if (!ignore_broadcast_request)
-        {
-            (void)sendTraceRouteResponse(header.from, header.id, route, channel, want_ack_flag);
-        }
+        (void)sendTraceRouteResponse(header.from, header.id, route, channel, want_ack_flag);
     }
 
     return true;
@@ -2253,7 +2397,10 @@ void MeshtasticRadioAdapter::handleRoutingPacket(const ::chat::meshtastic::Packe
         if (reason == meshtastic_Routing_Error_PKI_UNKNOWN_PUBKEY ||
             reason == meshtastic_Routing_Error_NO_CHANNEL)
         {
-            (void)buildAndQueueNodeInfo(header.from, true);
+            const auto cause = (reason == meshtastic_Routing_Error_PKI_UNKNOWN_PUBKEY)
+                                   ? ::chat::runtime::MeshtasticPkiResyncCause::PeerReportsUnknownPubkey
+                                   : ::chat::runtime::MeshtasticPkiResyncCause::PeerReportsNoChannel;
+            (void)executePkiResync(cause, header.from, 0, channel);
         }
         return;
     }
@@ -2442,6 +2589,20 @@ void MeshtasticRadioAdapter::markPkiKeysDirty()
     pki_node_keys_save_due_ms_ = millis() + kPkiNodeSaveDebounceMs;
 }
 
+void MeshtasticRadioAdapter::forgetNodePublicKey(::chat::NodeId node_id)
+{
+    if (node_id == 0)
+    {
+        return;
+    }
+
+    node_public_keys_.erase(node_id);
+    node_key_last_seen_.erase(node_id);
+    node_last_channel_.erase(node_id);
+    nodeinfo_reply_ms_.erase(node_id);
+    markPkiKeysDirty();
+}
+
 bool MeshtasticRadioAdapter::savePkiKeysToPrefs()
 {
     std::vector<::mesh::PeerPublicKey> entries;
@@ -2499,13 +2660,10 @@ bool MeshtasticRadioAdapter::decryptPkiPayload(::chat::NodeId from, ::chat::Mess
     auto it = node_public_keys_.find(from);
     if (it == node_public_keys_.end())
     {
-        (void)buildAndQueueNodeInfo(from, true, ::chat::ChannelId::PRIMARY);
-        size_t primary_key_len = 0;
-        const uint8_t* primary_key = selectKey(config_, ::chat::ChannelId::PRIMARY, &primary_key_len);
-        (void)sendRoutingError(from, packet_id, channelHashFor(config_, ::chat::ChannelId::PRIMARY),
-                               ::chat::ChannelId::PRIMARY,
-                               primary_key, primary_key_len,
-                               meshtastic_Routing_Error_PKI_UNKNOWN_PUBKEY, 0);
+        (void)executePkiResync(::chat::runtime::MeshtasticPkiResyncCause::PeerKeyMissing,
+                               from,
+                               packet_id,
+                               ::chat::ChannelId::PRIMARY);
         return false;
     }
 
@@ -2516,6 +2674,10 @@ bool MeshtasticRadioAdapter::decryptPkiPayload(::chat::NodeId from, ::chat::Mess
     std::memcpy(local_priv, pki_private_key_.data(), sizeof(local_priv));
     if (!Curve25519::dh2(shared, local_priv))
     {
+        (void)executePkiResync(::chat::runtime::MeshtasticPkiResyncCause::PeerKeyStale,
+                               from,
+                               packet_id,
+                               ::chat::ChannelId::PRIMARY);
         return false;
     }
     hashSharedKey(shared, sizeof(shared));
@@ -2536,6 +2698,10 @@ bool MeshtasticRadioAdapter::decryptPkiPayload(::chat::NodeId from, ::chat::Mess
     if (!::chat::meshtastic::decryptPkiAesCcm(shared, sizeof(shared), nonce, 8,
                                               cipher, plain_len, nullptr, 0, auth, out_plain))
     {
+        (void)executePkiResync(::chat::runtime::MeshtasticPkiResyncCause::PeerKeyStale,
+                               from,
+                               packet_id,
+                               ::chat::ChannelId::PRIMARY);
         return false;
     }
 

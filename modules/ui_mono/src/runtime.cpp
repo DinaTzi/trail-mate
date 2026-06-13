@@ -799,6 +799,17 @@ char applyComposeAlphaCase(ui::mono::Runtime::ComposeMode mode, char ch)
     return static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
 }
 
+char displayComposeKeyChar(ui::mono::Runtime::ComposeMode mode, char ch)
+{
+    if (ch == ' ')
+    {
+        return '_';
+    }
+    return std::isalpha(static_cast<unsigned char>(ch)) != 0
+               ? applyComposeAlphaCase(mode, ch)
+               : ch;
+}
+
 char upperAscii(char ch)
 {
     return static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
@@ -1264,6 +1275,24 @@ void pushFormattedLine(char (&lines)[N][40], size_t& line_count, const char* fmt
 const char* protocolShortLabel(chat::MeshProtocol protocol)
 {
     return protocol == chat::MeshProtocol::MeshCore ? "MC" : "MT";
+}
+
+const char* protocolMarker(chat::MeshProtocol protocol)
+{
+    return protocol == chat::MeshProtocol::MeshCore ? "C" : "T";
+}
+
+const char* nodeProtocolMarker(chat::contacts::NodeProtocolType protocol)
+{
+    switch (protocol)
+    {
+    case chat::contacts::NodeProtocolType::Meshtastic:
+        return "T";
+    case chat::contacts::NodeProtocolType::MeshCore:
+        return "C";
+    default:
+        return "?";
+    }
 }
 
 const char* protocolLabel(chat::MeshProtocol protocol)
@@ -2174,6 +2203,11 @@ void Runtime::tick(InputAction action)
 
     expireTransientPopup();
     ensureBootExit();
+    chat::runtime::MeshtasticAppActionSnapshot action_snapshot{};
+    if (meshtastic_action_runtime_.tick(nowMs(), &action_snapshot))
+    {
+        handleMeshtasticAppActionUpdate(action_snapshot);
+    }
     ensureSleepTimeout(action);
     handleInput(action);
     if (shouldRenderForTick(action))
@@ -2228,6 +2262,7 @@ void Runtime::bindChatObservers()
     }
 
     app()->getChatService().addIncomingTextObserver(this);
+    app()->getChatService().addIncomingDataObserver(this);
     chat_observers_bound_ = true;
 }
 
@@ -2251,6 +2286,15 @@ void Runtime::onIncomingText(const chat::MeshIncomingText& msg)
     if (host_.play_message_light_fn)
     {
         host_.play_message_light_fn();
+    }
+}
+
+void Runtime::onIncomingData(const chat::MeshIncomingData& msg)
+{
+    chat::runtime::MeshtasticAppActionSnapshot snapshot{};
+    if (meshtastic_action_runtime_.consumeIncomingData(msg, nowMs(), &snapshot))
+    {
+        handleMeshtasticAppActionUpdate(snapshot);
     }
 }
 
@@ -3227,6 +3271,9 @@ void Runtime::renderChatList()
 
     const int line_h = text_renderer_.lineHeight();
     const size_t visible = std::min(conversation_count_ - start, page_size);
+    const int marker_w = std::max(8, text_renderer_.measureTextWidth("T") + 2);
+    const int marker_x = std::max(0, display_.width() - marker_w);
+    const int line_w = std::max(0, marker_x - 1);
     for (size_t i = 0; i < visible; ++i)
     {
         const size_t conversation_index = start + i;
@@ -3237,7 +3284,8 @@ void Runtime::renderChatList()
                       conv.unread > 0 ? "*" : "",
                       conv.name.c_str());
         const int y = 10 + static_cast<int>(i * line_h);
-        drawTextClipped(0, y, display_.width(), line, selected_row);
+        drawTextClipped(0, y, line_w, line, selected_row);
+        drawTextClipped(marker_x, y, marker_w, protocolMarker(conv.id.protocol), selected_row);
     }
 }
 
@@ -3254,7 +3302,9 @@ void Runtime::renderNodeList()
     constexpr int kRowStartY = 10;
     const bool wide = display_.width() >= 160;
     const int name_x = 0;
-    const int bars_x = wide ? std::max(0, display_.width() - 14) : 106;
+    const int proto_w = std::max(8, text_renderer_.measureTextWidth("T") + 2);
+    const int proto_x = std::max(0, display_.width() - proto_w);
+    const int bars_x = std::max(0, proto_x - 14);
     const int hops_x = wide ? std::max(0, bars_x - 20) : 90;
     const int brg_x = wide ? std::max(0, hops_x - 32) : 60;
     const int dist_x = wide ? std::max(0, brg_x - 34) : 40;
@@ -3271,6 +3321,7 @@ void Runtime::renderNodeList()
     drawTextClipped(dist_x, kHeaderY, dist_w, "DST", true);
     drawTextClipped(brg_x, kHeaderY, brg_w, "BRG", true);
     drawTextClipped(hops_x, kHeaderY, hops_w, "HP", true);
+    drawTextClipped(proto_x, kHeaderY, proto_w, "P", true);
     if (node_count_ == 0)
     {
         text_renderer_.drawText(display_, 0, kRowStartY, "NO NODES");
@@ -3349,6 +3400,7 @@ void Runtime::renderNodeList()
         drawTextClipped(age_x, row_y, age_w, age_buf, selected_row);
         drawTextClipped(dist_x, row_y, dist_w, dist_buf, selected_row);
         drawTextClipped(hops_x, row_y, hops_w, hops_buf, selected_row);
+        drawTextClipped(proto_x, row_y, proto_w, nodeProtocolMarker(node.protocol), selected_row);
         if (has_bearing)
         {
             char bearing_buf[10] = {};
@@ -4072,7 +4124,7 @@ void Runtime::renderCompose()
                 const bool selected = compose_focus_ == ComposeFocus::Body && key_index == compose_charset_index_;
                 const char key_char = row_keys[col];
                 char cell[8] = {};
-                std::snprintf(cell, sizeof(cell), " %c ", key_char == ' ' ? '_' : key_char);
+                std::snprintf(cell, sizeof(cell), " %c ", displayComposeKeyChar(compose_mode_, key_char));
                 drawTextClipped(x0 + static_cast<int>(col) * cell_w,
                                 line_h * (4 + static_cast<int>(row)),
                                 cell_w,
@@ -4099,7 +4151,7 @@ void Runtime::renderCompose()
                 const bool selected = compose_focus_ == ComposeFocus::Body && key_index == compose_charset_index_;
                 const char key_char = keyset[key_index];
                 char cell[8] = {};
-                std::snprintf(cell, sizeof(cell), " %c ", key_char == ' ' ? '_' : key_char);
+                std::snprintf(cell, sizeof(cell), " %c ", displayComposeKeyChar(compose_mode_, key_char));
                 drawTextClipped(static_cast<int>(col) * cell_w,
                                 line_h * (4 + static_cast<int>(row)),
                                 cell_w,
@@ -7127,6 +7179,79 @@ size_t Runtime::nodeActionCount() const
     return meshtastic_mode ? kNodeActionItemCount : (kNodeActionItemCount - 2U);
 }
 
+chat::MessageId Runtime::nextMeshtasticActionRequestId(chat::NodeId peer)
+{
+    uint32_t value = next_meshtastic_action_request_id_;
+    if (value == 0)
+    {
+        value = nowMs() ^ (peer * 2654435761UL) ^ 0xA57EACE1UL;
+    }
+    value = value * 1664525UL + 1013904223UL;
+    if (value == 0)
+    {
+        value = 1;
+    }
+    next_meshtastic_action_request_id_ = value;
+    return value;
+}
+
+void Runtime::handleMeshtasticAppActionUpdate(
+    const chat::runtime::MeshtasticAppActionSnapshot& snapshot)
+{
+    const char* title = nullptr;
+    if (snapshot.kind == chat::runtime::MeshtasticAppActionKind::TraceRoute)
+    {
+        title = "TRACE ROUTE";
+    }
+    else if (snapshot.kind == chat::runtime::MeshtasticAppActionKind::PositionExchange)
+    {
+        title = "EXCHANGE POSITION";
+    }
+    else
+    {
+        title = "MESH ACTION";
+    }
+
+    switch (snapshot.state)
+    {
+    case chat::runtime::MeshtasticAppActionState::Delivered:
+        appendBootLog(snapshot.kind == chat::runtime::MeshtasticAppActionKind::TraceRoute
+                          ? "trace delivered"
+                          : "mesh delivered");
+        showTransientPopup(title, "DELIVERED", 1500U);
+        break;
+    case chat::runtime::MeshtasticAppActionState::Completed:
+        appendBootLog(snapshot.kind == chat::runtime::MeshtasticAppActionKind::TraceRoute
+                          ? "trace reply ok"
+                          : "pos reply ok");
+        showTransientPopup(title, "REPLY RECEIVED");
+        break;
+    case chat::runtime::MeshtasticAppActionState::Failed:
+    {
+        char message[32] = {};
+        const char* reason = "FAILED";
+        if (snapshot.reason == chat::runtime::MeshtasticAppActionReason::RoutingError)
+        {
+            reason = chat::meshtastic::routingErrorName(snapshot.routing_error);
+        }
+        std::snprintf(message, sizeof(message), "%s", reason);
+        appendBootLog(snapshot.kind == chat::runtime::MeshtasticAppActionKind::TraceRoute
+                          ? "trace failed"
+                          : "pos failed");
+        showTransientPopup(title, message);
+        break;
+    }
+    case chat::runtime::MeshtasticAppActionState::TimedOut:
+        appendBootLog(snapshot.kind == chat::runtime::MeshtasticAppActionKind::TraceRoute
+                          ? "trace timeout"
+                          : "pos timeout");
+        showTransientPopup(title, "TIMEOUT");
+        break;
+    default:
+        break;
+    }
+}
+
 const char* Runtime::nodeActionLabel(size_t index) const
 {
     const chat::contacts::NodeInfo* node = selectedNode();
@@ -7273,14 +7398,27 @@ void Runtime::executeNodeAction()
             return;
         }
 
+        const chat::MessageId request_id = nextMeshtasticActionRequestId(node->node_id);
         const bool ok = mesh->sendAppData(chat::ChannelId::PRIMARY,
                                           meshtastic_PortNum_TRACEROUTE_APP,
                                           route_buf,
                                           stream.bytes_written,
                                           node->node_id,
                                           true,
-                                          0,
+                                          request_id,
                                           true);
+        if (ok)
+        {
+            meshtastic_action_runtime_.startTraceRoute(request_id, node->node_id, nowMs());
+        }
+        else
+        {
+            meshtastic_action_runtime_.markLocalSendFailed(
+                chat::runtime::MeshtasticAppActionKind::TraceRoute,
+                request_id,
+                node->node_id,
+                nowMs());
+        }
         appendBootLog(ok ? "trace wait reply" : "trace send fail");
         showTransientPopup("TRACE ROUTE", ok ? "WAIT REPLY" : "SEND FAILED");
         return;
@@ -7320,14 +7458,27 @@ void Runtime::requestNodePositionExchange()
         return;
     }
 
+    const chat::MessageId request_id = nextMeshtasticActionRequestId(node->node_id);
     const bool ok = mesh->sendAppData(chat::ChannelId::PRIMARY,
                                       meshtastic_PortNum_POSITION_APP,
                                       nullptr,
                                       0,
                                       node->node_id,
                                       false,
-                                      0,
+                                      request_id,
                                       true);
+    if (ok)
+    {
+        meshtastic_action_runtime_.startPositionExchange(request_id, node->node_id, nowMs());
+    }
+    else
+    {
+        meshtastic_action_runtime_.markLocalSendFailed(
+            chat::runtime::MeshtasticAppActionKind::PositionExchange,
+            request_id,
+            node->node_id,
+            nowMs());
+    }
     appendBootLog(ok ? "pos wait reply" : "pos req failed");
     showTransientPopup("EXCHANGE POSITION", ok ? "WAIT REPLY" : "SEND FAILED");
 }

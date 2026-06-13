@@ -1,10 +1,12 @@
 #include "platform/nrf52/arduino_common/chat/infra/meshcore/meshcore_radio_adapter.h"
 
+#include "chat/domain/contact_types.h"
 #include "chat/infra/meshcore/meshcore_identity_crypto.h"
 #include "chat/infra/meshcore/meshcore_payload_helpers.h"
 #include "chat/infra/meshcore/meshcore_protocol_helpers.h"
 #include "chat/runtime/meshcore_self_announcement_core.h"
 #include "chat/runtime/self_identity_policy.h"
+#include "chat/time_utils.h"
 #include "platform/nrf52/arduino_common/chat/infra/radio_packet_io.h"
 #include "platform/nrf52/arduino_common/device_identity.h"
 
@@ -12,7 +14,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cstring>
+#include <type_traits>
 
 namespace platform::nrf52::arduino_common::chat::meshcore
 {
@@ -21,9 +25,10 @@ namespace
 constexpr uint8_t kRouteTypeFlood = 0x01;
 constexpr uint8_t kRouteTypeDirect = 0x02;
 constexpr uint8_t kPayloadTypeReq = 0x00;
+constexpr uint8_t kPayloadTypeAck = 0x03;
 constexpr uint8_t kPayloadTypeDirectData = 0x07;
 constexpr uint8_t kPayloadTypeGrpData = 0x06;
-constexpr uint8_t kPayloadTypeTrace = 0x09;
+constexpr uint8_t kPayloadTypeTrace = ::chat::meshcore::kMeshCorePayloadTypeTrace;
 constexpr uint8_t kPayloadTypeControl = 0x0B;
 constexpr uint8_t kPayloadTypeRawCustom = 0x0F;
 constexpr uint8_t kPayloadTypeAdvert = 0x04;
@@ -158,7 +163,25 @@ bool MeshCoreRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t portn
         {
             return false;
         }
-        return transmitFrame(frame, frame_len);
+        const bool ok = transmitFrame(frame, frame_len);
+        if (ok && want_ack)
+        {
+            ::chat::meshcore::ParsedPacket parsed{};
+            if (::chat::meshcore::parsePacket(frame, frame_len, &parsed))
+            {
+                ::chat::runtime::MeshCoreAppAckRegistration ack{};
+                ack.signature = ::chat::meshcore::packetSignature(parsed.payload_type,
+                                                                  parsed.path_len,
+                                                                  parsed.payload,
+                                                                  parsed.payload_len);
+                ack.peer = dest;
+                ack.portnum = portnum;
+                ::chat::runtime::RuntimeContext context = buildRuntimeContext();
+                context.now_ms = millis();
+                executeProtocolEffects(protocol_runtime_.trackAppAck(ack, context));
+            }
+        }
+        return ok;
     }
 
     uint8_t plain[220] = {};
@@ -201,22 +224,209 @@ bool MeshCoreRadioAdapter::pollIncomingData(::chat::MeshIncomingData* out)
 
 bool MeshCoreRadioAdapter::requestNodeInfo(::chat::NodeId dest, bool want_response)
 {
-    (void)dest;
-    (void)want_response;
-    return sendAdvert(true);
+    if (!config_.tx_enabled)
+    {
+        return false;
+    }
+
+    ::chat::runtime::RequestNodeInfoIntent intent{};
+    intent.peer = dest;
+    intent.want_response = want_response;
+    return executeProtocolEffects(protocol_runtime_.prepareOutgoing(intent, buildRuntimeContext()));
+}
+
+::chat::runtime::RuntimeContext MeshCoreRadioAdapter::buildRuntimeContext() const
+{
+    ::chat::runtime::RuntimeContext context{};
+    context.protocol = ::chat::MeshProtocol::MeshCore;
+    context.self_node = node_id_;
+    context.now_ms = millis();
+    return context;
+}
+
+bool MeshCoreRadioAdapter::executeProtocolEffects(const ::chat::runtime::ProtocolEffects& effects)
+{
+    bool ok = true;
+    for (const auto& effect : effects.items)
+    {
+        ok = executeProtocolEffect(effect) && ok;
+    }
+    return ok;
+}
+
+bool MeshCoreRadioAdapter::executeProtocolEffect(const ::chat::runtime::ProtocolEffect& effect)
+{
+    bool ok = false;
+    ::chat::runtime::visitProtocolEffect(
+        effect,
+        [this, &ok](const auto& item)
+        {
+            using Effect = std::decay_t<decltype(item)>;
+            if constexpr (std::is_same_v<Effect, ::chat::runtime::SendNodeInfoEffect>)
+            {
+                ok = executeNodeInfoEffect(item);
+            }
+            else if constexpr (std::is_same_v<Effect, ::chat::runtime::SendTraceRouteEffect>)
+            {
+                if (item.protocol == ::chat::MeshProtocol::MeshCore && config_.tx_enabled)
+                {
+                    const uint8_t peer_hash = static_cast<uint8_t>(item.peer & 0xFFU);
+                    uint8_t path[64] = {};
+                    size_t path_len = 0;
+                    if (peer_hash != 0x00 && peer_hash != 0xFF &&
+                        peer_hash != static_cast<uint8_t>(node_id_ & 0xFFU))
+                    {
+                        path[path_len++] = peer_hash;
+                    }
+
+                    uint32_t timeout_ms = item.timeout_ms;
+                    ok = path_len > 0 &&
+                         sendTracePath(path,
+                                       path_len,
+                                       item.request_id,
+                                       item.auth,
+                                       item.flags,
+                                       &timeout_ms);
+
+                    ::chat::runtime::TxResult result{};
+                    result.protocol = ::chat::MeshProtocol::MeshCore;
+                    result.request_id = item.request_id;
+                    result.peer = item.peer;
+                    result.ok = ok;
+                    result.detail = ok ? static_cast<int32_t>(timeout_ms) : 0;
+                    executeProtocolEffects(protocol_runtime_.handleTxResult(result,
+                                                                            buildRuntimeContext()));
+                }
+            }
+            else if constexpr (std::is_same_v<Effect, ::chat::runtime::SendDiscoverRequestEffect>)
+            {
+                ok = executeDiscoverRequestEffect(item);
+            }
+            else if constexpr (std::is_same_v<Effect, ::chat::runtime::SendSelfAnnouncementEffect>)
+            {
+                ok = executeSelfAnnouncementEffect(item);
+            }
+            else if constexpr (std::is_same_v<Effect, ::chat::runtime::PublishNodeInfoEffect>)
+            {
+                ok = false;
+            }
+            else if constexpr (std::is_same_v<Effect, ::chat::runtime::EmitActionResultEffect>)
+            {
+                ok = item.protocol == ::chat::MeshProtocol::MeshCore &&
+                     item.state != ::chat::runtime::ProtocolActionState::Failed &&
+                     item.state != ::chat::runtime::ProtocolActionState::TimedOut;
+            }
+        });
+    return ok;
+}
+
+bool MeshCoreRadioAdapter::executeNodeInfoEffect(const ::chat::runtime::SendNodeInfoEffect& effect)
+{
+    if (effect.protocol != ::chat::MeshProtocol::MeshCore || !config_.tx_enabled)
+    {
+        return false;
+    }
+
+    const ::chat::NodeId target = effect.peer == 0xFFFFFFFFUL ? 0 : effect.peer;
+    uint8_t payload[::chat::meshcore::kMeshCoreNodeInfoInfoPayloadSize] = {};
+    size_t payload_len = 0;
+    if (effect.want_response)
+    {
+        if (!::chat::meshcore::buildNodeInfoQueryControlPayload(true,
+                                                                payload,
+                                                                sizeof(payload),
+                                                                &payload_len))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        char short_name[::chat::meshcore::kMeshCoreNodeInfoShortNameFieldSize] = {};
+        if (!short_name_.empty())
+        {
+            std::strncpy(short_name, short_name_.c_str(), sizeof(short_name) - 1);
+        }
+        else
+        {
+            std::snprintf(short_name, sizeof(short_name), "%04lX",
+                          static_cast<unsigned long>(node_id_ & 0xFFFFUL));
+        }
+
+        char long_name[::chat::meshcore::kMeshCoreNodeInfoLongNameFieldSize] = {};
+        if (!long_name_.empty())
+        {
+            std::strncpy(long_name, long_name_.c_str(), sizeof(long_name) - 1);
+        }
+        else
+        {
+            std::strncpy(long_name, short_name, sizeof(long_name) - 1);
+        }
+
+        ::chat::meshcore::MeshCoreNodeInfoBuildInfo info{};
+        info.role = static_cast<uint8_t>(::chat::contacts::NodeRoleType::Client);
+        info.hops = 0;
+        info.node_id = node_id_;
+        info.timestamp = ::chat::now_message_timestamp();
+        info.short_name = short_name;
+        info.long_name = long_name;
+        if (!::chat::meshcore::buildNodeInfoInfoControlPayload(info,
+                                                               payload,
+                                                               sizeof(payload),
+                                                               &payload_len))
+        {
+            return false;
+        }
+    }
+
+    return sendAppData(::chat::ChannelId::PRIMARY,
+                       ::chat::meshcore::kMeshCoreNodeInfoPortnum,
+                       payload,
+                       payload_len,
+                       target,
+                       false);
+}
+
+bool MeshCoreRadioAdapter::executeDiscoverRequestEffect(const ::chat::runtime::SendDiscoverRequestEffect& effect)
+{
+    if (effect.protocol != ::chat::MeshProtocol::MeshCore || !config_.tx_enabled)
+    {
+        return false;
+    }
+
+    ::chat::meshcore::MeshCoreDiscoverRequestBuildInfo request{};
+    request.prefix_only = effect.prefix_only;
+    request.type_filter = effect.type_filter;
+    request.tag = effect.tag == 0 ? static_cast<uint32_t>(millis()) : effect.tag;
+    request.since = effect.since;
+
+    uint8_t payload[10] = {};
+    size_t payload_len = 0;
+    return ::chat::meshcore::buildDiscoverRequestControlPayload(request,
+                                                                payload,
+                                                                sizeof(payload),
+                                                                &payload_len) &&
+           sendControlData(payload, payload_len);
+}
+
+bool MeshCoreRadioAdapter::executeSelfAnnouncementEffect(const ::chat::runtime::SendSelfAnnouncementEffect& effect)
+{
+    if (effect.protocol != ::chat::MeshProtocol::MeshCore || !config_.tx_enabled)
+    {
+        return false;
+    }
+    (void)effect.include_location;
+    (void)effect.lat_i6;
+    (void)effect.lon_i6;
+    return sendAdvert(effect.broadcast);
 }
 
 bool MeshCoreRadioAdapter::triggerDiscoveryAction(::chat::MeshDiscoveryAction action)
 {
-    switch (action)
-    {
-    case ::chat::MeshDiscoveryAction::SendIdLocal:
-        return sendAdvert(false);
-    case ::chat::MeshDiscoveryAction::SendIdBroadcast:
-    case ::chat::MeshDiscoveryAction::ScanLocal:
-    default:
-        return sendAdvert(true);
-    }
+    ::chat::runtime::DiscoverIntent intent{};
+    intent.action = action;
+    intent.type_filter = ::chat::meshcore::kMeshCoreDiscoverTypeFilterAll;
+    return executeProtocolEffects(protocol_runtime_.prepareOutgoing(intent, buildRuntimeContext()));
 }
 
 void MeshCoreRadioAdapter::applyConfig(const ::chat::MeshConfig& config)
@@ -269,6 +479,30 @@ void MeshCoreRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
     ::chat::meshcore::ParsedPacket parsed{};
     if (!::chat::meshcore::parsePacket(data, size, &parsed))
     {
+        return;
+    }
+
+    if (parsed.payload_type == kPayloadTypeAck &&
+        parsed.payload_len >= sizeof(uint32_t))
+    {
+        uint32_t ack_sig = 0;
+        std::memcpy(&ack_sig, parsed.payload, sizeof(ack_sig));
+        executeProtocolEffects(protocol_runtime_.handleAppAck(ack_sig, buildRuntimeContext()));
+        return;
+    }
+
+    if (parsed.payload_type == kPayloadTypeTrace &&
+        parsed.payload_len >= ::chat::meshcore::kMeshCoreTraceBasePayloadSize)
+    {
+        ::chat::runtime::IncomingPacket packet{};
+        packet.protocol = ::chat::MeshProtocol::MeshCore;
+        packet.payload_type = kPayloadTypeTrace;
+        packet.payload.assign(parsed.payload, parsed.payload + parsed.payload_len);
+        if (parsed.path_len > 0)
+        {
+            packet.path.assign(parsed.path, parsed.path + parsed.path_len);
+        }
+        executeProtocolEffects(protocol_runtime_.handleIncoming(packet, buildRuntimeContext()));
         return;
     }
 
@@ -329,6 +563,11 @@ void MeshCoreRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
         incoming.portnum = direct_payload.portnum;
         incoming.payload.assign(direct_payload.payload,
                                 direct_payload.payload + direct_payload.payload_len);
+        if (incoming.portnum == ::chat::meshcore::kMeshCoreNodeInfoPortnum &&
+            handleNodeInfoAppData(incoming))
+        {
+            return;
+        }
         data_queue_.push(incoming);
 
         if (direct_payload.portnum == 0x1001 &&
@@ -355,6 +594,11 @@ void MeshCoreRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
         incoming.portnum = group_payload.portnum;
         incoming.payload.assign(group_payload.payload,
                                 group_payload.payload + group_payload.payload_len);
+        if (incoming.portnum == ::chat::meshcore::kMeshCoreNodeInfoPortnum &&
+            handleNodeInfoAppData(incoming))
+        {
+            return;
+        }
         data_queue_.push(incoming);
 
         if (group_payload.portnum == 0x1001 &&
@@ -377,8 +621,45 @@ void MeshCoreRadioAdapter::setLastRxStats(float rssi, float snr)
     (void)snr;
 }
 
+bool MeshCoreRadioAdapter::handleNodeInfoAppData(const ::chat::MeshIncomingData& incoming)
+{
+    ::chat::meshcore::DecodedNodeInfoControl decoded{};
+    if (!::chat::meshcore::decodeNodeInfoControlPayload(incoming.payload.data(),
+                                                        incoming.payload.size(),
+                                                        &decoded))
+    {
+        return false;
+    }
+
+    ::chat::runtime::IncomingPacket packet{};
+    packet.protocol = ::chat::MeshProtocol::MeshCore;
+    packet.channel = incoming.channel;
+    packet.from = incoming.from;
+    packet.to = incoming.to;
+    packet.packet_id = incoming.packet_id;
+    packet.request_id = incoming.request_id;
+    packet.portnum = incoming.portnum;
+    packet.want_response = incoming.want_response;
+    packet.payload = incoming.payload;
+    packet.rx_meta = incoming.rx_meta;
+
+    const auto effects = protocol_runtime_.handleIncoming(packet, buildRuntimeContext());
+    if (effects.empty())
+    {
+        return decoded.type == ::chat::meshcore::MeshCoreNodeInfoControlType::Query;
+    }
+
+    const bool ok = executeProtocolEffects(effects);
+    if (decoded.type == ::chat::meshcore::MeshCoreNodeInfoControlType::Query)
+    {
+        return true;
+    }
+    return ok;
+}
+
 void MeshCoreRadioAdapter::processSendQueue()
 {
+    executeProtocolEffects(protocol_runtime_.tick(buildRuntimeContext()));
 }
 
 bool MeshCoreRadioAdapter::exportIdentityPublicKey(uint8_t out_pubkey[::chat::meshcore::kMeshCorePubKeySize])
@@ -650,24 +931,34 @@ bool MeshCoreRadioAdapter::sendTracePath(const uint8_t* path, size_t path_len,
                                          uint32_t tag, uint32_t auth, uint8_t flags,
                                          uint32_t* out_est_timeout)
 {
-    if (!path || path_len == 0 || path_len > 64)
+    if (!path || path_len == 0 ||
+        !::chat::meshcore::isValidTracePathHashBytes(flags, path_len, 64))
     {
         return false;
     }
 
-    uint8_t payload[9] = {};
-    std::memcpy(payload, &tag, sizeof(tag));
-    std::memcpy(payload + 4, &auth, sizeof(auth));
-    payload[8] = flags;
+    uint8_t payload[kMeshcoreMaxPayloadSize] = {};
+    size_t payload_len = 0;
+    if (!::chat::meshcore::buildTracePayload(tag,
+                                             auth,
+                                             flags,
+                                             path,
+                                             path_len,
+                                             payload,
+                                             sizeof(payload),
+                                             &payload_len))
+    {
+        return false;
+    }
 
     uint8_t frame[kMeshcoreMaxFrameSize] = {};
     size_t frame_len = 0;
     if (!::chat::meshcore::buildFrameNoTransport(kRouteTypeDirect,
                                                  kPayloadTypeTrace,
-                                                 path,
-                                                 path_len,
+                                                 nullptr,
+                                                 0,
                                                  payload,
-                                                 sizeof(payload),
+                                                 payload_len,
                                                  frame,
                                                  sizeof(frame),
                                                  &frame_len))
