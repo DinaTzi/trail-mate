@@ -8,6 +8,7 @@
 #include "chat/domain/contact_types.h"
 #include "chat/infra/meshcore/meshcore_payload_helpers.h"
 #include "chat/infra/meshcore/meshcore_protocol_helpers.h"
+#include "chat/runtime/meshcore_direct_route_policy.h"
 #include "chat/time_utils.h"
 #include "mesh/protocol/meshcore/meshcore_protocol_strategy.h"
 #include "platform/esp/arduino_common/app_tasks.h"
@@ -3035,34 +3036,38 @@ MeshActionResult MeshCoreAdapter::sendDirectTextDetailed(ChannelId channel, cons
     const uint8_t peer_hash = static_cast<uint8_t>(peer & 0xFFU);
     rememberPeerNodeId(peer_hash, peer, now_ms);
 
-    if (identity_.isReady())
+    const PeerRouteEntry* peer_route = findPeerRouteByHash(peer_hash);
+    const PeerRouteEntry* selected_route = selectPeerRouteByHash(peer_hash, now_ms);
+    chat::runtime::MeshCoreDirectRouteFacts route_facts{};
+    route_facts.identity_ready = identity_.isReady();
+    route_facts.has_peer_route = peer_route != nullptr;
+    route_facts.peer_has_public_key = peer_route && peer_route->has_pubkey;
+    route_facts.has_selected_route = selected_route != nullptr;
+    route_facts.requested_channel = channel;
+    route_facts.selected_route_channel = selected_route ? selected_route->preferred_channel : channel;
+
+    const auto route_decision = chat::runtime::resolveMeshCoreDirectRoutePolicy(route_facts);
+    if (route_decision.status == chat::runtime::MeshCoreDirectRouteStatus::MissingPeerPublicKey)
     {
-        const PeerRouteEntry* peer_route = findPeerRouteByHash(peer_hash);
-        if (!peer_route || !peer_route->has_pubkey)
+        if (route_decision.should_discover)
         {
             sendDiscoverRequestLocal();
-            return MeshActionResult::fail(MeshOperationFailure::PeerKeyMissing);
         }
+        return MeshActionResult::fail(MeshOperationFailure::PeerKeyMissing);
     }
 
-    uint8_t route_type = kRouteTypeFlood;
-    const uint8_t* out_path = nullptr;
-    size_t out_path_len = 0;
-    ChannelId tx_channel = channel;
-    if (const PeerRouteEntry* route = selectPeerRouteByHash(peer_hash, now_ms))
-    {
-        route_type = kRouteTypeDirect;
-        out_path = route->out_path;
-        out_path_len = route->out_path_len;
-        tx_channel = route->preferred_channel;
-    }
+    const bool use_direct_route =
+        route_decision.route_mode == chat::runtime::MeshCoreRouteMode::Direct;
+    const uint8_t route_type = use_direct_route ? kRouteTypeDirect : kRouteTypeFlood;
+    const uint8_t* out_path = (use_direct_route && selected_route) ? selected_route->out_path : nullptr;
+    const size_t out_path_len = (use_direct_route && selected_route) ? selected_route->out_path_len : 0;
 
     uint8_t peer_key16[16];
     uint8_t peer_key32[32];
-    if (!deriveDirectSecret(tx_channel, peer_hash, peer_key16, peer_key32))
+    if (!deriveDirectSecret(route_decision.primary_secret_channel, peer_hash, peer_key16, peer_key32))
     {
-        if (tx_channel == channel ||
-            !deriveDirectSecret(channel, peer_hash, peer_key16, peer_key32))
+        if (!route_decision.allow_secret_fallback ||
+            !deriveDirectSecret(route_decision.fallback_secret_channel, peer_hash, peer_key16, peer_key32))
         {
             return MeshActionResult::fail(MeshOperationFailure::PeerKeyMissing);
         }
@@ -3210,38 +3215,42 @@ bool MeshCoreAdapter::sendAppData(ChannelId channel, uint32_t portnum,
         const uint8_t peer_hash = static_cast<uint8_t>(dest & 0xFFU);
         rememberPeerNodeId(peer_hash, dest, now_ms);
 
-        if (identity_.isReady())
+        const PeerRouteEntry* peer_route = findPeerRouteByHash(peer_hash);
+        const PeerRouteEntry* selected_route = selectPeerRouteByHash(peer_hash, now_ms);
+        chat::runtime::MeshCoreDirectRouteFacts route_facts{};
+        route_facts.identity_ready = identity_.isReady();
+        route_facts.has_peer_route = peer_route != nullptr;
+        route_facts.peer_has_public_key = peer_route && peer_route->has_pubkey;
+        route_facts.has_selected_route = selected_route != nullptr;
+        route_facts.requested_channel = channel;
+        route_facts.selected_route_channel = selected_route ? selected_route->preferred_channel : channel;
+
+        const auto route_decision = chat::runtime::resolveMeshCoreDirectRoutePolicy(route_facts);
+        if (route_decision.status == chat::runtime::MeshCoreDirectRouteStatus::MissingPeerPublicKey)
         {
-            const PeerRouteEntry* peer_route = findPeerRouteByHash(peer_hash);
-            if (!peer_route || !peer_route->has_pubkey)
+            MESHCORE_LOG("[MESHCORE] TX direct app-data dropped (missing peer pubkey) peer=%08lX hash=%02X port=%u -> discover\n",
+                         static_cast<unsigned long>(dest),
+                         static_cast<unsigned>(peer_hash),
+                         static_cast<unsigned>(portnum));
+            if (route_decision.should_discover)
             {
-                MESHCORE_LOG("[MESHCORE] TX direct app-data dropped (missing peer pubkey) peer=%08lX hash=%02X port=%u -> discover\n",
-                             static_cast<unsigned long>(dest),
-                             static_cast<unsigned>(peer_hash),
-                             static_cast<unsigned>(portnum));
                 sendDiscoverRequestLocal();
-                return false;
             }
+            return false;
         }
 
-        uint8_t route_type = kRouteTypeFlood;
-        const uint8_t* out_path = nullptr;
-        size_t out_path_len = 0;
-        ChannelId tx_channel = channel;
-        if (const PeerRouteEntry* route = selectPeerRouteByHash(peer_hash, now_ms))
-        {
-            route_type = kRouteTypeDirect;
-            out_path = route->out_path;
-            out_path_len = route->out_path_len;
-            tx_channel = route->preferred_channel;
-        }
+        const bool use_direct_route =
+            route_decision.route_mode == chat::runtime::MeshCoreRouteMode::Direct;
+        const uint8_t route_type = use_direct_route ? kRouteTypeDirect : kRouteTypeFlood;
+        const uint8_t* out_path = (use_direct_route && selected_route) ? selected_route->out_path : nullptr;
+        const size_t out_path_len = (use_direct_route && selected_route) ? selected_route->out_path_len : 0;
 
         uint8_t peer_key16[16];
         uint8_t peer_key32[32];
-        if (!deriveDirectSecret(tx_channel, peer_hash, peer_key16, peer_key32))
+        if (!deriveDirectSecret(route_decision.primary_secret_channel, peer_hash, peer_key16, peer_key32))
         {
-            if (tx_channel == channel ||
-                !deriveDirectSecret(channel, peer_hash, peer_key16, peer_key32))
+            if (!route_decision.allow_secret_fallback ||
+                !deriveDirectSecret(route_decision.fallback_secret_channel, peer_hash, peer_key16, peer_key32))
             {
                 MESHCORE_LOG("[MESHCORE] TX direct app-data dropped (no peer secret) peer=%08lX port=%u\n",
                              static_cast<unsigned long>(dest),

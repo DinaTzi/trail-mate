@@ -300,11 +300,15 @@ Expected behavior:
 
 Current state:
 
-- Confirmed platform gap, now partially documented in fine-grained capabilities.
+- Confirmed platform gap, now documented in fine-grained capabilities.
+- ESP32 direct text/app-data sends now use `MeshCoreDirectRoutePolicy` for the shared decision table:
+  missing peer pubkey -> discover/fail, selected route -> direct route path, no selected route -> flood,
+  and preferred-channel secret derivation may fall back to the requested channel.
 
-Next action:
+Residual risk:
 
-- Move route/identity policy toward shared MeshCore runtime core before expanding nRF behavior.
+- Peer route storage, pubkey persistence, direct secret derivation, and frame transmission remain platform-owned.
+- nRF still derives identity/peer secrets for request payloads but does not implement the ESP32 direct route table.
 
 ## Capability Drift
 
@@ -326,9 +330,9 @@ Residual risk:
 1. Add parity tests that assert ESP32 and nRF adapters advertise the fine-grained capabilities they actually
    execute.
 2. Extract shared Meshtastic Position availability policy.
-3. Move MeshCore direct route / identity-key policy toward shared runtime before expanding nRF behavior.
-4. Move MeshCore direct-route and peer-secret decision policy out of ESP32 adapter branches into shared runtime
-   policy/effects before exposing richer MeshCore direct actions through UI.
+3. Move MeshCore peer route storage / pubkey persistence effects toward shared runtime state.
+4. Move MeshCore direct secret derivation request/response effects behind protocol runtime effects before exposing
+   richer MeshCore direct actions through UI.
 
 ## Guardrail
 

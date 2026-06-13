@@ -365,6 +365,14 @@ The executor chooses how to perform those effects on ESP32/nRF. Runtime decides 
 - MeshCore app ACK lifecycle: pending -> completed / failed / timed out;
 - route/identity policy when the platform declares support.
 
+Current C++17 migration state:
+
+- Direct-route send decision for ESP32 MeshCore direct text/app-data now uses shared
+  `MeshCoreDirectRoutePolicy`: missing peer pubkey triggers discover/failure, selected routes use direct path,
+  and direct secret derivation may fall back from preferred route channel to requested channel.
+- Peer route storage, pubkey persistence, direct secret derivation, and frame transmission are still platform
+  adapter responsibilities until they can be represented as runtime state/effects.
+
 It does not pretend MeshCore is Meshtastic:
 
 - no Meshtastic `TRACEROUTE_APP` for MeshCore trace;
