@@ -29,6 +29,24 @@ int main()
     assert(contains(*tab5, ui::presentation::PageId::Map));
     assert(contains(*tab5, ui::presentation::PageId::Contacts));
 
+    const auto* tdisplayp4 = ui::presentation::findPageManifest("tdisplayp4_touch_manifest");
+    assert(tdisplayp4 != nullptr);
+    assert(tdisplayp4->item_count == 14);
+    assert(contains(*tdisplayp4, ui::presentation::PageId::Dashboard));
+    assert(contains(*tdisplayp4, ui::presentation::PageId::Chat));
+    assert(contains(*tdisplayp4, ui::presentation::PageId::Contacts));
+    assert(contains(*tdisplayp4, ui::presentation::PageId::Map));
+    assert(contains(*tdisplayp4, ui::presentation::PageId::SkyPlot));
+    assert(contains(*tdisplayp4, ui::presentation::PageId::Gps));
+    assert(contains(*tdisplayp4, ui::presentation::PageId::Team));
+    assert(contains(*tdisplayp4, ui::presentation::PageId::Tracker));
+    assert(contains(*tdisplayp4, ui::presentation::PageId::PcLink));
+    assert(contains(*tdisplayp4, ui::presentation::PageId::EnergySweep));
+    assert(contains(*tdisplayp4, ui::presentation::PageId::WalkieTalkie));
+    assert(contains(*tdisplayp4, ui::presentation::PageId::Sstv));
+    assert(contains(*tdisplayp4, ui::presentation::PageId::Extensions));
+    assert(contains(*tdisplayp4, ui::presentation::PageId::Settings));
+
     const auto* watch = ui::presentation::findPageManifest("watch_compact_manifest");
     assert(watch != nullptr);
     assert(contains(*watch, ui::presentation::PageId::Gps));

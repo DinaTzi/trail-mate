@@ -20,11 +20,18 @@ constexpr PageManifestItem kTab5TouchItems[] = {
 
 constexpr PageManifestItem kTDisplayP4TouchItems[] = {
     {PageId::Dashboard, "dashboard", true, true},
-    {PageId::Map, "map", true, true},
-    {PageId::Gps, "gps", true, true},
     {PageId::Chat, "chat", true, true},
+    {PageId::Contacts, "contacts", true, true},
+    {PageId::Map, "map", true, true},
+    {PageId::SkyPlot, "sky_plot", true, true},
+    {PageId::Gps, "gps", true, true},
     {PageId::Team, "team", true, true},
     {PageId::Tracker, "tracker", true, true},
+    {PageId::PcLink, "pc_link", true, true},
+    {PageId::EnergySweep, "energy_sweep", true, true},
+    {PageId::WalkieTalkie, "walkie_talkie", true, true},
+    {PageId::Sstv, "sstv", true, true},
+    {PageId::Extensions, "extensions", true, true},
     {PageId::Settings, "settings", true, true},
 };
 

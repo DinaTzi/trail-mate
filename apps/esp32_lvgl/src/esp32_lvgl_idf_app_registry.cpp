@@ -1,7 +1,16 @@
 #include "ui/app_registry.h"
 
+#include "platform/ui/device_runtime.h"
+#include "platform/ui/hostlink_runtime.h"
+#include "platform/ui/lora_runtime.h"
+#include "platform/ui/route_storage.h"
+#include "platform/ui/sstv_runtime.h"
+#include "platform/ui/tracker_runtime.h"
+#include "platform/ui/usb_support_runtime.h"
+#include "platform/ui/walkie_runtime.h"
 #include "platform/ui/wireless_companion_runtime.h"
 #include "ui/app_catalog.h"
+#include "ui/app_catalog_builder.h"
 #include "ui/callback_app_screen.h"
 #include "ui/localization.h"
 #include "ui/ui_theme.h"
@@ -10,6 +19,8 @@
 
 namespace
 {
+
+#define APP_REG_LOG(...) std::printf("[UI][Registry] " __VA_ARGS__)
 
 extern "C"
 {
@@ -138,9 +149,83 @@ ui::CallbackAppScreen s_companion_app("c6_companion",
                                       companion_exit,
                                       &s_companion_page_state);
 
-AppScreen* s_apps[] = {&s_companion_app};
-ui::StaticAppCatalogState s_catalog_state = ui::makeStaticAppCatalogState(s_apps);
-ui::AppCatalog s_catalog = ui::makeStaticAppCatalog(&s_catalog_state);
+struct IdfCatalogState
+{
+    ui::AppCatalog base{};
+    ui::AppScreen* companion = nullptr;
+};
+
+std::size_t idf_catalog_count(void* user_data)
+{
+    auto* state = static_cast<IdfCatalogState*>(user_data);
+    if (state == nullptr)
+    {
+        return 0;
+    }
+    return ui::catalogCount(state->base) + (state->companion != nullptr ? 1U : 0U);
+}
+
+ui::AppScreen* idf_catalog_at(void* user_data, std::size_t index)
+{
+    auto* state = static_cast<IdfCatalogState*>(user_data);
+    if (state == nullptr)
+    {
+        return nullptr;
+    }
+
+    const std::size_t base_count = ui::catalogCount(state->base);
+    if (index < base_count)
+    {
+        return ui::catalogAt(state->base, index);
+    }
+    if (index == base_count)
+    {
+        return state->companion;
+    }
+    return nullptr;
+}
+
+ui::app_catalog_builder::FeatureFlags buildFeatureFlags()
+{
+    ui::app_catalog_builder::FeatureFlags flags{};
+    flags.profile = ui::app_catalog_builder::CatalogProfile::IdfDefault;
+    flags.include_gps_map = platform::ui::device::gps_supported();
+    flags.include_gnss_skyplot = platform::ui::device::gps_supported();
+    flags.include_tracker = platform::ui::route_storage::is_supported() ||
+                            platform::ui::tracker::is_supported();
+    flags.include_energy_sweep = platform::ui::lora::is_supported();
+    flags.include_pc_link = platform::ui::hostlink::is_supported();
+    flags.include_sstv = platform::ui::sstv::is_supported();
+    flags.include_usb = platform::ui::usb_support::is_supported() &&
+                        platform::ui::device::sd_ready();
+    flags.include_extensions = true;
+    flags.include_walkie_talkie = platform::ui::walkie::is_supported();
+    APP_REG_LOG(
+        "flags profile=idf gps_map=%d skyplot=%d tracker=%d chat=%d sweep=%d pc_link=%d sstv=%d usb=%d walkie=%d gps_supported=%d gps_ready=%d sd_ready=%d\n",
+        flags.include_gps_map ? 1 : 0,
+        flags.include_gnss_skyplot ? 1 : 0,
+        flags.include_tracker ? 1 : 0,
+        flags.include_chat ? 1 : 0,
+        flags.include_energy_sweep ? 1 : 0,
+        flags.include_pc_link ? 1 : 0,
+        flags.include_sstv ? 1 : 0,
+        flags.include_usb ? 1 : 0,
+        flags.include_walkie_talkie ? 1 : 0,
+        platform::ui::device::gps_supported() ? 1 : 0,
+        platform::ui::device::gps_ready() ? 1 : 0,
+        platform::ui::device::sd_ready() ? 1 : 0);
+    return flags;
+}
+
+IdfCatalogState s_catalog_state;
+ui::AppCatalog s_catalog{&s_catalog_state, idf_catalog_count, idf_catalog_at};
+
+ui::AppCatalog buildCatalog()
+{
+    s_catalog_state.base = ui::app_catalog_builder::build(buildFeatureFlags());
+    s_catalog_state.companion = &s_companion_app;
+    return s_catalog;
+}
 
 } // namespace
 
@@ -149,7 +234,7 @@ namespace ui
 
 AppCatalog appCatalog()
 {
-    return s_catalog;
+    return buildCatalog();
 }
 
 } // namespace ui

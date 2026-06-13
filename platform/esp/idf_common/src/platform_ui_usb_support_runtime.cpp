@@ -12,7 +12,13 @@
 
 #include <cstdio>
 
-#if defined(TRAIL_MATE_ESP_BOARD_TAB5)
+#if defined(TRAIL_MATE_ESP_BOARD_TAB5) && defined(CONFIG_TINYUSB_MSC_ENABLED)
+#define TRAILMATE_IDF_USB_MSC_BACKEND 1
+#else
+#define TRAILMATE_IDF_USB_MSC_BACKEND 0
+#endif
+
+#if TRAILMATE_IDF_USB_MSC_BACKEND
 #include "boards/tab5/tab5_board.h"
 #include "driver/sdmmc_host.h"
 #include "esp_err.h"
@@ -42,13 +48,15 @@ void set_status_message(const char* message)
 
 void stop_pairing()
 {
+#if TRAILMATE_IDF_USB_MSC_BACKEND
     if (team::TeamPairingService* pairing = app::teamFacade().getTeamPairing())
     {
         pairing->stop();
     }
+#endif
 }
 
-#if defined(TRAIL_MATE_ESP_BOARD_TAB5) && defined(CONFIG_TINYUSB_MSC_ENABLED)
+#if TRAILMATE_IDF_USB_MSC_BACKEND
 constexpr const char* kUsbVendor = "TrailMate";
 constexpr const char* kUsbProduct = "USB Disk";
 constexpr const char* kUsbSerial = "TM-IDF";
@@ -327,7 +335,7 @@ void stop_backend()
 
 bool is_supported()
 {
-#if defined(TRAIL_MATE_ESP_BOARD_TAB5) && defined(CONFIG_TINYUSB_MSC_ENABLED)
+#if TRAILMATE_IDF_USB_MSC_BACKEND
     return true;
 #else
     return false;
@@ -336,6 +344,7 @@ bool is_supported()
 
 void prepare_mass_storage_mode()
 {
+#if TRAILMATE_IDF_USB_MSC_BACKEND
     stop_pairing();
     disableScreenSleep();
 
@@ -344,10 +353,12 @@ void prepare_mass_storage_mode()
     {
         vTaskSuspend(gps_task_handle);
     }
+#endif
 }
 
 void restore_mass_storage_mode()
 {
+#if TRAILMATE_IDF_USB_MSC_BACKEND
     enableScreenSleep();
 
     TaskHandle_t gps_task_handle = gps::gps_get_task_handle();
@@ -355,6 +366,7 @@ void restore_mass_storage_mode()
     {
         vTaskResume(gps_task_handle);
     }
+#endif
 }
 
 bool start()
@@ -369,7 +381,7 @@ bool start()
         return false;
     }
 
-#if defined(TRAIL_MATE_ESP_BOARD_TAB5) && defined(CONFIG_TINYUSB_MSC_ENABLED)
+#if TRAILMATE_IDF_USB_MSC_BACKEND
     if (s_status.active)
     {
         refresh_runtime_message();
@@ -396,7 +408,7 @@ bool start()
 
 void stop()
 {
-#if defined(TRAIL_MATE_ESP_BOARD_TAB5) && defined(CONFIG_TINYUSB_MSC_ENABLED)
+#if TRAILMATE_IDF_USB_MSC_BACKEND
     if (s_status.active)
     {
         stop_backend();
@@ -416,7 +428,7 @@ void stop()
 
 Status get_status()
 {
-#if defined(TRAIL_MATE_ESP_BOARD_TAB5) && defined(CONFIG_TINYUSB_MSC_ENABLED)
+#if TRAILMATE_IDF_USB_MSC_BACKEND
     if (s_status.active)
     {
         refresh_runtime_message();

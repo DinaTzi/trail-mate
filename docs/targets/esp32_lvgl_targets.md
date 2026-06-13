@@ -1,8 +1,6 @@
 # ESP32 LVGL Target Profiles
 
-Phase 8.3 target profile baseline only.
-
-No behavior change in Phase 8.3.
+Phase 8.3 target profile baseline plus the closed T-Display-P4 touch UX route.
 
 ```text
 Build Entrypoint invokes.
@@ -15,8 +13,8 @@ UX Pack presents.
 | Target | Board | Platform | Build entrypoint | App shell | UX profile | Status |
 | --- | --- | --- | --- | --- | --- | --- |
 | `tab5` | `tab5` | ESP32-P4 + ESP32-C6 | `builds/esp_idf` | `apps/esp32_lvgl` | `tab5_touch` | active with fallback |
-| `tdisplayp4_tft` | `tdisplayp4` | ESP32-P4 + ESP32-C6 | `builds/esp_idf` | `apps/esp32_lvgl` | `tdisplayp4_touch` | active with fallback |
-| `tdisplayp4_amoled` | `tdisplayp4` | ESP32-P4 + ESP32-C6 | `builds/esp_idf` | `apps/esp32_lvgl` | `tdisplayp4_touch` | active with fallback |
+| `tdisplayp4_tft` | `tdisplayp4` | ESP32-P4 + ESP32-C6 | `builds/esp_idf` | `apps/esp32_lvgl` | `tdisplayp4_touch` | active |
+| `tdisplayp4_amoled` | `tdisplayp4` | ESP32-P4 + ESP32-C6 | `builds/esp_idf` | `apps/esp32_lvgl` | `tdisplayp4_touch` | active |
 | `tdeck` | `tdeck` | ESP32-S3 | `builds/esp_idf` | `apps/esp32_lvgl` | `deck_full` | planned |
 | `tdeck_pro` | `tdeck_pro` | ESP32-S3 | `builds/esp_idf` | `apps/esp32_lvgl` | `deck_full` | planned |
 | `tlora_pager` | `tlora_pager` | ESP32 family | `builds/esp_idf` | `apps/esp32_lvgl` | `pager_compact` | planned |
