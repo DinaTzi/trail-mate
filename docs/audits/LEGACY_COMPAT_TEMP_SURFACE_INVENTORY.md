@@ -902,14 +902,15 @@ Category:
 Current location:
 - `apps/linux_sim_shell/src/linux_sim_runtime_entry.*`
 - `apps/linux_sim_shell/src/linux_sim_runtime_renderer.*`
-- `apps/linux_sim_shell/tests/linux_sim_runtime_entry_fallback_smoke.cpp`
+- removed `apps/linux_sim_shell/tests/linux_sim_runtime_entry_fallback_smoke.cpp`
 
 Current callers:
 - LinuxSim runtime entry and renderer tests.
 - Phase 10/11 checkers.
 
 Current responsibility:
-- fallback-only route when screen graph adoption fails.
+- burned-down fallback route; failed screen graph adoption is
+  unavailable-on-failure.
 
 Is this final architecture?
 - No.
@@ -918,14 +919,17 @@ Final owner:
 - `apps/linux_sim_shell` and `modules/ui_ascii_runtime`.
 
 Disposition:
-- Must Delete.
+- Deleted.
+
+Final status:
+- Removed in LinuxSim/uConsole fallback burn-down.
 
 Delete condition:
-- real simulator workflows no longer need hardcoded route fallback and fallback
-  smoke can be removed or converted to error-path validation.
+- Satisfied: real simulator workflows no longer need hardcoded route fallback
+  and renderer smoke covers the failed-adoption false-return path.
 
 Risk:
-- medium; removing early hides failed-adoption behavior.
+- medium; handled by explicit unavailable-on-failure assertions.
 
 ## Surface: GTK hardcoded page registry
 
@@ -935,7 +939,7 @@ Category:
 Current location:
 - `apps/linux_uconsole_gtk/src/linux_uconsole_gtk_page_registry_adoption.*`
 - `apps/linux_uconsole_gtk/src/linux_uconsole_gtk_page_registry_renderer.*`
-- `apps/linux_uconsole_gtk/tests/linux_uconsole_gtk_page_registry_fallback_smoke.cpp`
+- removed `apps/linux_uconsole_gtk/tests/linux_uconsole_gtk_page_registry_fallback_smoke.cpp`
 - archived old page registry under `legacy/app_implementations/linux_uconsole/archive/gtk/gtk/gtk_uconsole_pages.*`
 
 Current callers:
@@ -943,7 +947,8 @@ Current callers:
 - Phase 10/11 checkers.
 
 Current responsibility:
-- fallback-only registry when descriptor adoption fails.
+- burned-down fallback registry; failed descriptor adoption is
+  unavailable-on-failure.
 
 Is this final architecture?
 - No.
@@ -952,14 +957,18 @@ Final owner:
 - `apps/linux_uconsole_gtk` and `modules/ui_gtk_runtime`.
 
 Disposition:
-- Must Delete.
+- Deleted.
+
+Final status:
+- Removed in LinuxSim/uConsole fallback burn-down.
 
 Delete condition:
-- real GTK widget/page creation consumes `GtkDescriptorPage` as the primary page
-  source and fallback smoke is no longer required.
+- Satisfied for the page-registry adoption path: `GtkDescriptorPageRegistry`
+  is the only active page-registry source and fallback smoke is removed.
 
 Risk:
-- high; current GTK widget code has not been fully migrated out of archive.
+- medium-high; real GTK widget rewrite is still separate debt, but this active
+  page-registry fallback no longer carries it.
 
 ## Surface: LVGL hardcoded menu/page creation
 

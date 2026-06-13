@@ -76,6 +76,7 @@ def check_apps_directory(failures: list[str]) -> None:
     allowed = {
         "README.md",
         "esp32_lvgl",
+        "linux_cardputer_zero",
         "nrf52_node",
         "linux_uconsole_gtk",
         "linux_sim_shell",
@@ -188,6 +189,7 @@ def check_phase12_docs(failures: list[str]) -> None:
             "`legacy/app_implementations` roots",
             "Safe to delete now?",
             "Deletion condition",
+            "unavailable-on-failure",
         ],
         failures,
     )
@@ -231,17 +233,17 @@ def check_phase12_docs(failures: list[str]) -> None:
             "Batch 4 root legacy elimination",
             "Next work is not architecture refactor",
             "feature work",
-            "targeted fallback deletion",
+            "targeted remaining fallback deletion",
         ],
         failures,
     )
     require_tokens(
         "docs/audits/PHASE11_RENDERER_DESCRIPTOR_CONSUMPTION_REPORT.md",
         [
-            "fallback-only",
+            "deleted after LinuxSim/uConsole fallback burn-down",
             "Phase 11 does not rewrite real GTK widgets",
             "Phase 11 does not create LVGL widgets",
-            "Phase 11 does not delete fallback",
+            "LinuxSim and GTK renderer fallbacks are deleted",
         ],
         failures,
     )

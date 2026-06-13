@@ -2,16 +2,17 @@
 
 ## Purpose
 
-Phase 12 does not delete fallback by default. It records which fallback
-surfaces are now fallback-only, which alias surfaces have left the active build
-include surface, and what must be true before deleting remaining fallbacks.
+Phase 12 does not delete fallback by default. Current LinuxSim/uConsole
+follow-up work deletes the two fallback surfaces whose exit conditions are now
+satisfied, while the ledger still records what must be true before deleting
+remaining fallbacks.
 
 ## Readiness Ledger
 
 | Surface | Current status | Primary path replacement | Safe to delete now? | Why / why not | Deletion condition | Owner | Checker status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| LinuxSim hardcoded runtime routing | fallback-only | `LinuxSimRuntimeRenderer -> AsciiDescriptorRenderer -> AsciiRuntimeEntryAdoption` | No | fallback smoke still proves failed-adoption behavior and the real simulator renderer has not removed every hardcoded route dependency | fallback smoke no longer needed and real simulator entry has no direct hardcoded route dependency | `apps/linux_sim_shell` | `check_phase10_primary_path_ready.py`, `check_phase11_renderer_consumption_ready.py` |
-| GTK hardcoded page registry | fallback-only | `LinuxUConsoleGtkPageRegistryRenderer -> GtkDescriptorPageRegistry -> GtkRuntimeEntryAdoption` | No | real GTK widget/page creation still needs a compatibility page registry path | real `GtkWidget` page creation consumes `GtkDescriptorPage` as the primary page source | `apps/linux_uconsole_gtk` | `check_phase10_primary_path_ready.py`, `check_phase11_renderer_consumption_ready.py` |
+| LinuxSim hardcoded runtime routing | deleted | `LinuxSimRuntimeRenderer -> AsciiDescriptorRenderer -> AsciiRuntimeEntryAdoption` | Yes | exit condition satisfied; fallback smoke removed and failed adoption is unavailable-on-failure | keep `HardcodedFallback`, `fallbackUsed`, and `renderFallback` absent from `apps/linux_sim_shell` | `apps/linux_sim_shell` | `check_phase10_primary_path_ready.py`, `check_phase11_renderer_consumption_ready.py` |
+| GTK hardcoded page registry | deleted | `LinuxUConsoleGtkPageRegistryRenderer -> GtkDescriptorPageRegistry -> GtkRuntimeEntryAdoption` | Yes | exit condition satisfied; fallback smoke removed and failed adoption is unavailable-on-failure | keep `HardcodedFallback`, `fallbackUsed`, and `renderFallback` absent from `apps/linux_uconsole_gtk` | `apps/linux_uconsole_gtk` | `check_phase10_primary_path_ready.py`, `check_phase11_renderer_consumption_ready.py` |
 | LVGL hardcoded menu/page creation | fallback-only descriptor fallback | `LvglDescriptorRendererProbe -> LvglDescriptorMenuModel -> LvglPrimaryScreenGraphRuntime` | No | real LVGL menu/page renderers have not consumed `LvglDescriptorMenuModel` on a concrete target | one real LVGL target consumes `LvglDescriptorMenuModel` before menu/page object creation | `modules/ui_lvgl_ux_packs` | `check_phase10_primary_path_ready.py`, `check_phase11_renderer_consumption_ready.py` |
 | Chat legacy alias headers | alias build include surface removed | `ChatDeliveryActionPortAdapter` | Yes | runtime headers are the only build-visible API | keep alias headers absent from active build roots | `modules/ui_chat_runtime` | `check_phase9_legacy_burndown_ready.py` |
 | KeyVerification legacy alias headers | alias build include surface removed | `KeyVerificationPresentationSource`, `KeyVerificationActionSink`, `KeyVerificationSessionAdapter` | Yes | runtime headers are the only build-visible API | keep alias headers absent from active build roots | `modules/ui_key_verification_runtime` | `check_phase9_legacy_burndown_ready.py` |
@@ -32,6 +33,7 @@ Every deletion needs:
 
 ## Current Decision
 
-No runtime fallback is deleted in Phase 12. The migrated deprecated alias
-headers have left the build include surface, and Phase 12 records the guardrails
-that prevent fallback from becoming a primary path again.
+LinuxSim and GTK runtime fallbacks are deleted after their primary descriptor
+paths became the only active app sources. The migrated deprecated alias headers
+have left the build include surface, and Phase 12 records the guardrails that
+prevent deleted fallback from becoming a primary path again.

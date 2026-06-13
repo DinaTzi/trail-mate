@@ -251,7 +251,6 @@ def main() -> int:
             "activeUxPackId",
             "buildMenuForUxPack",
             "CompatibilityScreenFactory",
-            "fallback_",
         ],
         "apps/linux_uconsole_gtk/src/linux_uconsole_gtk_runtime_entry_adoption_probe.cpp": [
             "LinuxUConsoleGtkRuntimeEntryAdoptionProbe",
@@ -259,7 +258,6 @@ def main() -> int:
             "activeUxPackId",
             "buildMenuForUxPack",
             "CompatibilityScreenFactory",
-            "fallback_",
         ],
     }
     for rel, tokens in app_shell_probe_contracts.items():
@@ -284,12 +282,12 @@ def main() -> int:
         "apps/linux_sim_shell/src/linux_sim_runtime_entry.cpp": [
             "LinuxSimRuntimeEntry",
             "AsciiRuntimeEntryAdoption",
-            "fallback",
+            "Unavailable",
         ],
         "apps/linux_uconsole_gtk/src/linux_uconsole_gtk_page_registry_adoption.cpp": [
             "LinuxUConsoleGtkPageRegistryAdoption",
             "GtkRuntimeEntryAdoption",
-            "fallback",
+            "Unavailable",
         ],
         "modules/ui_lvgl_ux_packs/src/runtime/lvgl_runtime_adoption_probe.cpp": [
             "LvglRuntimeAdoptionProbe",
@@ -359,7 +357,6 @@ def main() -> int:
         "apps/linux_sim_shell/tests/linux_sim_runtime_entry_adoption_probe_smoke.cpp",
         [
             "LinuxSimRuntimeEntryAdoptionProbe",
-            "fallbackUsed",
             "route.valid",
         ],
         failures,
@@ -368,7 +365,7 @@ def main() -> int:
         "apps/linux_sim_shell/tests/linux_sim_runtime_entry_smoke.cpp",
         [
             "LinuxSimRuntimeEntry",
-            "fallbackUsed",
+            "ScreenGraphAdoption",
             "route.valid",
         ],
         failures,
@@ -377,7 +374,6 @@ def main() -> int:
         "apps/linux_uconsole_gtk/tests/linux_uconsole_gtk_runtime_entry_adoption_probe_smoke.cpp",
         [
             "LinuxUConsoleGtkRuntimeEntryAdoptionProbe",
-            "fallbackUsed",
             "route.valid",
         ],
         failures,
@@ -386,7 +382,7 @@ def main() -> int:
         "apps/linux_uconsole_gtk/tests/linux_uconsole_gtk_page_registry_adoption_smoke.cpp",
         [
             "LinuxUConsoleGtkPageRegistryAdoption",
-            "fallbackUsed",
+            "ScreenGraphAdoption",
             "route.valid",
         ],
         failures,
@@ -436,6 +432,7 @@ def main() -> int:
             "LinuxSimRuntimeEntry",
             "LinuxUConsoleGtkPageRegistryAdoption",
             "LvglRuntimeAdoptionProbe",
+            "unavailable-on-failure",
             "legacy/app_implementations remains burn-down",
         ],
         failures,

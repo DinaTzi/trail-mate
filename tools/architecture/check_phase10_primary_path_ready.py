@@ -54,11 +54,9 @@ def main() -> int:
         "apps/linux_sim_shell/src/linux_sim_runtime_entry.h",
         "apps/linux_sim_shell/src/linux_sim_runtime_entry.cpp",
         "apps/linux_sim_shell/tests/linux_sim_runtime_entry_smoke.cpp",
-        "apps/linux_sim_shell/tests/linux_sim_runtime_entry_fallback_smoke.cpp",
         "apps/linux_uconsole_gtk/src/linux_uconsole_gtk_page_registry_adoption.h",
         "apps/linux_uconsole_gtk/src/linux_uconsole_gtk_page_registry_adoption.cpp",
         "apps/linux_uconsole_gtk/tests/linux_uconsole_gtk_page_registry_adoption_smoke.cpp",
-        "apps/linux_uconsole_gtk/tests/linux_uconsole_gtk_page_registry_fallback_smoke.cpp",
         "modules/ui_lvgl_ux_packs/include/ui_lvgl_ux_packs/runtime/lvgl_primary_screen_graph_runtime.h",
         "modules/ui_lvgl_ux_packs/src/runtime/lvgl_primary_screen_graph_runtime.cpp",
         "modules/ui_lvgl_ux_packs/tests/test_lvgl_primary_screen_graph_runtime.cpp",
@@ -72,13 +70,15 @@ def main() -> int:
         "apps/linux_sim_shell/src/linux_sim_runtime_entry.h",
         [
             "LinuxSimRuntimeSource",
+            "Unavailable",
             "ScreenGraphAdoption",
-            "HardcodedFallback",
             "usingPrimaryScreenGraph",
             "runtimeSource",
-            "fallbackUsed",
         ],
         [
+            "HardcodedFallback",
+            "fallbackUsed",
+            "startFallback",
             "findUxPackById",
             "UxPackRegistry",
             "buildMenuForUxPack",
@@ -92,12 +92,13 @@ def main() -> int:
         "apps/linux_sim_shell/src/linux_sim_runtime_entry.cpp",
         [
             "LinuxSimRuntimeSource::ScreenGraphAdoption",
-            "LinuxSimRuntimeSource::HardcodedFallback",
+            "LinuxSimRuntimeSource::Unavailable",
             "usingPrimaryScreenGraph",
-            "startFallback",
-            "Phase 10 fallback containment",
         ],
         [
+            "HardcodedFallback",
+            "fallbackUsed",
+            "startFallback",
             "findUxPackById",
             "UxPackRegistry",
             "buildMenuForUxPack",
@@ -114,16 +115,6 @@ def main() -> int:
             "runtimeSource",
             "LinuxSimRuntimeSource::",
             "ScreenGraphAdoption",
-            "fallbackUsed",
-        ],
-        failures,
-    )
-    require_tokens(
-        "apps/linux_sim_shell/tests/linux_sim_runtime_entry_fallback_smoke.cpp",
-        [
-            "HardcodedFallback",
-            "fallbackUsed",
-            "missing_phase10_pack",
         ],
         failures,
     )
@@ -132,13 +123,15 @@ def main() -> int:
         "apps/linux_uconsole_gtk/src/linux_uconsole_gtk_page_registry_adoption.h",
         [
             "LinuxUConsoleGtkPageRegistrySource",
+            "Unavailable",
             "ScreenGraphAdoption",
-            "HardcodedFallback",
             "usingPrimaryScreenGraph",
             "registrySource",
-            "fallbackUsed",
         ],
         [
+            "HardcodedFallback",
+            "fallbackUsed",
+            "loadFallback",
             "findUxPackById",
             "UxPackRegistry",
             "buildMenuForUxPack",
@@ -151,12 +144,13 @@ def main() -> int:
         "apps/linux_uconsole_gtk/src/linux_uconsole_gtk_page_registry_adoption.cpp",
         [
             "LinuxUConsoleGtkPageRegistrySource::ScreenGraphAdoption",
-            "LinuxUConsoleGtkPageRegistrySource::HardcodedFallback",
+            "LinuxUConsoleGtkPageRegistrySource::Unavailable",
             "usingPrimaryScreenGraph",
-            "loadFallback",
-            "Phase 10 fallback containment",
         ],
         [
+            "HardcodedFallback",
+            "fallbackUsed",
+            "loadFallback",
             "findUxPackById",
             "UxPackRegistry",
             "buildMenuForUxPack",
@@ -171,16 +165,6 @@ def main() -> int:
             "usingPrimaryScreenGraph",
             "registrySource",
             "LinuxUConsoleGtkPageRegistrySource::ScreenGraphAdoption",
-            "fallbackUsed",
-        ],
-        failures,
-    )
-    require_tokens(
-        "apps/linux_uconsole_gtk/tests/linux_uconsole_gtk_page_registry_fallback_smoke.cpp",
-        [
-            "HardcodedFallback",
-            "fallbackUsed",
-            "missing_phase10_pack",
         ],
         failures,
     )
@@ -245,12 +229,26 @@ def main() -> int:
     require_tokens(
         "apps/linux_sim_shell/CMakeLists.txt",
         [
-            "linux_sim_runtime_entry_fallback_smoke.cpp",
+            "linux_sim_runtime_entry_smoke.cpp",
+            "linux_sim_runtime_renderer_smoke.cpp",
             "lvgl_primary_screen_graph_runtime",
         ],
         failures,
     )
+    forbid_tokens(
+        "apps/linux_sim_shell/CMakeLists.txt",
+        ["linux_sim_runtime_entry_fallback_smoke.cpp"],
+        failures,
+    )
     require_tokens(
+        "apps/linux_uconsole_gtk/CMakeLists.txt",
+        [
+            "linux_uconsole_gtk_page_registry_adoption_smoke.cpp",
+            "linux_uconsole_gtk_page_registry_renderer_smoke.cpp",
+        ],
+        failures,
+    )
+    forbid_tokens(
         "apps/linux_uconsole_gtk/CMakeLists.txt",
         ["linux_uconsole_gtk_page_registry_fallback_smoke.cpp"],
         failures,
@@ -262,6 +260,7 @@ def main() -> int:
             "LinuxSim Primary Path",
             "GTK Primary Path",
             "LVGL Primary Descriptor Path",
+            "unavailable-on-failure",
             "fallback-only",
             "Phase 11 Recommendation",
             "AsciiRuntimeEntryAdoption",
@@ -274,6 +273,7 @@ def main() -> int:
         "docs/audits/PHASE10_FINAL_PRIMARY_PATH_REPORT.md",
         [
             "Primary Path Status",
+            "Unavailable on failed adoption",
             "fallback-only",
             "fallback-only descriptor fallback",
             "Not Done",
@@ -285,8 +285,7 @@ def main() -> int:
     require_tokens(
         "docs/audits/PHASE9_FALLBACK_CONTAINMENT_LEDGER.md",
         [
-            "fallback-only after Phase 10.1",
-            "fallback-only after Phase 10.2",
+            "deleted after LinuxSim/uConsole fallback burn-down",
             "fallback-only after Phase 10.3",
             "LvglPrimaryScreenGraphRuntime",
         ],

@@ -120,6 +120,7 @@ def check_final_report(failures: list[str]) -> None:
             "LinuxSim hardcoded runtime routing",
             "GTK hardcoded page registry",
             "LVGL hardcoded menu/page creation",
+            "deleted after LinuxSim/uConsole fallback burn-down",
             "Phase 10 Entry Recommendation",
             "LinuxSim / ASCII primary path",
             "AsciiRuntimeEntryAdoption as primary source",
@@ -169,7 +170,7 @@ def check_cross_doc_consistency(failures: list[str]) -> None:
             "LVGL hardcoded menu/page creation",
             "contained fallback",
             "Exit condition",
-            "Phase 10 first cut makes `AsciiRuntimeEntryAdoption as primary source`",
+            "deleted after LinuxSim/uConsole fallback burn-down",
         ],
         failures,
     )
@@ -177,7 +178,7 @@ def check_cross_doc_consistency(failures: list[str]) -> None:
         "docs/audits/LEGACY_BURNDOWN_REGISTER.md",
         [
             "Phase 9.6 Final Readiness Alignment",
-            "The remaining Phase 10-facing UI fallbacks are not legacy adapter burn-down items",
+            "LinuxSim and GTK hardcoded UI fallbacks have been burned down",
         ],
         failures,
     )
@@ -185,7 +186,7 @@ def check_cross_doc_consistency(failures: list[str]) -> None:
         "docs/audits/PHASE9_LEGACY_BURNDOWN_REPORT.md",
         [
             "Phase 9.6 Final Readiness Alignment",
-            "The remaining LinuxSim, GTK, and LVGL hardcoded runtime paths are not reported as burned down",
+            "LinuxSim and GTK hardcoded runtime paths are now reported as burned down",
         ],
         failures,
     )

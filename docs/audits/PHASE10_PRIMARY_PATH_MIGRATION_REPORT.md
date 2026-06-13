@@ -2,13 +2,15 @@
 
 ## Scope
 
-Phase 10 changes the default path. It does not delete fallback, rewrite GTK
-widgets, rewrite LVGL menu/page renderers, add UX packs, or let runtime entries
-choose UX packs.
+Phase 10 changes the default path. Later LinuxSim/uConsole burn-down deletes
+their hardcoded fallback branches. It still does not rewrite GTK widgets,
+rewrite LVGL menu/page renderers, add UX packs, or let runtime entries choose
+UX packs.
 
 The migration rule is:
 
-adoption descriptor path is primary; hardcoded path is fallback-only
+adoption descriptor path is primary; failed LinuxSim/uConsole adoption is
+unavailable-on-failure
 
 ## LinuxSim Primary Path
 
@@ -24,18 +26,18 @@ Current primary path:
 
 Current status:
 
-- `LinuxSimRuntimeSource::ScreenGraphAdoption` is the default source when
-  adoption loads.
-- `LinuxSimRuntimeSource::HardcodedFallback` is used only when adoption fails.
-- `usingPrimaryScreenGraph()` and `fallbackUsed()` expose the active path.
+- `LinuxSimRuntimeSource::ScreenGraphAdoption` is the source when adoption
+  loads.
+- `LinuxSimRuntimeSource::Unavailable` is used when adoption fails.
+- `usingPrimaryScreenGraph()` and `runtimeSource()` expose the active path.
 
 Fallback status:
 
-fallback-only after Phase 10.1
+deleted after LinuxSim/uConsole fallback burn-down
 
 Deletion condition:
 
-simulator renderer no longer needs hardcoded routing.
+satisfied: simulator renderer no longer needs hardcoded routing.
 
 ## GTK Primary Path
 
@@ -51,19 +53,19 @@ Current primary path:
 
 Current status:
 
-- `LinuxUConsoleGtkPageRegistrySource::ScreenGraphAdoption` is the default
-  source when adoption loads.
-- `LinuxUConsoleGtkPageRegistrySource::HardcodedFallback` is used only when
-  adoption fails.
-- `usingPrimaryScreenGraph()` and `fallbackUsed()` expose the active path.
+- `LinuxUConsoleGtkPageRegistrySource::ScreenGraphAdoption` is the source when
+  adoption loads.
+- `LinuxUConsoleGtkPageRegistrySource::Unavailable` is used when adoption
+  fails.
+- `usingPrimaryScreenGraph()` and `registrySource()` expose the active path.
 
 Fallback status:
 
-fallback-only after Phase 10.2
+deleted after LinuxSim/uConsole fallback burn-down
 
 Deletion condition:
 
-GTK page registry consumes descriptors as its only page source.
+satisfied: GTK descriptor page registry is the only active page-registry source.
 
 ## LVGL Primary Descriptor Path
 
@@ -101,15 +103,16 @@ LVGL renderers consume descriptor runtime before creating menu/page objects.
 
 - real GTK widget hierarchy rewrite
 - real LVGL widget/menu rewrite
-- fallback deletion
+- LVGL fallback deletion
 - full navigation stack replacement
 - all screen/page migration
 
 ## Checker Status
 
-`tools/architecture/check_phase10_primary_path_ready.py` verifies that the
-three primary paths expose source enums, primary/fallback probes, reports, and
-forbidden-token guardrails.
+`tools/architecture/check_phase10_primary_path_ready.py` verifies that
+LinuxSim/uConsole primary paths fail closed with unavailable-on-failure, that
+LVGL still records its contained descriptor fallback, and that forbidden-token
+guardrails remain in place.
 
 ## Phase 11 Recommendation
 

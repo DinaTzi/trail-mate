@@ -224,13 +224,6 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_linux_uconsole_gtk_page_registry_adoption_smoke
              COMMAND trailmate_linux_uconsole_gtk_page_registry_adoption_smoke)
 
-    add_executable(trailmate_linux_uconsole_gtk_page_registry_fallback_smoke
-        tests/linux_uconsole_gtk_page_registry_fallback_smoke.cpp)
-    target_link_libraries(trailmate_linux_uconsole_gtk_page_registry_fallback_smoke
-        PRIVATE trailmate_linux_uconsole_gtk_shell)
-    add_test(NAME trailmate_linux_uconsole_gtk_page_registry_fallback_smoke
-             COMMAND trailmate_linux_uconsole_gtk_page_registry_fallback_smoke)
-
     add_executable(trailmate_linux_uconsole_gtk_page_registry_renderer_smoke
         tests/linux_uconsole_gtk_page_registry_renderer_smoke.cpp)
     target_link_libraries(trailmate_linux_uconsole_gtk_page_registry_renderer_smoke

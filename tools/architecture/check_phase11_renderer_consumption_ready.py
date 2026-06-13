@@ -108,12 +108,10 @@ def main() -> int:
             "LinuxSimRuntimeEntry",
             "entry.usingPrimaryScreenGraph()",
             "entry.adoption()",
-            "entry.fallbackUsed()",
             "usedPrimaryScreenGraph",
-            "usedFallback",
-            "renderFallback",
         ],
-        renderer_forbidden + ["ui::menu::MenuModel"],
+        renderer_forbidden
+        + ["ui::menu::MenuModel", "fallbackUsed", "usedFallback", "renderFallback"],
         failures,
     )
     require_tokens(
@@ -123,8 +121,7 @@ def main() -> int:
             "LinuxSimRuntimeEntry",
             "usingPrimaryScreenGraph",
             "usedPrimaryScreenGraph",
-            "fallbackUsed",
-            "usedFallback",
+            "Unavailable",
         ],
         failures,
     )
@@ -148,12 +145,10 @@ def main() -> int:
             "LinuxUConsoleGtkPageRegistryAdoption",
             "adoption.usingPrimaryScreenGraph()",
             "adoption.adoption()",
-            "adoption.fallbackUsed()",
             "usedPrimaryScreenGraph",
-            "usedFallback",
-            "renderFallback",
         ],
-        renderer_forbidden + ["ui::menu::MenuModel"],
+        renderer_forbidden
+        + ["ui::menu::MenuModel", "fallbackUsed", "usedFallback", "renderFallback"],
         failures,
     )
     require_tokens(
@@ -163,8 +158,7 @@ def main() -> int:
             "LinuxUConsoleGtkPageRegistryAdoption",
             "usingPrimaryScreenGraph",
             "usedPrimaryScreenGraph",
-            "fallbackUsed",
-            "usedFallback",
+            "Unavailable",
         ],
         failures,
     )
@@ -251,12 +245,14 @@ def main() -> int:
             "Descriptor renderer path",
             "fallback",
             "descriptor source",
-            "fallback status",
+            "LinuxSim fallback burned down",
+            "GTK fallback burned down",
+            "LVGL fallback status",
             "Not done",
             "Phase 12 Recommendation",
             "Phase 11 does not rewrite real GTK widgets",
             "Phase 11 does not create LVGL widgets",
-            "Phase 11 does not delete fallback",
+            "LinuxSim and GTK renderer fallbacks are deleted",
             "UxPackRegistry",
             "buildMenuForUxPack",
             "GtkWidget",

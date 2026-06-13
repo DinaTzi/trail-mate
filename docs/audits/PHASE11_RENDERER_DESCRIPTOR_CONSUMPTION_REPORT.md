@@ -3,7 +3,8 @@
 ## Scope
 
 Phase 11 moves primary descriptors into renderer-facing consumption surfaces.
-It does not delete fallback, rewrite GTK widgets, rewrite LVGL menu/page
+The LinuxSim/uConsole burn-down follow-up deletes their renderer fallback
+branches. It still does not rewrite GTK widgets, rewrite LVGL menu/page
 renderers, implement a full navigation stack, add UX packs, or let renderers
 choose UX packs.
 
@@ -29,15 +30,15 @@ Status:
 - When `LinuxSimRuntimeEntry::usingPrimaryScreenGraph()` is true, the renderer
   renders from `entry.adoption()`.
 
-Fallback path:
+LinuxSim fallback burned down:
 
-- `LinuxSimRuntimeRenderer::renderFallback(...)` is reached only when
-  `entry.fallbackUsed()` is true.
-- fallback remains available but is not the default renderer data source.
+- `LinuxSimRuntimeRenderer` no longer exposes `renderFallback`,
+  `fallbackUsed`, or `usedFallback`.
+- failed adoption returns false and leaves the renderer not ready.
 
 fallback status:
 
-fallback-only
+deleted after LinuxSim/uConsole fallback burn-down
 
 Not done:
 
@@ -63,15 +64,15 @@ Status:
 - When `LinuxUConsoleGtkPageRegistryAdoption::usingPrimaryScreenGraph()` is
   true, the renderer consumes descriptor pages.
 
-Fallback path:
+GTK fallback burned down:
 
-- `LinuxUConsoleGtkPageRegistryRenderer::renderFallback(...)` is reached only
-  when `adoption.fallbackUsed()` is true.
-- hardcoded GTK page registry remains fallback-only.
+- `LinuxUConsoleGtkPageRegistryRenderer` no longer exposes `renderFallback`,
+  `fallbackUsed`, or `usedFallback`.
+- failed adoption returns false and leaves the page registry not ready.
 
 fallback status:
 
-fallback-only
+deleted after LinuxSim/uConsole fallback burn-down
 
 Not done:
 
@@ -102,7 +103,7 @@ Fallback path:
   `runtime.fallbackUsed()` is true.
 - hardcoded LVGL menu/page creation remains fallback-only.
 
-fallback status:
+LVGL fallback status:
 
 fallback-only
 
@@ -110,7 +111,7 @@ Not done:
 
 - real LVGL widget/menu rewrite
 - device-specific renderer migration
-- fallback deletion
+- LVGL fallback deletion
 
 ## Guardrails
 
@@ -132,7 +133,9 @@ UX selection and `PresentationBundle` construction remain upstream.
 
 Phase 11 does not rewrite real GTK widgets.
 Phase 11 does not create LVGL widgets.
-Phase 11 does not delete fallback.
+LinuxSim and GTK renderer fallbacks are deleted. LVGL fallback remains
+contained until a real LVGL target consumes descriptor menu/page data before
+widget creation.
 
 ## Phase 12 Recommendation
 
