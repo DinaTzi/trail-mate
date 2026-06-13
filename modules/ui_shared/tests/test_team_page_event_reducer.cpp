@@ -1,9 +1,45 @@
 #include "ui/screens/team/team_page_event_reducer.h"
 
 #include <cassert>
+#include <cstdio>
+#include <string>
 
 namespace
 {
+
+class TestMemberNameResolver final : public team::ui::ITeamPageMemberNameResolver
+{
+  public:
+    std::string resolveMemberName(uint32_t node_id) const override
+    {
+        char label[5]{};
+        std::snprintf(label,
+                      sizeof(label),
+                      "%04lX",
+                      static_cast<unsigned long>(node_id & 0xFFFFU));
+        return std::string(label);
+    }
+};
+
+class PrefixMemberNameResolver final : public team::ui::ITeamPageMemberNameResolver
+{
+  public:
+    std::string resolveMemberName(uint32_t node_id) const override
+    {
+        char label[6]{};
+        std::snprintf(label,
+                      sizeof(label),
+                      "N%04lX",
+                      static_cast<unsigned long>(node_id & 0xFFFFU));
+        return std::string(label);
+    }
+};
+
+const TestMemberNameResolver& testNames()
+{
+    static TestMemberNameResolver names;
+    return names;
+}
 
 team::TeamId testTeamId()
 {
@@ -18,7 +54,16 @@ team::ui::TeamPageEventReducer makeReducer()
     team::ui::TeamPageEventContext context;
     context.now_s = 1000;
     context.self_node_id = 0x11111111;
-    return team::ui::TeamPageEventReducer(context);
+    return team::ui::TeamPageEventReducer(context, testNames());
+}
+
+team::ui::TeamPageEventReducer makeReducer(
+    const team::ui::ITeamPageMemberNameResolver& names)
+{
+    team::ui::TeamPageEventContext context;
+    context.now_s = 1000;
+    context.self_node_id = 0x11111111;
+    return team::ui::TeamPageEventReducer(context, names);
 }
 
 team::TeamEventContext makeEventContext()
@@ -101,6 +146,22 @@ void testActivityTouchesSenderAndConfirmsKeys()
     assert(state.members.size() == 1);
     assert(state.members[0].name == "2222");
     assert(state.last_update_s == 990);
+}
+
+void testMemberNamesUseInjectedResolver()
+{
+    PrefixMemberNameResolver names;
+    auto reducer = makeReducer(names);
+    team::ui::TeamPageEventState state;
+    state.team_id = testTeamId();
+    state.has_team_id = true;
+
+    const auto effects =
+        reducer.reduceActivity(state, makeEventContext(), 0x22222222);
+
+    assert(effects.accepted);
+    assert(state.members.size() == 1);
+    assert(state.members[0].name == "N2222");
 }
 
 void testActivityCanTouchSelfPlaceholder()
@@ -367,6 +428,7 @@ int main()
     testStatusRostersPreservePresenceAndLeader();
     testStatusFromOtherTeamIsIgnored();
     testActivityTouchesSenderAndConfirmsKeys();
+    testMemberNamesUseInjectedResolver();
     testActivityCanTouchSelfPlaceholder();
     testErrorSetsWaitingNewKeysOnlyForMembers();
     testTransferLeaderUpdatesRoster();

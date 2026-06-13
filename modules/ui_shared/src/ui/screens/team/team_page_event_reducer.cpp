@@ -1,17 +1,20 @@
 #include "ui/screens/team/team_page_event_reducer.h"
 
 #include "ui/team_presence/team_presence_model.h"
-#include "ui/team_presentation/team_member_label.h"
 
 #include <algorithm>
+#include <cstdio>
 
 namespace team
 {
 namespace ui
 {
 
-TeamPageEventReducer::TeamPageEventReducer(TeamPageEventContext context)
+TeamPageEventReducer::TeamPageEventReducer(
+    TeamPageEventContext context,
+    const ITeamPageMemberNameResolver& names)
     : context_(context)
+    , names_(&names)
 {
 }
 
@@ -606,7 +609,7 @@ std::string TeamPageEventReducer::memberDisplayLabel(uint32_t node_id) const
     {
         return "You";
     }
-    return ::ui::team_presentation::shortTeamMemberLabel(node_id);
+    return names_->resolveMemberName(node_id);
 }
 
 void TeamPageEventReducer::assignMemberColor(TeamMemberUi& member) const

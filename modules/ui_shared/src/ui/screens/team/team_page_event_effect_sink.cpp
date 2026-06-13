@@ -1,7 +1,6 @@
 #include "ui/screens/team/team_page_event_effect_sink.h"
 
 #include "chat/domain/chat_types.h"
-#include "ui/team_presentation/team_member_label.h"
 
 namespace team
 {
@@ -98,8 +97,7 @@ TeamPageEventEffectResult TeamPageEventEffectSink::applyEffects(
     if (effects.show_pairing_peer)
     {
         const std::string name =
-            ::ui::team_presentation::shortTeamMemberLabel(
-                effects.pairing_peer_id);
+            reducer.memberDisplayLabel(effects.pairing_peer_id);
         const std::string message = "Paired: " + name;
         notifier.showMessage(message.c_str());
     }

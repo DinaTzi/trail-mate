@@ -1,12 +1,33 @@
 #include "ui/screens/team/team_page_event_effect_sink.h"
 
 #include <cassert>
+#include <cstdio>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace
 {
+
+class TestMemberNameResolver final : public team::ui::ITeamPageMemberNameResolver
+{
+  public:
+    std::string resolveMemberName(uint32_t node_id) const override
+    {
+        char label[5]{};
+        std::snprintf(label,
+                      sizeof(label),
+                      "%04lX",
+                      static_cast<unsigned long>(node_id & 0xFFFFU));
+        return std::string(label);
+    }
+};
+
+const TestMemberNameResolver& testNames()
+{
+    static TestMemberNameResolver names;
+    return names;
+}
 
 team::TeamId testTeamId()
 {
@@ -21,7 +42,7 @@ team::ui::TeamPageEventReducer makeReducer()
     team::ui::TeamPageEventContext context;
     context.now_s = 1000;
     context.self_node_id = 0x11111111;
-    return team::ui::TeamPageEventReducer(context);
+    return team::ui::TeamPageEventReducer(context, testNames());
 }
 
 team::ui::TeamPageEventState makeState()

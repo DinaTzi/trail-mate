@@ -379,14 +379,26 @@ void apply_pairing_command_failures(
     }
 }
 
-class TeamPageNodeLabelResolver final : public ITeamPageLvglNameResolver
+class TeamPageNodeLabelResolver final : public ITeamPageLvglNameResolver,
+                                        public ITeamPageMemberNameResolver
 {
   public:
     std::string resolveNodeName(uint32_t node_id) const override
     {
         return resolve_node_label(node_id);
     }
+
+    std::string resolveMemberName(uint32_t node_id) const override
+    {
+        return resolve_node_label(node_id);
+    }
 };
+
+const TeamPageNodeLabelResolver& team_page_name_resolver()
+{
+    static TeamPageNodeLabelResolver names;
+    return names;
+}
 
 TeamPageEventState event_state_from_page()
 {
@@ -466,7 +478,7 @@ TeamPageEventReducer current_event_reducer()
     TeamPageEventContext context;
     context.now_s = now_secs();
     context.self_node_id = app::messagingFacade().getSelfNodeId();
-    return TeamPageEventReducer(context);
+    return TeamPageEventReducer(context, team_page_name_resolver());
 }
 
 template <typename Reduce>
@@ -1722,8 +1734,10 @@ void render_page()
     input.read_model = read_model_input;
     input.pairing_peer_id = team_page_state().pairing_peer_id;
 
-    static TeamPageNodeLabelResolver names;
-    TeamPageLvglRenderer(now_secs()).render(context, input, handlers, names);
+    TeamPageLvglRenderer(now_secs()).render(context,
+                                            input,
+                                            handlers,
+                                            team_page_name_resolver());
 
     ui_update_top_bar_battery(team_page_lvgl_context().top_bar_widget);
     refresh_team_input(input_context_from_lvgl());
