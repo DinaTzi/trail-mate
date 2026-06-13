@@ -1449,15 +1449,32 @@ void adjust_map_zoom(int delta)
 
 void center_map_on_self()
 {
-    if (map_workspace_model().centerOnSelf().ok)
+    const auto result = map_workspace_model().centerOnSelf();
+    const auto snapshot = map_workspace_model().snapshot();
+    const auto& config = app::configFacade().getConfig();
+    if (result.ok)
     {
         s_map_pan_x = 0;
         s_map_pan_y = 0;
         set_map_notice("Centered", 900);
+        std::printf("[MAP][POS] center_on_self ok self_valid=%d self_lat=%.6f self_lon=%.6f viewport_lat=%.6f viewport_lon=%.6f zoom=%u map_coord=%u\n",
+                    snapshot.self.valid ? 1 : 0,
+                    snapshot.self.lat,
+                    snapshot.self.lon,
+                    snapshot.viewport.center_lat,
+                    snapshot.viewport.center_lon,
+                    static_cast<unsigned>(snapshot.viewport.zoom),
+                    static_cast<unsigned>(config.map_coord_system));
     }
     else
     {
         set_map_notice("No GPS fix", 1200);
+        std::printf("[MAP][POS] center_on_self failed self_valid=%d self_lat=%.6f self_lon=%.6f status=%s map_coord=%u\n",
+                    snapshot.self.valid ? 1 : 0,
+                    snapshot.self.lat,
+                    snapshot.self.lon,
+                    snapshot.status_line.c_str(),
+                    static_cast<unsigned>(config.map_coord_system));
     }
     sync_workspace_viewport_from_renderer();
     request_refresh_view();
