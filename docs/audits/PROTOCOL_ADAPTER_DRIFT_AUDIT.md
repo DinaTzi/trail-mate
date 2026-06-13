@@ -313,6 +313,8 @@ Current state:
   shared helper.
 - ESP32 no longer accepts the historical group-secret-derived direct key fallback; MeshCore direct secrets are
   identity/pubkey-derived only.
+- ESP32 no longer projects non-peer-cipher `TXT_MSG` payloads as legacy plaintext/XOR chat; current direct text
+  must satisfy the peer cipher shape.
 
 Residual risk:
 

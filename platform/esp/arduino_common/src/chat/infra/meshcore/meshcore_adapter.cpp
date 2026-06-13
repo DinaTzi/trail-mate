@@ -4102,9 +4102,6 @@ void MeshCoreAdapter::handleRawPacketInternal(const uint8_t* data, size_t size, 
     const bool is_peer_payload = isPeerPayloadType(parsed.payload_type) &&
                                  isPeerCipherShape(parsed.payload_len) &&
                                  !is_anon_req_payload;
-    const bool is_legacy_text_payload = (parsed.payload_type == kPayloadTypeTxtMsg &&
-                                         parsed.payload_len > 1 &&
-                                         !is_peer_payload);
     const bool is_group_text_payload = (parsed.payload_type == kPayloadTypeGrpTxt &&
                                         parsed.payload_len > (1 + kCipherMacSize));
     const bool is_group_data_payload = (parsed.payload_type == kPayloadTypeGrpData &&
@@ -4112,8 +4109,7 @@ void MeshCoreAdapter::handleRawPacketInternal(const uint8_t* data, size_t size, 
     const bool is_raw_payload = (parsed.payload_type == kPayloadTypeRawCustom &&
                                  parsed.payload_len > sizeof(uint32_t));
 
-    // Legacy ACK behavior for legacy text/raw payloads.
-    if (config_.tx_enabled && (is_legacy_text_payload || is_raw_payload))
+    if (config_.tx_enabled && is_raw_payload)
     {
         uint8_t ack_frame[6] = {};
         ack_frame[0] = buildHeader(kRouteTypeFlood, kPayloadTypeAck, kPayloadVer1);
@@ -4866,27 +4862,6 @@ void MeshCoreAdapter::handleRawPacketInternal(const uint8_t* data, size_t size, 
                      name,
                      advert.has_location ? 1U : 0U,
                      static_cast<unsigned>(app_data_len));
-    }
-    else if (is_legacy_text_payload)
-    {
-        MeshIncomingText incoming;
-        incoming.channel = (parsed.payload[0] == 1) ? ChannelId::SECONDARY : ChannelId::PRIMARY;
-        incoming.from = 0;
-        incoming.to = 0xFFFFFFFF;
-        incoming.msg_id = next_msg_id_++;
-        incoming.timestamp = now_message_timestamp();
-        std::vector<uint8_t> text_bytes(parsed.payload + 1, parsed.payload + parsed.payload_len);
-        if (encrypt_mode_ > 0)
-        {
-            size_t key_len = 0;
-            const uint8_t* key = selectChannelKey(config_, &key_len);
-            xorCrypt(text_bytes.data(), text_bytes.size(), key, key_len);
-        }
-        incoming.text.assign(reinterpret_cast<const char*>(text_bytes.data()), text_bytes.size());
-        incoming.hop_limit = 0;
-        incoming.encrypted = (encrypt_mode_ > 0);
-        fill_rx_meta(incoming.rx_meta, false);
-        receive_queue_.push(incoming);
     }
     else if (is_raw_payload)
     {
