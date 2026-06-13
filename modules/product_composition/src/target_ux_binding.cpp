@@ -9,8 +9,8 @@ namespace
 
 constexpr TargetUxBinding kTargetUxBindings[] = {
     {"tab5", "tab5_touch", "compatibility", "compatibility", false},
-    {"tdisplayp4_tft", "tdisplayp4_touch", "tdisplayp4_touch", nullptr, true},
-    {"tdisplayp4_amoled", "tdisplayp4_touch", "tdisplayp4_touch", nullptr, true},
+    {"t_display_p4_tft", "t_display_p4_touch", "t_display_p4_touch", nullptr, true},
+    {"t_display_p4_amoled", "t_display_p4_touch", "t_display_p4_touch", nullptr, true},
     {"tlora_pager", "pager_compact", "compatibility", "compatibility", false},
     {"tdeck", "deck_full", "compatibility", "compatibility", false},
     {"twatch", "watch_compact", "compatibility", "compatibility", false},

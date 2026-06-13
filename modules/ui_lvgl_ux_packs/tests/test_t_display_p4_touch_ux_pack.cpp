@@ -1,4 +1,4 @@
-#include "ui_lvgl_ux_packs/packs/tdisplayp4_touch_ux_pack.h"
+#include "ui_lvgl_ux_packs/packs/t_display_p4_touch_ux_pack.h"
 
 #include <cassert>
 #include <cstring>
@@ -25,7 +25,7 @@ bool contains(const ui_lvgl_ux::ScreenRegistry& registry,
 int main()
 {
     ui_lvgl_ux::TDisplayP4TouchUxPack pack;
-    assert(std::strcmp(pack.id(), "tdisplayp4_touch") == 0);
+    assert(std::strcmp(pack.id(), "t_display_p4_touch") == 0);
 
     const auto& profile = pack.profile();
     assert(profile.screen_class == ui_lvgl_ux::ScreenClass::TouchTablet);

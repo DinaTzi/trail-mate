@@ -4,8 +4,8 @@ Board-owned runtime and hardware truth for `LILYGO T-Display-P4`.
 
 This board family now maps to two explicit ESP-IDF target environments:
 
-- `tdisplayp4_tft`
-- `tdisplayp4_amoled`
+- `t_display_p4_tft`
+- `t_display_p4_amoled`
 
 The family-level code here stays shared. Variant selection belongs to the target descriptor layer, not to ad-hoc build commands or undocumented menuconfig toggles.
 

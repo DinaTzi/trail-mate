@@ -10,8 +10,8 @@ This record describes hardware facts only.
 ## Identity
 
 - board package: `boards/t_display_p4`
-- final facts directory: `boards/tdisplayp4`
-- board id: `tdisplayp4`
+- final facts directory: `boards/t_display_p4`
+- board id: `t_display_p4`
 - platform family: `esp32`
 - product name: `TrailMate P4`
 

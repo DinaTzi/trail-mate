@@ -121,8 +121,8 @@ int main(int argc, char** argv)
     const char* idf_targets[] = {
         "tab5",
         "tdeck",
-        "tdisplayp4_amoled",
-        "tdisplayp4_tft",
+        "t_display_p4_amoled",
+        "t_display_p4_tft",
         "tlora_pager",
         "twatch",
     };

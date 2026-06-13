@@ -11,6 +11,7 @@
 #include "platform/ui/wireless_companion_runtime.h"
 #include "ui/app_catalog.h"
 #include "ui/app_catalog_builder.h"
+#include "ui/app_screen.h"
 #include "ui/callback_app_screen.h"
 #include "ui/localization.h"
 #include "ui/ui_theme.h"
@@ -152,7 +153,7 @@ ui::CallbackAppScreen s_companion_app("c6_companion",
 struct IdfCatalogState
 {
     ui::AppCatalog base{};
-    ui::AppScreen* companion = nullptr;
+    AppScreen* companion = nullptr;
 };
 
 std::size_t idf_catalog_count(void* user_data)
@@ -165,7 +166,7 @@ std::size_t idf_catalog_count(void* user_data)
     return ui::catalogCount(state->base) + (state->companion != nullptr ? 1U : 0U);
 }
 
-ui::AppScreen* idf_catalog_at(void* user_data, std::size_t index)
+AppScreen* idf_catalog_at(void* user_data, std::size_t index)
 {
     auto* state = static_cast<IdfCatalogState*>(user_data);
     if (state == nullptr)

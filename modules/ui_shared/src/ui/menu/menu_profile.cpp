@@ -191,10 +191,10 @@ MenuLayoutProfile make_tab5_profile()
     return profile;
 }
 
-MenuLayoutProfile make_tdisplayp4_profile()
+MenuLayoutProfile make_t_display_p4_profile()
 {
     MenuLayoutProfile profile = make_tab5_profile();
-    profile.name = "tdisplayp4";
+    profile.name = "t_display_p4";
     profile.card_width = 104;
     profile.card_height = 112;
     profile.grid_height_pct = 84;
@@ -263,7 +263,7 @@ const MenuLayoutProfile& current()
 #if defined(TRAIL_MATE_ESP_BOARD_TAB5)
         return make_tab5_profile();
 #elif defined(TRAIL_MATE_ESP_BOARD_T_DISPLAY_P4)
-        return make_tdisplayp4_profile();
+        return make_t_display_p4_profile();
 #elif defined(ARDUINO_T_LORA_PAGER)
         return make_pager_profile();
 #elif defined(ARDUINO_T_DECK) || defined(ARDUINO_T_DECK_PRO)

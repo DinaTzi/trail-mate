@@ -164,10 +164,10 @@ PageLayoutProfile make_tab5_profile()
     return profile;
 }
 
-PageLayoutProfile make_tdisplayp4_profile()
+PageLayoutProfile make_t_display_p4_profile()
 {
     PageLayoutProfile profile = make_tab5_profile();
-    profile.name = "tdisplayp4";
+    profile.name = "t_display_p4";
     profile.top_bar_height = 56;
     profile.top_content_gap = 10;
     profile.content_pad_left = 14;
@@ -256,7 +256,7 @@ const PageLayoutProfile& current()
 #if defined(TRAIL_MATE_ESP_BOARD_TAB5)
         return make_tab5_profile();
 #elif defined(TRAIL_MATE_ESP_BOARD_T_DISPLAY_P4)
-        return make_tdisplayp4_profile();
+        return make_t_display_p4_profile();
 #elif defined(TRAIL_MATE_CARDPUTER_ZERO_LINUX)
         return make_cardputer_zero_profile();
 #elif defined(ARDUINO_T_LORA_PAGER)

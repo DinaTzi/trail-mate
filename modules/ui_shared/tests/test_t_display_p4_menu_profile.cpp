@@ -21,7 +21,7 @@ lv_coord_t lv_display_get_physical_vertical_resolution(lv_display_t*)
 int main()
 {
     const auto& profile = ui::menu_profile::current();
-    assert(std::strcmp(profile.name, "tdisplayp4") == 0);
+    assert(std::strcmp(profile.name, "t_display_p4") == 0);
     assert(profile.variant == ui::menu_profile::LayoutVariant::LargeTouchGrid);
     assert(profile.input_mode == ui::menu_profile::InputMode::TouchPrimary);
     assert(profile.large_touch_hitbox);

@@ -36,6 +36,98 @@ set(TRAILMATE_ESP_IDF_CORE_SYS_SOURCES
     "${TRAILMATE_ROOT}/modules/core_sys/src/sys/clock.cpp"
     "${TRAILMATE_ROOT}/modules/core_sys/src/platform/ui/timezone_profile.cpp")
 
+set(TRAILMATE_ESP_IDF_CORE_DEVICE_SOURCES
+    "${TRAILMATE_ROOT}/modules/core_device/src/device/capability_types.cpp")
+
+set(TRAILMATE_ESP_IDF_CORE_GPS_SOURCES
+    "${TRAILMATE_ROOT}/modules/core_gps/src/protocol/nmea/nmea_parser.cpp"
+    "${TRAILMATE_ROOT}/modules/core_gps/src/protocol/nmea/nmea_sentence.cpp"
+    "${TRAILMATE_ROOT}/modules/core_gps/src/usecase/gnss_skyplot_presenter.cpp"
+    "${TRAILMATE_ROOT}/modules/core_gps/src/usecase/gps_jitter_filter.cpp"
+    "${TRAILMATE_ROOT}/modules/core_gps/src/usecase/gps_runtime_config.cpp"
+    "${TRAILMATE_ROOT}/modules/core_gps/src/usecase/gps_runtime_policy.cpp"
+    "${TRAILMATE_ROOT}/modules/core_gps/src/usecase/gps_runtime_state.cpp"
+    "${TRAILMATE_ROOT}/modules/core_gps/src/usecase/location_service.cpp"
+    "${TRAILMATE_ROOT}/modules/core_gps/src/usecase/time_authority.cpp"
+    "${TRAILMATE_ROOT}/modules/core_gps/src/motion_policy.cpp")
+
+set(TRAILMATE_ESP_IDF_CORE_CHAT_SOURCES
+    "${TRAILMATE_ROOT}/modules/core_chat/src/domain/chat_model.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/delivery/chat_delivery_action_service.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/delivery/chat_delivery_event_port.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/delivery/chat_delivery_event_projector.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/delivery/chat_delivery_read_model.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/delivery/chat_delivery_message_projection.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/delivery/chat_delivery_send_result_projection.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/contact_store_core.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/mesh_protocol_utils.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshcore/mc_region_presets.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshcore/meshcore_identity_crypto.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshcore/meshcore_payload_helpers.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshcore/meshcore_protocol_helpers.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/fe.c"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/ge.c"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/key_exchange.c"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/keypair.c"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/sc.c"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/sha512.c"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/sign.c"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshcore/crypto/ed25519/verify.c"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshtastic/compression/unishox2.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshtastic/mt_codec_pb.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshtastic/mt_node_payload.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshtastic/mt_packet_wire.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshtastic/mt_pki_crypto.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshtastic/mt_protocol_helpers.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshtastic/mt_radio_config.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/meshtastic/mt_region.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/node_store_blob_format.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/node_store_core.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/infra/store/ram_store.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/usecase/chat_service.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/src/usecase/contact_service.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/third_party/nanopb/pb_common.c"
+    "${TRAILMATE_ROOT}/modules/core_chat/third_party/nanopb/pb_decode.c"
+    "${TRAILMATE_ROOT}/modules/core_chat/third_party/nanopb/pb_encode.c"
+    "${TRAILMATE_ROOT}/modules/core_chat/generated/meshtastic/channel.pb.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/generated/meshtastic/config.pb.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/generated/meshtastic/device_ui.pb.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/generated/meshtastic/mesh.pb.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/generated/meshtastic/module_config.pb.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/generated/meshtastic/portnums.pb.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/generated/meshtastic/telemetry.pb.cpp"
+    "${TRAILMATE_ROOT}/modules/core_chat/generated/meshtastic/xmodem.pb.cpp")
+
+set(TRAILMATE_ESP_IDF_CORE_TEAM_SOURCES
+    "${TRAILMATE_ROOT}/modules/core_team/src/protocol/team_chat.cpp"
+    "${TRAILMATE_ROOT}/modules/core_team/src/protocol/team_location_marker.cpp"
+    "${TRAILMATE_ROOT}/modules/core_team/src/protocol/team_mgmt.cpp"
+    "${TRAILMATE_ROOT}/modules/core_team/src/protocol/team_pairing_wire.cpp"
+    "${TRAILMATE_ROOT}/modules/core_team/src/protocol/team_position.cpp"
+    "${TRAILMATE_ROOT}/modules/core_team/src/protocol/team_track.cpp"
+    "${TRAILMATE_ROOT}/modules/core_team/src/protocol/team_waypoint.cpp"
+    "${TRAILMATE_ROOT}/modules/core_team/src/protocol/team_wire.cpp"
+    "${TRAILMATE_ROOT}/modules/core_team/src/usecase/team_controller.cpp"
+    "${TRAILMATE_ROOT}/modules/core_team/src/usecase/team_pairing_coordinator.cpp"
+    "${TRAILMATE_ROOT}/modules/core_team/src/usecase/team_service.cpp"
+    "${TRAILMATE_ROOT}/modules/core_team/src/usecase/team_track_sampler.cpp")
+
+set(TRAILMATE_ESP_IDF_CORE_MESH_SOURCES
+    "${TRAILMATE_ROOT}/modules/core_mesh/src/protocol/meshcore/mc_identity_flow.cpp"
+    "${TRAILMATE_ROOT}/modules/core_mesh/src/protocol/meshcore/meshcore_protocol_strategy.cpp"
+    "${TRAILMATE_ROOT}/modules/core_mesh/src/protocol/meshtastic/mt_pki_flow.cpp"
+    "${TRAILMATE_ROOT}/modules/core_mesh/src/protocol/meshtastic/meshtastic_protocol_strategy.cpp"
+    "${TRAILMATE_ROOT}/modules/core_mesh/src/usecase/direct_message_service.cpp"
+    "${TRAILMATE_ROOT}/modules/core_mesh/src/usecase/mesh_dedup_service.cpp"
+    "${TRAILMATE_ROOT}/modules/core_mesh/src/usecase/mesh_session.cpp"
+    "${TRAILMATE_ROOT}/modules/core_mesh/src/usecase/peer_identity_service.cpp"
+    "${TRAILMATE_ROOT}/modules/core_mesh/src/usecase/receive_packet_service.cpp")
+
+set(TRAILMATE_ESP_IDF_CORE_PHONE_SOURCES
+    "${TRAILMATE_ROOT}/modules/core_phone/src/meshcore/meshcore_phone_core.cpp"
+    "${TRAILMATE_ROOT}/modules/core_phone/src/meshtastic/meshtastic_phone_core.cpp"
+    "${TRAILMATE_ROOT}/modules/core_phone/src/meshtastic/meshtastic_phone_session.cpp")
+
 set(TRAILMATE_ESP_IDF_UI_SHARED_SOURCES
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/assets/Chat.c"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/assets/alert.c"
@@ -115,6 +207,7 @@ set(TRAILMATE_ESP_IDF_UI_SHARED_SOURCES
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/presentation_sources/runtime_settings_source.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/presentation_sources/team_chat_action_sink.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/presentation_sources/team_chat_presentation_source.cpp"
+    "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/presentation_sources/team_map_overlay_source.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/runtime/memory_profile.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/screens/chat/chat_compose_components.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/screens/chat/chat_compose_input.cpp"
@@ -207,6 +300,7 @@ set(TRAILMATE_ESP_IDF_UI_SHARED_SOURCES
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/team_presence/team_presence_model.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/widgets/busy_overlay.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/widgets/ime/ime_widget.cpp"
+    "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/widgets/ime/pinyin_ime.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/widgets/map/map_viewport.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/widgets/system_notification.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/widgets/toast/toast_widget.cpp"
@@ -230,7 +324,7 @@ set(TRAILMATE_ESP_IDF_UI_LVGL_UX_PACK_SOURCES
     "${TRAILMATE_ROOT}/modules/ui_lvgl_ux_packs/src/packs/cardputer_compact_ux_pack.cpp"
     "${TRAILMATE_ROOT}/modules/ui_lvgl_ux_packs/src/packs/compatibility_ux_pack.cpp"
     "${TRAILMATE_ROOT}/modules/ui_lvgl_ux_packs/src/packs/simulator_full_ux_pack.cpp"
-    "${TRAILMATE_ROOT}/modules/ui_lvgl_ux_packs/src/packs/tdisplayp4_touch_ux_pack.cpp"
+    "${TRAILMATE_ROOT}/modules/ui_lvgl_ux_packs/src/packs/t_display_p4_touch_ux_pack.cpp"
     "${TRAILMATE_ROOT}/modules/ui_lvgl_ux_packs/src/packs/tiny_node_status_ux_pack.cpp"
     "${TRAILMATE_ROOT}/modules/ui_lvgl_ux_packs/src/packs/uconsole_desktop_ux_pack.cpp"
     "${TRAILMATE_ROOT}/modules/ui_lvgl_ux_packs/src/common/key_verification_modal_renderer.cpp"
@@ -254,10 +348,13 @@ set(TRAILMATE_ESP_IDF_UI_LVGL_UX_PACK_SOURCES
 
 set(TRAILMATE_ESP_IDF_PLATFORM_COMMON_SOURCES
     "${TRAILMATE_ROOT}/platform/esp/boards/src/board_runtime.cpp"
+    "${TRAILMATE_ROOT}/platform/esp/arduino_common/src/sys/event_bus.cpp"
     "${TRAILMATE_ROOT}/platform/esp/idf_common/src/app_runtime_support.cpp"
+    "${TRAILMATE_ROOT}/platform/esp/idf_common/src/ble_manager_stub.cpp"
     "${TRAILMATE_ROOT}/platform/esp/idf_common/src/bsp_runtime.cpp"
     "${TRAILMATE_ROOT}/platform/esp/idf_common/src/c6_companion_runtime.cpp"
     "${TRAILMATE_ROOT}/platform/esp/idf_common/src/debug/sd_coredump_export.cpp"
+    "${TRAILMATE_ROOT}/platform/esp/idf_common/src/display_spi_lock.cpp"
     "${TRAILMATE_ROOT}/platform/esp/idf_common/src/gps_runtime.cpp"
     "${TRAILMATE_ROOT}/platform/esp/idf_common/src/platform_ui_device_runtime.cpp"
     "${TRAILMATE_ROOT}/platform/esp/idf_common/src/platform_ui_firmware_update_runtime.cpp"

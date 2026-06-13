@@ -1,17 +1,17 @@
-#include "ui_lvgl_ux_packs/packs/tdisplayp4_touch_ux_pack.h"
+#include "ui_lvgl_ux_packs/packs/t_display_p4_touch_ux_pack.h"
 
 namespace ui_lvgl_ux
 {
 
 const char* TDisplayP4TouchUxPack::id() const
 {
-    return "tdisplayp4_touch";
+    return "t_display_p4_touch";
 }
 
 const DeviceUxProfile& TDisplayP4TouchUxPack::profile() const
 {
     static const DeviceUxProfile profile{
-        "tdisplayp4_touch",
+        "t_display_p4_touch",
         ScreenClass::TouchTablet,
         InputModel::Touch,
         MapMode::Full,

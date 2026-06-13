@@ -145,38 +145,38 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_ui_presentation_layout_profile_smoke
              COMMAND trailmate_ui_presentation_layout_profile_smoke)
 
-    add_executable(trailmate_ui_lvgl_tdisplayp4_touch_ux_pack_smoke
-        "${TRAIL_MATE_REPO_ROOT}/modules/ui_lvgl_ux_packs/tests/test_tdisplayp4_touch_ux_pack.cpp")
-    target_link_libraries(trailmate_ui_lvgl_tdisplayp4_touch_ux_pack_smoke
+    add_executable(trailmate_ui_lvgl_t_display_p4_touch_ux_pack_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_lvgl_ux_packs/tests/test_t_display_p4_touch_ux_pack.cpp")
+    target_link_libraries(trailmate_ui_lvgl_t_display_p4_touch_ux_pack_smoke
         PRIVATE trailmate_ui_lvgl_ux_packs)
-    add_test(NAME trailmate_ui_lvgl_tdisplayp4_touch_ux_pack_smoke
-             COMMAND trailmate_ui_lvgl_tdisplayp4_touch_ux_pack_smoke)
+    add_test(NAME trailmate_ui_lvgl_t_display_p4_touch_ux_pack_smoke
+             COMMAND trailmate_ui_lvgl_t_display_p4_touch_ux_pack_smoke)
 
-    add_executable(trailmate_ui_shared_tdisplayp4_menu_profile_smoke
-        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_tdisplayp4_menu_profile.cpp"
+    add_executable(trailmate_ui_shared_t_display_p4_menu_profile_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_t_display_p4_menu_profile.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/menu/menu_profile.cpp")
-    target_include_directories(trailmate_ui_shared_tdisplayp4_menu_profile_smoke
+    target_include_directories(trailmate_ui_shared_t_display_p4_menu_profile_smoke
         PRIVATE
             "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
             "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/stubs")
-    target_compile_definitions(trailmate_ui_shared_tdisplayp4_menu_profile_smoke
+    target_compile_definitions(trailmate_ui_shared_t_display_p4_menu_profile_smoke
         PRIVATE TRAIL_MATE_ESP_BOARD_T_DISPLAY_P4=1)
-    target_compile_features(trailmate_ui_shared_tdisplayp4_menu_profile_smoke
+    target_compile_features(trailmate_ui_shared_t_display_p4_menu_profile_smoke
         PRIVATE cxx_std_17)
-    add_test(NAME trailmate_ui_shared_tdisplayp4_menu_profile_smoke
-             COMMAND trailmate_ui_shared_tdisplayp4_menu_profile_smoke)
+    add_test(NAME trailmate_ui_shared_t_display_p4_menu_profile_smoke
+             COMMAND trailmate_ui_shared_t_display_p4_menu_profile_smoke)
 
-    add_executable(trailmate_ui_shared_tdisplayp4_page_profile_smoke
-        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_tdisplayp4_page_profile.cpp"
+    add_executable(trailmate_ui_shared_t_display_p4_page_profile_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_t_display_p4_page_profile.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/page/page_profile.cpp")
-    target_include_directories(trailmate_ui_shared_tdisplayp4_page_profile_smoke
+    target_include_directories(trailmate_ui_shared_t_display_p4_page_profile_smoke
         PRIVATE
             "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
             "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/stubs")
-    target_compile_definitions(trailmate_ui_shared_tdisplayp4_page_profile_smoke
+    target_compile_definitions(trailmate_ui_shared_t_display_p4_page_profile_smoke
         PRIVATE TRAIL_MATE_ESP_BOARD_T_DISPLAY_P4=1)
-    target_compile_features(trailmate_ui_shared_tdisplayp4_page_profile_smoke
+    target_compile_features(trailmate_ui_shared_t_display_p4_page_profile_smoke
         PRIVATE cxx_std_17)
-    add_test(NAME trailmate_ui_shared_tdisplayp4_page_profile_smoke
-             COMMAND trailmate_ui_shared_tdisplayp4_page_profile_smoke)
+    add_test(NAME trailmate_ui_shared_t_display_p4_page_profile_smoke
+             COMMAND trailmate_ui_shared_t_display_p4_page_profile_smoke)
 endif()

@@ -124,6 +124,24 @@ void copyBounded(char* dst, size_t dst_len, const char* src)
     dst[dst_len - 1] = '\0';
 }
 
+void copyFixedField(uint8_t* dst, size_t dst_len, const char* src)
+{
+    if (!dst || dst_len == 0)
+    {
+        return;
+    }
+    std::memset(dst, 0, dst_len);
+    if (!src)
+    {
+        return;
+    }
+    const size_t copy_len = std::min(dst_len, std::strlen(src));
+    if (copy_len > 0)
+    {
+        std::memcpy(dst, src, copy_len);
+    }
+}
+
 uint32_t nowSeconds()
 {
     return sys::epoch_seconds_now();
@@ -300,12 +318,11 @@ void MeshCorePhoneCore::handleCmdFrame(const uint8_t* data, size_t len)
         const uint32_t ble_pin = hooks_ ? hooks_->getReportedBlePin() : 0;
         std::memcpy(&out[index], &ble_pin, sizeof(ble_pin));
         index += sizeof(ble_pin);
-        std::memset(&out[index], 0, 12);
-        std::strncpy(reinterpret_cast<char*>(&out[index]), __DATE__, 11);
+        copyFixedField(&out[index], 12, __DATE__);
         index += 12;
-        std::strncpy(reinterpret_cast<char*>(&out[index]), device_name_.c_str(), 40);
+        copyFixedField(&out[index], 40, device_name_.c_str());
         index += 40;
-        std::strncpy(reinterpret_cast<char*>(&out[index]), kCompatFirmwareVersion, 20);
+        copyFixedField(&out[index], 20, kCompatFirmwareVersion);
         index += 20;
         enqueueFrame(out, index);
         return;

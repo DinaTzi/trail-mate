@@ -229,7 +229,8 @@ The table below describes the **real build targets that exist in the repository 
 - If you are debugging a resource-constrained monochrome target or Meshtastic / BLE behavior, start with **`gat562_mesh_evb_pro`**
 - If you are working on the newer large-screen ESP-IDF path, start with **`tab5`**
 - **`tdeck_pro_*`**, **`lilygo_twatch_s3`**, **`t_display_p4_tft`**, and **`t_display_p4_amoled`** are better treated as bring-up, layout, or device-adaptation targets than as the highest-maturity feature-validation path
-- For the **T-Display-P4 family**, this repo currently builds only the **ESP32-P4 firmware**. The board's ESP32-C6 companion firmware is an external flashing contract, not an in-repo build artifact.
+- For the **T-Display-P4 family**, this repo owns two separate firmware artifacts: the ESP32-P4 product firmware selected by `TRAIL_MATE_IDF_TARGET=t_display_p4_tft` or `TRAIL_MATE_IDF_TARGET=t_display_p4_amoled`, and the ESP32-C6 companion firmware under `firmware/c6_companion`
+- The canonical repository spelling is **`t_display_p4`** for target ids, directories, manifests, profiles, and build names; `TDisplayP4*` is reserved for C++ type names
 - “The repository has a build target” does not mean every page or capability is equally mature on that device; some features are enabled or hidden dynamically based on capabilities, RAM budget, and input hardware
 - GitHub Actions currently keeps building the main path through **`tlora_pager_sx1262`**, **`tlora_pager_lr1121`**, **`tdeck`**, **`lilygo_twatch_s3`**, and **`gat562_mesh_evb_pro`**
 
@@ -352,8 +353,8 @@ idf.py -B build.t_display_p4_amoled -DTRAIL_MATE_IDF_TARGET=t_display_p4_amoled 
 
 - ESP-IDF generated `sdkconfig` state now lives inside the selected build directory such as `build.tab5`, `build.t_display_p4_tft`, or `build.t_display_p4_amoled`, so different targets do not fight over stale config output anymore
 - For **Tab5**, prefer running `monitor` separately after flashing; chaining `flash monitor` can leave ESP32-P4 in ROM download mode after auto-reset
-- For **T-Display-P4**, the commands above only handle the **P4 firmware**. If your board also needs a C6 companion refresh, flash that separately with the vendor or companion-firmware workflow.
-- For **T-Display-P4**, Wi-Fi should currently be treated as unavailable in this repo because the real Wi-Fi path lives behind the external C6 companion runtime.
+- For **T-Display-P4**, the commands above handle the **P4 firmware** only. The matching in-repository C6 companion firmware is built from `firmware/c6_companion` and must be flashed as a separate ESP32-C6 image.
+- For **T-Display-P4**, Wi-Fi should currently be treated as a C6 companion facade. P4 owns the product decision and C6 owns the wireless surface mechanics; runtime OTA and forced C6 recovery are not promised by the current repository contract.
 - VS Code already provides split **Tab5**, **T-Display-P4 TFT**, and **T-Display-P4 AMOLED** `Reconfigure / Build / Flash / Monitor` tasks via `tools/vscode/run_idf_task.ps1`
 - `tools/vscode/run_idf_task.ps1` is also the recommended non-VS-Code CLI path on Windows because it avoids the common `idf.py` not found problem
 - If `idf.py` is not recognized, fix the shell environment first. Do not start debugging the build itself yet.

@@ -216,6 +216,33 @@ static void copy_bounded(char* out, size_t out_len, const char* text)
     std::snprintf(out, out_len, "%s", text ? text : "");
 }
 
+static void append_bounded(char* out, size_t out_len, const char* text)
+{
+    if (!out || out_len == 0 || !text)
+    {
+        return;
+    }
+
+    size_t used = 0;
+    while (used < out_len && out[used] != '\0')
+    {
+        ++used;
+    }
+    if (used >= out_len - 1)
+    {
+        return;
+    }
+
+    const size_t remaining = out_len - used - 1;
+    size_t count = 0;
+    while (count < remaining && text[count] != '\0')
+    {
+        out[used + count] = text[count];
+        ++count;
+    }
+    out[used + count] = '\0';
+}
+
 static void set_modal_toggle_state_label(lv_obj_t* label, bool enabled)
 {
     if (!label)
@@ -368,18 +395,15 @@ static void refresh_settings_backup_state_from_runtime()
 static void refresh_wireless_companion_state_from_runtime()
 {
     const wireless_companion_runtime::Status status = wireless_companion_runtime::status();
-    if (status.detail[0] != '\0')
-    {
-        std::snprintf(g_settings.c6_companion_status,
-                      sizeof(g_settings.c6_companion_status),
-                      "%s (%s)",
-                      status.message,
-                      status.detail);
-        return;
-    }
     copy_bounded(g_settings.c6_companion_status,
                  sizeof(g_settings.c6_companion_status),
                  status.message);
+    if (status.detail[0] != '\0')
+    {
+        append_bounded(g_settings.c6_companion_status, sizeof(g_settings.c6_companion_status), " (");
+        append_bounded(g_settings.c6_companion_status, sizeof(g_settings.c6_companion_status), status.detail);
+        append_bounded(g_settings.c6_companion_status, sizeof(g_settings.c6_companion_status), ")");
+    }
 }
 
 static void refresh_visible_item_values()

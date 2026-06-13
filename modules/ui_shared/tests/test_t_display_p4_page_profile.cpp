@@ -36,7 +36,7 @@ lv_obj_t* lv_screen_active()
 int main()
 {
     const auto& profile = ui::page_profile::current();
-    assert(std::strcmp(profile.name, "tdisplayp4") == 0);
+    assert(std::strcmp(profile.name, "t_display_p4") == 0);
     assert(profile.variant == ui::page_profile::LayoutVariant::HybridTouchLarge);
     assert(profile.large_touch_hitbox);
     assert(profile.filter_panel_width == 180);

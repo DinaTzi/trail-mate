@@ -2,13 +2,13 @@
 
 #include <cstdint>
 
-namespace boards::tdisplayp4
+namespace boards::t_display_p4
 {
 
 struct TDisplayP4BoardFacts
 {
     const char* board_package = "boards/t_display_p4";
-    const char* board_id = "tdisplayp4";
+    const char* board_id = "t_display_p4";
     const char* platform_family = "esp32";
     const char* product_name = "TrailMate P4";
 
@@ -37,4 +37,4 @@ struct TDisplayP4BoardFacts
 
 inline constexpr TDisplayP4BoardFacts kBoardFacts{};
 
-} // namespace boards::tdisplayp4
+} // namespace boards::t_display_p4

@@ -26,8 +26,8 @@ introduced in Batch 2:
 
 - `ESP_IDF_COMPONENT_SOURCES.cmake`
 - `targets/tab5/sdkconfig.defaults`
-- `targets/tdisplayp4_tft/sdkconfig.defaults`
-- `targets/tdisplayp4_amoled/sdkconfig.defaults`
+- `targets/t_display_p4_tft/sdkconfig.defaults`
+- `targets/t_display_p4_amoled/sdkconfig.defaults`
 
 Root legacy source has been removed. Any future physical ESP-IDF
 `idf_component_register` owner must live under final build/app/platform
