@@ -164,6 +164,8 @@ class Runtime : public chat::ChatService::IncomingTextObserver
         None = 0,
         Message,
         MeshCoreChannelName,
+        MeshtasticPrimaryKey,
+        MeshCoreChannelKey,
     };
 
     void handleInput(InputAction action);
@@ -223,7 +225,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver
     void appendComposeWord(const char* text);
     void appendComposeRawText(const char* text);
     void activateComposeAction();
-    void saveEditedTextToConfig();
+    bool saveEditedTextToConfig();
     void formatTime(char* out_time, size_t out_len, char* out_date, size_t date_len) const;
     void formatTimestamp(char* out, size_t out_len, uint32_t timestamp_s) const;
     void formatConversationTime(char* out, size_t out_len, uint32_t timestamp_s, bool expanded = false) const;
@@ -242,6 +244,10 @@ class Runtime : public chat::ChatService::IncomingTextObserver
                                 const char* text, bool selected, bool align_right);
     void refreshGnssSnapshot(bool force = false);
     bool editUsesHexCharset() const;
+    bool editUsesKeyCharset() const;
+    bool editUsesDirectTextEntry() const;
+    bool editAllowsChineseInput() const;
+    bool editAcceptsTextInput() const;
     bool usesSmartCompose() const;
     bool usesPhysicalTextInput() const;
     bool usesFullVirtualKeyboard() const;
@@ -348,7 +354,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver
     size_t message_info_count_ = 0;
 
     EditTarget edit_target_ = EditTarget::None;
-    static constexpr size_t kComposeMax = 64;
+    static constexpr size_t kComposeMax = 96;
     char compose_buffer_[kComposeMax] = {};
     size_t compose_len_ = 0;
     size_t compose_charset_index_ = 0;

@@ -4,6 +4,7 @@
 #include "ble/ble_manager.h"
 #include "chat/infra/mesh_protocol_utils.h"
 #include "chat/infra/meshcore/mc_region_presets.h"
+#include "chat/infra/meshtastic/mt_protocol_helpers.h"
 #include "chat/infra/meshtastic/mt_region.h"
 #include "chat/runtime/self_identity_policy.h"
 #include "chat/usecase/chat_service.h"
@@ -113,6 +114,7 @@ enum class RadioSettingItem
     MtCodingRate,
     MtTxPower,
     MtChannelSlot,
+    MtPrimaryKey,
     MtOverrideFrequency,
     MtFrequencyOffset,
     McRegion,
@@ -123,6 +125,7 @@ enum class RadioSettingItem
     McTxPower,
     McChannelSlot,
     McChannelName,
+    McChannelKey,
     Encrypt,
 };
 
@@ -142,6 +145,7 @@ constexpr RadioSettingDef kRadioItems[] = {
     {RadioSettingItem::MtCodingRate, "MT CR"},
     {RadioSettingItem::MtTxPower, "MT TX"},
     {RadioSettingItem::MtChannelSlot, "MT SLOT"},
+    {RadioSettingItem::MtPrimaryKey, "MT PSK"},
     {RadioSettingItem::MtOverrideFrequency, "MT FREQ"},
     {RadioSettingItem::MtFrequencyOffset, "MT OFFSET"},
     {RadioSettingItem::McRegion, "MC REGION"},
@@ -152,6 +156,7 @@ constexpr RadioSettingDef kRadioItems[] = {
     {RadioSettingItem::McTxPower, "MC TX"},
     {RadioSettingItem::McChannelSlot, "MC SLOT"},
     {RadioSettingItem::McChannelName, "MC NAME"},
+    {RadioSettingItem::McChannelKey, "MC KEY"},
     {RadioSettingItem::Encrypt, "ENCRYPT"},
 };
 
@@ -261,19 +266,19 @@ constexpr size_t kNodeActionItemCount = 7;
 
 constexpr const char* kWeekdays[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 constexpr const char* kComposeCharset =
-    " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?-_/:#@+*=()[]";
+    " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?-_/:#@+*=%&$~()[]{}<>\\|;\"'`";
 constexpr const char* kHexCharset = "0123456789ABCDEF";
 constexpr const char* kComposeAlphaKeys = "QWERTYUIOPASDFGHJKLZXCVBNM";
 constexpr const char* kComposeAbcKeys = " ETAOINSHRDLUCMFWYPVBGKQJXZ";
 constexpr const char* kComposeNumKeys = "0123456789";
-constexpr const char* kComposeSymKeys = " .,!?/-:@#()[]+=";
+constexpr const char* kComposeSymKeys = " .,!?/-:@#()[]{}+=_*%&$~\\|;\"'`<>";
 constexpr const char* kComposeActionLabels[] = {"ABC", "SP", "BACK", "DEL", "SEND"};
 constexpr size_t kVirtualKeyboardCols = 3;
 constexpr size_t kVirtualKeyboardRows = 3;
 constexpr size_t kVirtualKeyboardPageSize = kVirtualKeyboardCols * kVirtualKeyboardRows;
 constexpr const char* kFullAlphaRows[] = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
 constexpr const char* kFullNumRows[] = {"1234567890"};
-constexpr const char* kFullSymRows[] = {".,!?/-:@#", "()[]+="};
+constexpr const char* kFullSymRows[] = {".,!?/-:@#", "()[]{}+=", "_*%&$~\\|"};
 
 struct PinyinCandidateEntry
 {
@@ -287,6 +292,7 @@ constexpr uint32_t kBootMinMs = 1800;
 constexpr uint32_t kComposeMultiTapWindowMs = 1500;
 constexpr uint32_t kLargeScreensaverRefreshMs = 60000;
 constexpr uint32_t kGnssSnapshotRefreshMs = 5000;
+constexpr size_t kKeyTextMax = 96;
 constexpr int kTimezoneMin = -12 * 60;
 constexpr int kTimezoneMax = 14 * 60;
 constexpr int kTimezoneStep = 60;
@@ -742,6 +748,7 @@ const char* composeModeLabel(ui::mono::Runtime::ComposeMode mode)
     switch (mode)
     {
     case ui::mono::Runtime::ComposeMode::AbcLower:
+        return "en";
     case ui::mono::Runtime::ComposeMode::AbcUpper:
         return "EN";
     case ui::mono::Runtime::ComposeMode::Num:
@@ -761,6 +768,8 @@ const char* physicalComposeModeLabel(ui::mono::Runtime::ComposeMode mode)
     {
     case ui::mono::Runtime::ComposeMode::Num:
         return "123";
+    case ui::mono::Runtime::ComposeMode::Sym:
+        return "SYN";
     case ui::mono::Runtime::ComposeMode::Cn:
         return "CN";
     case ui::mono::Runtime::ComposeMode::AbcLower:
@@ -827,6 +836,35 @@ const char* phoneCycleCharsForKey(char ch)
     }
 }
 
+const char* phoneSymbolCycleCharsForKey(char ch)
+{
+    switch (ch)
+    {
+    case '1':
+        return ".,?!1";
+    case '2':
+        return "@/:;2";
+    case '3':
+        return "#+-=3";
+    case '4':
+        return "_$%&4";
+    case '5':
+        return "()[]5";
+    case '6':
+        return "{}<>6";
+    case '7':
+        return "'\"`~7";
+    case '8':
+        return "\\|*^8";
+    case '9':
+        return "-+=/9";
+    case '0':
+        return " 0";
+    default:
+        return "";
+    }
+}
+
 char applyPhoneCycleCase(ui::mono::Runtime::ComposeMode mode, char ch)
 {
     if (std::isalpha(static_cast<unsigned char>(ch)) == 0)
@@ -849,7 +887,9 @@ void formatPhoneCycleHint(char* out, size_t out_len,
     }
     out[0] = '\0';
 
-    const char* chars = phoneCycleCharsForKey(key);
+    const char* chars = mode == ui::mono::Runtime::ComposeMode::Sym
+                            ? phoneSymbolCycleCharsForKey(key)
+                            : phoneCycleCharsForKey(key);
     const size_t count = std::strlen(chars);
     if (count == 0)
     {
@@ -1340,6 +1380,447 @@ void formatOffset(char* out, size_t out_len, float offset_mhz)
     std::snprintf(out, out_len, "%+.3f", static_cast<double>(offset_mhz));
 }
 
+bool textEqualsIgnoreCase(const char* lhs, const char* rhs)
+{
+    if (!lhs || !rhs)
+    {
+        return false;
+    }
+    while (*lhs && *rhs)
+    {
+        if (upperAscii(*lhs) != upperAscii(*rhs))
+        {
+            return false;
+        }
+        ++lhs;
+        ++rhs;
+    }
+    return *lhs == '\0' && *rhs == '\0';
+}
+
+void compactKeyText(const char* input, char* out, size_t out_len)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+    out[0] = '\0';
+    if (!input)
+    {
+        return;
+    }
+    size_t pos = 0;
+    for (size_t i = 0; input[i] != '\0' && pos + 1 < out_len; ++i)
+    {
+        const unsigned char ch = static_cast<unsigned char>(input[i]);
+        if (std::isspace(ch) != 0)
+        {
+            continue;
+        }
+        out[pos++] = static_cast<char>(ch);
+    }
+    out[pos] = '\0';
+}
+
+int hexValue(char ch)
+{
+    if (ch >= '0' && ch <= '9')
+    {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f')
+    {
+        return ch - 'a' + 10;
+    }
+    if (ch >= 'A' && ch <= 'F')
+    {
+        return ch - 'A' + 10;
+    }
+    return -1;
+}
+
+bool decodeHexBytes(const char* text, uint8_t* out, size_t out_capacity, size_t* out_len)
+{
+    if (out_len)
+    {
+        *out_len = 0;
+    }
+    if (!text || !out || out_capacity == 0)
+    {
+        return false;
+    }
+
+    char digits[chat::kMeshtasticChannelKeyMaxLen * 2 + 1] = {};
+    size_t digit_count = 0;
+    for (size_t i = 0; text[i] != '\0'; ++i)
+    {
+        const char ch = text[i];
+        if (hexValue(ch) >= 0)
+        {
+            if (digit_count + 1 >= sizeof(digits))
+            {
+                return false;
+            }
+            digits[digit_count++] = ch;
+            continue;
+        }
+        if (ch == ':' || ch == '-' || ch == '_')
+        {
+            continue;
+        }
+        return false;
+    }
+    if (digit_count == 0 || (digit_count % 2U) != 0U)
+    {
+        return false;
+    }
+
+    const size_t byte_count = digit_count / 2U;
+    if (byte_count > out_capacity)
+    {
+        return false;
+    }
+    for (size_t i = 0; i < byte_count; ++i)
+    {
+        const int hi = hexValue(digits[i * 2U]);
+        const int lo = hexValue(digits[i * 2U + 1U]);
+        if (hi < 0 || lo < 0)
+        {
+            return false;
+        }
+        out[i] = static_cast<uint8_t>((hi << 4) | lo);
+    }
+    if (out_len)
+    {
+        *out_len = byte_count;
+    }
+    return true;
+}
+
+int base64Value(char ch)
+{
+    if (ch >= 'A' && ch <= 'Z')
+    {
+        return ch - 'A';
+    }
+    if (ch >= 'a' && ch <= 'z')
+    {
+        return ch - 'a' + 26;
+    }
+    if (ch >= '0' && ch <= '9')
+    {
+        return ch - '0' + 52;
+    }
+    if (ch == '+')
+    {
+        return 62;
+    }
+    if (ch == '/')
+    {
+        return 63;
+    }
+    return -1;
+}
+
+bool decodeBase64Bytes(const char* text, uint8_t* out, size_t out_capacity, size_t* out_len)
+{
+    if (out_len)
+    {
+        *out_len = 0;
+    }
+    if (!text || !out)
+    {
+        return false;
+    }
+
+    size_t out_pos = 0;
+    int quartet[4] = {};
+    size_t quartet_len = 0;
+    bool saw_padding = false;
+    for (size_t i = 0;; ++i)
+    {
+        const char ch = text[i];
+        if (ch == '\0' || std::isspace(static_cast<unsigned char>(ch)) != 0)
+        {
+            if (ch == '\0')
+            {
+                break;
+            }
+            continue;
+        }
+
+        int value = 0;
+        if (ch == '=')
+        {
+            value = -2;
+            saw_padding = true;
+        }
+        else
+        {
+            if (saw_padding)
+            {
+                return false;
+            }
+            value = base64Value(ch);
+            if (value < 0)
+            {
+                return false;
+            }
+        }
+        quartet[quartet_len++] = value;
+        if (quartet_len < 4)
+        {
+            continue;
+        }
+
+        if (quartet[0] < 0 || quartet[1] < 0)
+        {
+            return false;
+        }
+        const uint32_t packed = (static_cast<uint32_t>(quartet[0]) << 18) |
+                                (static_cast<uint32_t>(quartet[1]) << 12) |
+                                (static_cast<uint32_t>(quartet[2] < 0 ? 0 : quartet[2]) << 6) |
+                                static_cast<uint32_t>(quartet[3] < 0 ? 0 : quartet[3]);
+        const size_t emit_count = quartet[2] < 0 ? 1U : (quartet[3] < 0 ? 2U : 3U);
+        if (out_pos + emit_count > out_capacity)
+        {
+            return false;
+        }
+        out[out_pos++] = static_cast<uint8_t>((packed >> 16) & 0xFFU);
+        if (emit_count >= 2U)
+        {
+            out[out_pos++] = static_cast<uint8_t>((packed >> 8) & 0xFFU);
+        }
+        if (emit_count >= 3U)
+        {
+            out[out_pos++] = static_cast<uint8_t>(packed & 0xFFU);
+        }
+        quartet_len = 0;
+    }
+
+    if (quartet_len != 0)
+    {
+        return false;
+    }
+    if (out_len)
+    {
+        *out_len = out_pos;
+    }
+    return out_pos > 0;
+}
+
+void encodeBase64Bytes(const uint8_t* data, size_t len, char* out, size_t out_len)
+{
+    static constexpr char kAlphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+    out[0] = '\0';
+    if (!data || len == 0)
+    {
+        return;
+    }
+
+    size_t pos = 0;
+    for (size_t i = 0; i < len && pos + 4 < out_len; i += 3U)
+    {
+        const size_t remain = std::min<size_t>(3U, len - i);
+        const uint32_t packed = (static_cast<uint32_t>(data[i]) << 16) |
+                                (remain > 1U ? (static_cast<uint32_t>(data[i + 1U]) << 8) : 0U) |
+                                (remain > 2U ? static_cast<uint32_t>(data[i + 2U]) : 0U);
+        out[pos++] = kAlphabet[(packed >> 18) & 0x3FU];
+        out[pos++] = kAlphabet[(packed >> 12) & 0x3FU];
+        out[pos++] = remain > 1U ? kAlphabet[(packed >> 6) & 0x3FU] : '=';
+        out[pos++] = remain > 2U ? kAlphabet[packed & 0x3FU] : '=';
+    }
+    out[pos] = '\0';
+}
+
+bool meshtasticDefaultPsk(uint8_t* out, size_t out_capacity, size_t* out_len)
+{
+    if (out_len)
+    {
+        *out_len = 0;
+    }
+    if (!out || out_capacity < chat::kMeshtasticChannelKeyDefaultLen)
+    {
+        return false;
+    }
+    size_t expanded_len = 0;
+    chat::meshtastic::expandShortPsk(1U, out, &expanded_len);
+    if (expanded_len == 0 || expanded_len > out_capacity)
+    {
+        return false;
+    }
+    if (out_len)
+    {
+        *out_len = expanded_len;
+    }
+    return true;
+}
+
+bool isMeshtasticDefaultPsk(const uint8_t* key, size_t len)
+{
+    uint8_t default_key[chat::kMeshtasticChannelKeyDefaultLen] = {};
+    size_t default_len = 0;
+    return meshtasticDefaultPsk(default_key, sizeof(default_key), &default_len) &&
+           len == default_len &&
+           std::memcmp(key, default_key, default_len) == 0;
+}
+
+uint8_t storedMeshtasticKeyLen(const chat::MeshConfig& mesh)
+{
+    return chat::normalizeMeshtasticChannelKeyLen(mesh.primary_key,
+                                                  sizeof(mesh.primary_key),
+                                                  mesh.primary_key_len);
+}
+
+void formatMeshtasticPrimaryKeySummary(const chat::MeshConfig& mesh, char* out, size_t out_len)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+    const uint8_t key_len = storedMeshtasticKeyLen(mesh);
+    if (key_len == 0 || isMeshtasticDefaultPsk(mesh.primary_key, key_len))
+    {
+        std::snprintf(out, out_len, "AQ==");
+        return;
+    }
+    std::snprintf(out, out_len, "B64 %uB", static_cast<unsigned>(key_len));
+}
+
+void formatMeshtasticPrimaryKeyForEdit(const chat::MeshConfig& mesh, char* out, size_t out_len)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+    const uint8_t key_len = storedMeshtasticKeyLen(mesh);
+    if (key_len == 0 || isMeshtasticDefaultPsk(mesh.primary_key, key_len))
+    {
+        std::snprintf(out, out_len, "AQ==");
+        return;
+    }
+    encodeBase64Bytes(mesh.primary_key, key_len, out, out_len);
+}
+
+void formatMeshCoreChannelKeySummary(const chat::MeshConfig& mesh, char* out, size_t out_len)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+    if (chat::isAllZeroKeyBytes(mesh.secondary_key, chat::kMeshCoreChannelKeyLen))
+    {
+        std::snprintf(out, out_len, "PUBLIC");
+        return;
+    }
+    std::snprintf(out, out_len, "B64 16B");
+}
+
+void formatMeshCoreChannelKeyForEdit(const chat::MeshConfig& mesh, char* out, size_t out_len)
+{
+    if (!out || out_len == 0)
+    {
+        return;
+    }
+    if (chat::isAllZeroKeyBytes(mesh.secondary_key, chat::kMeshCoreChannelKeyLen))
+    {
+        out[0] = '\0';
+        return;
+    }
+    encodeBase64Bytes(mesh.secondary_key, chat::kMeshCoreChannelKeyLen, out, out_len);
+}
+
+bool applyMeshtasticPrimaryKeyText(chat::MeshConfig& mesh, const char* input)
+{
+    char compact[kKeyTextMax] = {};
+    compactKeyText(input, compact, sizeof(compact));
+
+    std::memset(mesh.primary_key, 0, sizeof(mesh.primary_key));
+    mesh.primary_key_len = 0;
+    if (compact[0] == '\0' ||
+        textEqualsIgnoreCase(compact, "DEFAULT") ||
+        textEqualsIgnoreCase(compact, "PUBLIC"))
+    {
+        return true;
+    }
+
+    uint8_t decoded[chat::kMeshtasticChannelKeyMaxLen] = {};
+    size_t decoded_len = 0;
+    if (decodeHexBytes(compact, decoded, sizeof(decoded), &decoded_len))
+    {
+        if (decoded_len != chat::kMeshtasticChannelKeyDefaultLen &&
+            decoded_len != chat::kMeshtasticChannelKeyMaxLen)
+        {
+            return false;
+        }
+        std::memcpy(mesh.primary_key, decoded, decoded_len);
+        mesh.primary_key_len = static_cast<uint8_t>(decoded_len);
+        return true;
+    }
+
+    if (!decodeBase64Bytes(compact, decoded, sizeof(decoded), &decoded_len))
+    {
+        return false;
+    }
+    if (decoded_len == 1U)
+    {
+        size_t expanded_len = 0;
+        if (!meshtasticDefaultPsk(mesh.primary_key, sizeof(mesh.primary_key), &expanded_len))
+        {
+            return false;
+        }
+        if (decoded[0] != 1U)
+        {
+            chat::meshtastic::expandShortPsk(decoded[0], mesh.primary_key, &expanded_len);
+        }
+        mesh.primary_key_len = static_cast<uint8_t>(expanded_len);
+        return expanded_len == chat::kMeshtasticChannelKeyDefaultLen;
+    }
+    if (decoded_len != chat::kMeshtasticChannelKeyDefaultLen &&
+        decoded_len != chat::kMeshtasticChannelKeyMaxLen)
+    {
+        return false;
+    }
+    std::memcpy(mesh.primary_key, decoded, decoded_len);
+    mesh.primary_key_len = static_cast<uint8_t>(decoded_len);
+    return true;
+}
+
+bool applyMeshCoreChannelKeyText(chat::MeshConfig& mesh, const char* input)
+{
+    char compact[kKeyTextMax] = {};
+    compactKeyText(input, compact, sizeof(compact));
+
+    std::memset(mesh.secondary_key, 0, sizeof(mesh.secondary_key));
+    mesh.secondary_key_len = 0;
+    if (compact[0] == '\0' ||
+        textEqualsIgnoreCase(compact, "PUBLIC") ||
+        textEqualsIgnoreCase(compact, "NONE"))
+    {
+        return true;
+    }
+
+    uint8_t decoded[chat::kMeshtasticChannelKeyMaxLen] = {};
+    size_t decoded_len = 0;
+    if (!decodeHexBytes(compact, decoded, sizeof(decoded), &decoded_len) &&
+        !decodeBase64Bytes(compact, decoded, sizeof(decoded), &decoded_len))
+    {
+        return false;
+    }
+    if (decoded_len != chat::kMeshCoreChannelKeyLen)
+    {
+        return false;
+    }
+    std::memcpy(mesh.secondary_key, decoded, chat::kMeshCoreChannelKeyLen);
+    mesh.secondary_key_len = static_cast<uint8_t>(chat::kMeshCoreChannelKeyLen);
+    return true;
+}
+
 void formatRadioSettingValue(const app::AppConfig& cfg, RadioSettingItem item, char* out, size_t out_len)
 {
     if (!out || out_len == 0)
@@ -1381,6 +1862,9 @@ void formatRadioSettingValue(const app::AppConfig& cfg, RadioSettingItem item, c
     case RadioSettingItem::MtChannelSlot:
         formatMeshtasticChannelSlot(out, out_len, mt.channel_num);
         return;
+    case RadioSettingItem::MtPrimaryKey:
+        formatMeshtasticPrimaryKeySummary(mt, out, out_len);
+        return;
     case RadioSettingItem::MtOverrideFrequency:
         if (mt.override_frequency_mhz <= 0.0f)
         {
@@ -1420,6 +1904,9 @@ void formatRadioSettingValue(const app::AppConfig& cfg, RadioSettingItem item, c
         return;
     case RadioSettingItem::McChannelName:
         std::snprintf(out, out_len, "%s", mc.meshcore_channel_name);
+        return;
+    case RadioSettingItem::McChannelKey:
+        formatMeshCoreChannelKeySummary(mc, out, out_len);
         return;
     }
 }
@@ -2354,9 +2841,26 @@ void Runtime::handleInput(InputAction action)
         }
         else if (action == InputAction::Right || action == InputAction::Select || action == InputAction::Primary)
         {
-            if (radioSettingItem(radio_index_) == RadioSettingItem::McChannelName)
+            const RadioSettingItem item = radioSettingItem(radio_index_);
+            if (item == RadioSettingItem::McChannelName)
             {
                 openCompose(EditTarget::MeshCoreChannelName, app()->getConfig().meshcore_config.meshcore_channel_name);
+            }
+            else if (item == RadioSettingItem::MtPrimaryKey)
+            {
+                char key_text[kKeyTextMax] = {};
+                formatMeshtasticPrimaryKeyForEdit(app()->getConfig().meshtastic_config,
+                                                  key_text,
+                                                  sizeof(key_text));
+                openCompose(EditTarget::MeshtasticPrimaryKey, key_text);
+            }
+            else if (item == RadioSettingItem::McChannelKey)
+            {
+                char key_text[kKeyTextMax] = {};
+                formatMeshCoreChannelKeyForEdit(app()->getConfig().meshcore_config,
+                                                key_text,
+                                                sizeof(key_text));
+                openCompose(EditTarget::MeshCoreChannelKey, key_text);
             }
             else
             {
@@ -3438,11 +3942,31 @@ void Runtime::renderCompose()
     }
     const int line_h = text_renderer_.lineHeight();
 
-    char target[16] = {};
-    formatComposeTarget(target, sizeof(target));
-    char to_line[24] = {};
-    std::snprintf(to_line, sizeof(to_line), "TO:%s", target[0] != '\0' ? target : "-");
-    drawTextClipped(0, 0, display_.width(), to_line, false);
+    if (edit_target_ == EditTarget::Message)
+    {
+        char target[16] = {};
+        formatComposeTarget(target, sizeof(target));
+        char to_line[24] = {};
+        std::snprintf(to_line, sizeof(to_line), "TO:%s", target[0] != '\0' ? target : "-");
+        drawTextClipped(0, 0, display_.width(), to_line, false);
+    }
+    else
+    {
+        const char* title = "EDIT";
+        if (edit_target_ == EditTarget::MeshtasticPrimaryKey)
+        {
+            title = "MT PSK";
+        }
+        else if (edit_target_ == EditTarget::MeshCoreChannelKey)
+        {
+            title = "MC KEY";
+        }
+        else if (edit_target_ == EditTarget::MeshCoreChannelName)
+        {
+            title = "MC NAME";
+        }
+        drawTitleBar(title, composeModeLabel(compose_mode_));
+    }
 
     constexpr size_t kBodyVisiblePerLine = 18;
     char body_text[kComposeMax + 1] = {};
@@ -3587,7 +4111,11 @@ void Runtime::renderCompose()
 
     const int action_y = line_h * 7;
     const int action_x[5] = {0, 24, 48, 72, 96};
-    const char* action_labels[5] = {composeModeLabel(compose_mode_), "  ", "\xE2\x86\x90", "\xE2\x87\xA4", "SEND"};
+    const char* action_labels[5] = {composeModeLabel(compose_mode_),
+                                    "  ",
+                                    "\xE2\x86\x90",
+                                    "\xE2\x87\xA4",
+                                    edit_target_ == EditTarget::Message ? "SEND" : "OK"};
     for (size_t i = 0; i < 5; ++i)
     {
         char action_cell[10] = {};
@@ -4293,9 +4821,18 @@ void Runtime::openCompose(EditTarget target, const char* seed_text)
     compose_buffer_[0] = '\0';
     compose_len_ = 0;
     compose_charset_index_ = 0;
-    compose_mode_ = usesPhysicalTextInput()
-                        ? (target == EditTarget::Message ? ComposeMode::Cn : ComposeMode::AbcLower)
-                        : ComposeMode::AbcLower;
+    if (target == EditTarget::Message && usesPhysicalTextInput())
+    {
+        compose_mode_ = ComposeMode::Cn;
+    }
+    else if (editUsesKeyCharset())
+    {
+        compose_mode_ = ComposeMode::AbcUpper;
+    }
+    else
+    {
+        compose_mode_ = ComposeMode::AbcLower;
+    }
     compose_focus_ = ComposeFocus::Body;
     compose_action_index_ = 0;
     compose_abc_group_index_ = 0;
@@ -4323,9 +4860,9 @@ void Runtime::openCompose(EditTarget target, const char* seed_text)
 
 void Runtime::finishTextEdit(bool accept)
 {
-    if (accept)
+    if (accept && !saveEditedTextToConfig())
     {
-        saveEditedTextToConfig();
+        return;
     }
     edit_target_ = EditTarget::None;
     enterPage(page_before_compose_);
@@ -5008,6 +5545,10 @@ void Runtime::confirmSettingPopup()
     app()->setBleEnabled(setting_popup_ble_enabled_);
 #endif
     app()->saveConfig();
+    if (setting_popup_owner_ == Page::RadioSettings)
+    {
+        app()->applyMeshConfig();
+    }
     if (setting_popup_owner_ == Page::DeviceSettings)
     {
         app()->applyPositionConfig();
@@ -5103,6 +5644,8 @@ void Runtime::adjustSettingPopup(int delta)
                 current + delta, 0, static_cast<int>(kMeshtasticChannelNumMax)));
             break;
         }
+        case RadioSettingItem::MtPrimaryKey:
+            break;
         case RadioSettingItem::MtOverrideFrequency:
             if (cfg.meshtastic_config.override_frequency_mhz <= 0.0f)
             {
@@ -5176,6 +5719,7 @@ void Runtime::adjustSettingPopup(int delta)
                 static_cast<int>(cfg.meshcore_config.meshcore_channel_slot) + delta, 0, 15));
             break;
         case RadioSettingItem::McChannelName:
+        case RadioSettingItem::McChannelKey:
         default:
             break;
         }
@@ -5458,26 +6002,19 @@ void Runtime::cycleComposeMode()
     if (usesPhysicalTextInput())
     {
         (void)commitPhysicalComposePreedit(true);
-        if (compose_mode_ == ComposeMode::Num)
-        {
-            compose_mode_ = ComposeMode::AbcLower;
-        }
-        else if (compose_mode_ == ComposeMode::AbcLower || compose_mode_ == ComposeMode::AbcUpper)
-        {
-            compose_mode_ = ComposeMode::Cn;
-        }
-        else
-        {
-            compose_mode_ = ComposeMode::Num;
-        }
     }
-    else if (compose_mode_ == ComposeMode::Num)
+
+    if (compose_mode_ == ComposeMode::Num)
     {
         compose_mode_ = ComposeMode::AbcLower;
     }
-    else if (compose_mode_ == ComposeMode::AbcLower || compose_mode_ == ComposeMode::AbcUpper)
+    else if (compose_mode_ == ComposeMode::AbcLower)
     {
-        compose_mode_ = ComposeMode::Cn;
+        compose_mode_ = ComposeMode::AbcUpper;
+    }
+    else if (compose_mode_ == ComposeMode::AbcUpper)
+    {
+        compose_mode_ = editAllowsChineseInput() ? ComposeMode::Cn : ComposeMode::Sym;
     }
     else if (compose_mode_ == ComposeMode::Cn)
     {
@@ -5521,6 +6058,37 @@ bool Runtime::handlePhysicalComposeText(char ch)
     }
 
     compose_focus_ = ComposeFocus::Body;
+    if (compose_mode_ == ComposeMode::Sym)
+    {
+        (void)commitPhysicalComposePreedit(true);
+        const char* chars = phoneSymbolCycleCharsForKey(ch);
+        const size_t char_count = std::strlen(chars);
+        if (char_count == 0)
+        {
+            return true;
+        }
+
+        const uint32_t now = nowMs();
+        const bool can_cycle = compose_physical_last_key_ == ch &&
+                               compose_len_ > 0 &&
+                               (now - compose_abc_last_tap_ms_) <= kComposeMultiTapWindowMs;
+        if (can_cycle)
+        {
+            compose_abc_tap_index_ = (compose_abc_tap_index_ + 1U) % char_count;
+            compose_buffer_[compose_len_ - 1U] = chars[compose_abc_tap_index_];
+        }
+        else
+        {
+            compose_abc_tap_index_ = 0;
+            appendChar(compose_buffer_, sizeof(compose_buffer_), compose_len_, chars[0]);
+        }
+
+        compose_physical_last_key_ = ch;
+        compose_abc_last_tap_ms_ = now;
+        compose_abc_last_group_index_ = -1;
+        return true;
+    }
+
     if (compose_mode_ == ComposeMode::Cn)
     {
         if (ch == '0')
@@ -5760,6 +6328,15 @@ void Runtime::appendComposeChar(char ch)
         return;
     }
 
+    if (editUsesDirectTextEntry())
+    {
+        appendChar(compose_buffer_,
+                   sizeof(compose_buffer_),
+                   compose_len_,
+                   isAlphaAscii(ch) ? applyComposeAlphaCase(compose_mode_, ch) : ch);
+        return;
+    }
+
     if ((isAlphaComposeMode(compose_mode_) || compose_mode_ == ComposeMode::Cn) && isAlphaAscii(ch))
     {
         appendChar(compose_preedit_, sizeof(compose_preedit_), compose_preedit_len_, upperAscii(ch));
@@ -5835,28 +6412,58 @@ void Runtime::activateComposeAction()
         compose_focus_ = ComposeFocus::Body;
         break;
     case ComposeAction::Send:
-        sendComposeMessage();
+        if (edit_target_ == EditTarget::Message)
+        {
+            sendComposeMessage();
+        }
+        else
+        {
+            finishTextEdit(true);
+        }
         break;
     }
 }
 
-void Runtime::saveEditedTextToConfig()
+bool Runtime::saveEditedTextToConfig()
 {
     if (!app())
     {
-        return;
+        return false;
     }
 
     auto& cfg = app()->getConfig();
+    bool mesh_config_changed = false;
     switch (edit_target_)
     {
     case EditTarget::MeshCoreChannelName:
         copyText(cfg.meshcore_config.meshcore_channel_name, compose_buffer_);
+        mesh_config_changed = true;
+        break;
+    case EditTarget::MeshtasticPrimaryKey:
+        if (!applyMeshtasticPrimaryKeyText(cfg.meshtastic_config, compose_buffer_))
+        {
+            showTransientPopup("INVALID KEY", "MT PSK");
+            return false;
+        }
+        mesh_config_changed = true;
+        break;
+    case EditTarget::MeshCoreChannelKey:
+        if (!applyMeshCoreChannelKeyText(cfg.meshcore_config, compose_buffer_))
+        {
+            showTransientPopup("INVALID KEY", "MC KEY");
+            return false;
+        }
+        mesh_config_changed = true;
         break;
     default:
         break;
     }
     commitConfig();
+    if (mesh_config_changed)
+    {
+        app()->applyMeshConfig();
+    }
+    return true;
 }
 
 void Runtime::formatTime(char* out_time, size_t out_len, char* out_date, size_t date_len) const
@@ -6419,14 +7026,38 @@ bool Runtime::editUsesHexCharset() const
     return false;
 }
 
+bool Runtime::editUsesKeyCharset() const
+{
+    return edit_target_ == EditTarget::MeshtasticPrimaryKey ||
+           edit_target_ == EditTarget::MeshCoreChannelKey;
+}
+
+bool Runtime::editUsesDirectTextEntry() const
+{
+    return edit_target_ == EditTarget::MeshCoreChannelName ||
+           editUsesKeyCharset();
+}
+
+bool Runtime::editAllowsChineseInput() const
+{
+    return edit_target_ == EditTarget::Message;
+}
+
+bool Runtime::editAcceptsTextInput() const
+{
+    return edit_target_ == EditTarget::Message ||
+           edit_target_ == EditTarget::MeshCoreChannelName ||
+           editUsesKeyCharset();
+}
+
 bool Runtime::usesSmartCompose() const
 {
-    return edit_target_ == EditTarget::Message && !usesPhysicalTextInput();
+    return editAcceptsTextInput() && !usesPhysicalTextInput();
 }
 
 bool Runtime::usesPhysicalTextInput() const
 {
-    return host_.physical_text_input && edit_target_ == EditTarget::Message;
+    return host_.physical_text_input && editAcceptsTextInput();
 }
 
 bool Runtime::usesFullVirtualKeyboard() const

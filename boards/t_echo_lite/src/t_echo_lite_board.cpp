@@ -235,18 +235,29 @@ bool applyAw21009Brightness(TEchoLiteBoard& board, uint16_t brightness)
     return ok;
 }
 
-void fillSquareToneBuffer(unsigned frequency_hz, uint8_t volume_percent)
+void fillCooToneBuffer(unsigned start_frequency_hz, unsigned end_frequency_hz, uint8_t volume_percent)
 {
-    const unsigned safe_frequency = frequency_hz == 0U ? 1U : frequency_hz;
-    const uint32_t half_period_samples =
-        std::max<uint32_t>(1U, kMessageToneSampleRateHz / (safe_frequency * 2U));
     const uint8_t volume = volume_percent > 100U ? 100U : volume_percent;
-    const int16_t amplitude = static_cast<int16_t>(600 + ((static_cast<uint16_t>(volume) * 11000U) / 100U));
+    const double amplitude = 500.0 + (static_cast<double>(volume) * 80.0);
+    constexpr double kPi = 3.14159265358979323846;
+    const unsigned safe_start = start_frequency_hz == 0U ? 1U : start_frequency_hz;
+    const unsigned safe_end = end_frequency_hz == 0U ? safe_start : end_frequency_hz;
+    double phase = 0.0;
 
     for (uint16_t index = 0; index < kMessageToneI2sWords; ++index)
     {
-        const bool positive = ((index / half_period_samples) & 0x01U) == 0U;
-        const int16_t sample = positive ? amplitude : static_cast<int16_t>(-amplitude);
+        const double t = static_cast<double>(index) /
+                         static_cast<double>(kMessageToneI2sWords > 1U ? kMessageToneI2sWords - 1U : 1U);
+        const double glide = static_cast<double>(safe_start) +
+                             (static_cast<double>(safe_end) - static_cast<double>(safe_start)) * t;
+        const double vibrato = std::sin(2.0 * kPi * 5.0 * t) * 7.0;
+        const double frequency = std::max(1.0, glide + vibrato);
+        const double attack = std::min(1.0, t / 0.12);
+        const double release = std::min(1.0, (1.0 - t) / 0.18);
+        const double envelope = std::max(0.0, std::min(attack, release));
+        phase += (2.0 * kPi * frequency) / static_cast<double>(kMessageToneSampleRateHz);
+        const double voice = std::sin(phase) + 0.22 * std::sin(phase * 2.0);
+        const int16_t sample = static_cast<int16_t>(voice * amplitude * envelope);
         const uint16_t packed_sample = static_cast<uint16_t>(sample);
         s_message_tone_i2s_buffer[index] =
             static_cast<uint32_t>(packed_sample) | (static_cast<uint32_t>(packed_sample) << 16);
@@ -581,7 +592,9 @@ bool TEchoLiteBoard::ensureMessageAudioReady()
     return audio_codec_ready_;
 }
 
-bool TEchoLiteBoard::playMessageToneStep(unsigned frequency_hz, uint16_t duration_ms)
+bool TEchoLiteBoard::playMessageToneStep(unsigned start_frequency_hz,
+                                         unsigned end_frequency_hz,
+                                         uint16_t duration_ms)
 {
     const auto& audio = kBoardProfile.audio;
     if (audio.dac_data < 0 || audio.bit_clock < 0 || audio.word_select < 0)
@@ -589,7 +602,7 @@ bool TEchoLiteBoard::playMessageToneStep(unsigned frequency_hz, uint16_t duratio
         return false;
     }
 
-    fillSquareToneBuffer(frequency_hz, message_tone_volume_);
+    fillCooToneBuffer(start_frequency_hz, end_frequency_hz, message_tone_volume_);
 
     nrf_i2s_disable(NRF_I2S);
     nrf_i2s_event_clear(NRF_I2S, NRF_I2S_EVENT_TXPTRUPD);
@@ -625,8 +638,6 @@ bool TEchoLiteBoard::playMessageToneStep(unsigned frequency_hz, uint16_t duratio
 
 void TEchoLiteBoard::playMessageTone()
 {
-    pulseNotificationLed(25);
-
     if (message_tone_volume_ == 0)
     {
         return;
@@ -634,22 +645,25 @@ void TEchoLiteBoard::playMessageTone()
 
     struct ToneStep
     {
-        unsigned frequency_hz;
+        unsigned start_frequency_hz;
+        unsigned end_frequency_hz;
         uint16_t duration_ms;
         uint16_t gap_ms;
     };
 
     const bool audio_ready = ensureMessageAudioReady();
     static constexpr ToneStep kMessageTone[] = {
-        {1760U, 70U, 25U},
-        {2093U, 110U, 0U},
+        {430U, 340U, 135U, 45U},
+        {360U, 295U, 150U, 0U},
     };
 
     for (const ToneStep& step : kMessageTone)
     {
         if (audio_ready)
         {
-            (void)playMessageToneStep(step.frequency_hz, step.duration_ms);
+            (void)playMessageToneStep(step.start_frequency_hz,
+                                      step.end_frequency_hz,
+                                      step.duration_ms);
         }
         else
         {
