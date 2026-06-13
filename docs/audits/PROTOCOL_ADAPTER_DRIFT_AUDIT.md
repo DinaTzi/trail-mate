@@ -83,7 +83,7 @@ Current state:
 
 Residual risk:
 
-- Position local availability and direct send still live in platform adapters, even though
+- Position local data source and direct send still live in platform adapters, even though
   the reply gate and nRF state separation now match the intended concepts.
 
 ### MT-002 Broadcast `want_response`
@@ -156,15 +156,16 @@ Current state:
 - ESP32 and nRF Position replies now preserve the original request packet id in
   `Data.request_id`, allowing shared action lifecycle tracking to complete only on matching
   Position responses.
-- `MeshtasticPositionCore` now owns `meshtastic_Position` protobuf payload construction, including
-  lat/lon scaling, altitude/speed rounding, course clamping, satellites, and timestamp validity.
+- `MeshtasticPositionCore` now owns position availability decision and `meshtastic_Position` protobuf
+  payload construction, including lat/lon scaling, altitude/speed rounding, course clamping, satellites,
+  and timestamp validity.
 - Platform adapters still own `sendPositionTo(...)`, radio/channel mechanics, and whether a local
-  position is available.
+  platform GPS source has produced a candidate reading.
 
 Residual risk:
 
-- Position availability policy is not yet shared; adapters still decide whether their local GPS source is
-  sufficient for a reply.
+- Platform adapters still translate platform GPS state into `MeshtasticPositionInput`; runtime does not own
+  GPS hardware freshness or fix-source selection.
 
 ### MT-004 TraceRoute Request Semantics
 
@@ -195,7 +196,7 @@ Current state:
 Residual risk:
 
 - Route display details are not yet rendered; the UI currently reports lifecycle status only.
-- Position availability checks still live in platform adapters.
+- Position GPS source selection still lives in platform adapters.
 
 ### MT-005 PKI Unknown Resync
 
@@ -215,7 +216,7 @@ Current state:
 Residual risk:
 
 - PKI resync now uses shared NodeInfo packet construction when it emits `SendNodeInfoEffect`; Position
-  availability remains platform-owned.
+  GPS source selection remains platform-owned.
 
 ## MeshCore Drift Items
 
@@ -329,9 +330,8 @@ Residual risk:
 
 1. Add parity tests that assert ESP32 and nRF adapters advertise the fine-grained capabilities they actually
    execute.
-2. Extract shared Meshtastic Position availability policy.
-3. Move MeshCore peer route storage / pubkey persistence effects toward shared runtime state.
-4. Move MeshCore direct secret derivation request/response effects behind protocol runtime effects before exposing
+2. Move MeshCore peer route storage / pubkey persistence effects toward shared runtime state.
+3. Move MeshCore direct secret derivation request/response effects behind protocol runtime effects before exposing
    richer MeshCore direct actions through UI.
 
 ## Guardrail

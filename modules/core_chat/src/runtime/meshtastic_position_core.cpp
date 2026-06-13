@@ -14,12 +14,35 @@ constexpr uint32_t kMinimumValidEpochSeconds = 1577836800U;
 
 } // namespace
 
+MeshtasticPositionAvailability MeshtasticPositionCore::resolveAvailability(
+    const MeshtasticPositionInput& input)
+{
+    if (!input.valid)
+    {
+        MeshtasticPositionAvailability availability{};
+        availability.available = false;
+        availability.reason = MeshtasticPositionAvailabilityReason::InvalidFix;
+        return availability;
+    }
+    if (!std::isfinite(input.latitude_deg) || !std::isfinite(input.longitude_deg))
+    {
+        MeshtasticPositionAvailability availability{};
+        availability.available = false;
+        availability.reason = MeshtasticPositionAvailabilityReason::InvalidCoordinates;
+        return availability;
+    }
+    MeshtasticPositionAvailability availability{};
+    availability.available = true;
+    availability.reason = MeshtasticPositionAvailabilityReason::Available;
+    return availability;
+}
+
 bool MeshtasticPositionCore::buildPositionPayload(const MeshtasticPositionInput& input,
                                                   uint8_t* out_buf,
                                                   size_t* out_len)
 {
-    if (!input.valid || !out_buf || !out_len || *out_len == 0 ||
-        !std::isfinite(input.latitude_deg) || !std::isfinite(input.longitude_deg))
+    const auto availability = resolveAvailability(input);
+    if (!availability.available || !out_buf || !out_len || *out_len == 0)
     {
         return false;
     }

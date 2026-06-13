@@ -21,9 +21,26 @@ struct MeshtasticPositionInput
     uint32_t timestamp_s = 0;
 };
 
+enum class MeshtasticPositionAvailabilityReason : uint8_t
+{
+    Available,
+    InvalidFix,
+    InvalidCoordinates,
+};
+
+struct MeshtasticPositionAvailability
+{
+    bool available = false;
+    MeshtasticPositionAvailabilityReason reason =
+        MeshtasticPositionAvailabilityReason::InvalidFix;
+};
+
 class MeshtasticPositionCore final
 {
   public:
+    static MeshtasticPositionAvailability resolveAvailability(
+        const MeshtasticPositionInput& input);
+
     static bool buildPositionPayload(const MeshtasticPositionInput& input,
                                      uint8_t* out_buf,
                                      size_t* out_len);

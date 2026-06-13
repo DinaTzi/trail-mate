@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <limits>
 
 int main()
 {
@@ -20,6 +21,10 @@ int main()
         input.course_deg = 360.0;
         input.satellites = 11;
         input.timestamp_s = 1710000000U;
+        const auto available =
+            chat::runtime::MeshtasticPositionCore::resolveAvailability(input);
+        assert(available.available);
+        assert(available.reason == chat::runtime::MeshtasticPositionAvailabilityReason::Available);
 
         uint8_t payload[96] = {};
         size_t payload_len = sizeof(payload);
@@ -52,12 +57,29 @@ int main()
         input.valid = false;
         input.latitude_deg = 26.0;
         input.longitude_deg = 107.0;
+        const auto available =
+            chat::runtime::MeshtasticPositionCore::resolveAvailability(input);
+        assert(!available.available);
+        assert(available.reason == chat::runtime::MeshtasticPositionAvailabilityReason::InvalidFix);
 
         uint8_t payload[96] = {};
         size_t payload_len = sizeof(payload);
         assert(!chat::runtime::MeshtasticPositionCore::buildPositionPayload(input,
                                                                             payload,
                                                                             &payload_len));
+    }
+
+    {
+        chat::runtime::MeshtasticPositionInput input{};
+        input.valid = true;
+        input.latitude_deg = std::numeric_limits<double>::quiet_NaN();
+        input.longitude_deg = 107.0;
+
+        const auto available =
+            chat::runtime::MeshtasticPositionCore::resolveAvailability(input);
+        assert(!available.available);
+        assert(available.reason ==
+               chat::runtime::MeshtasticPositionAvailabilityReason::InvalidCoordinates);
     }
 
     return 0;
