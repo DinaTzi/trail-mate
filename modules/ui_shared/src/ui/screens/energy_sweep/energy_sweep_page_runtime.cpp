@@ -12,6 +12,7 @@
 #include "sys/clock.h"
 #include "ui/app_runtime.h"
 #include "ui/localization.h"
+#include "ui/page/page_profile.h"
 #include "ui/ui_common.h"
 #include <algorithm>
 #include <array>
@@ -148,6 +149,47 @@ struct EnergySweepUi
     lv_obj_t* btn_auto_label = nullptr;
 };
 
+struct EnergySweepLayout
+{
+    bool large_touch = false;
+    lv_coord_t screen_w = kScreenW;
+    lv_coord_t screen_h = kScreenH;
+    lv_coord_t topbar_h = kTopBarH;
+
+    lv_coord_t back_x = 8;
+    lv_coord_t back_y = 4;
+    lv_coord_t back_w = 28;
+    lv_coord_t back_h = 20;
+    lv_coord_t title_x = 46;
+    lv_coord_t title_y = 0;
+    lv_coord_t mode_chip_x = 264;
+    lv_coord_t mode_chip_y = 5;
+    lv_coord_t mode_chip_w = 118;
+    lv_coord_t mode_chip_h = 18;
+    lv_coord_t cad_chip_x = 388;
+    lv_coord_t cad_chip_y = 5;
+    lv_coord_t cad_chip_w = 82;
+    lv_coord_t cad_chip_h = 18;
+
+    lv_coord_t left_panel_x = kLeftPanelX;
+    lv_coord_t left_panel_y = kLeftPanelY;
+    lv_coord_t left_panel_w = kLeftPanelW;
+    lv_coord_t left_panel_h = kLeftPanelH;
+    lv_coord_t plot_x = kPlotX;
+    lv_coord_t plot_y = kPlotY;
+    lv_coord_t plot_w = kPlotW;
+    lv_coord_t plot_h = kPlotH;
+    lv_coord_t scale_x = kScaleBarX;
+    lv_coord_t scale_y = kScaleBarY;
+    lv_coord_t scale_w = kScaleBarW;
+    lv_coord_t scale_h = kScaleBarH;
+
+    lv_coord_t right_panel_x = kRightPanelX;
+    lv_coord_t right_panel_y = kRightPanelY;
+    lv_coord_t right_panel_w = kRightPanelW;
+    lv_coord_t right_panel_h = kRightPanelH;
+};
+
 struct RadioContext
 {
     bool use_hw = false;
@@ -195,7 +237,91 @@ EnergySweepUi s_ui;
 SweepState s_state;
 RadioContext s_radio;
 SweepBandPlan s_band;
+EnergySweepLayout s_layout;
 lv_timer_t* s_refresh_timer = nullptr;
+
+EnergySweepLayout make_classic_layout()
+{
+    return {};
+}
+
+EnergySweepLayout make_large_touch_layout(lv_coord_t parent_w, lv_coord_t parent_h)
+{
+    EnergySweepLayout layout{};
+    layout.large_touch = true;
+    layout.screen_w = parent_w > 0 ? parent_w : 1168;
+    layout.screen_h = parent_h > 0 ? parent_h : 540;
+    layout.topbar_h = std::max<lv_coord_t>(48, ::ui::page_profile::current().top_bar_height);
+
+    const bool landscape = layout.screen_w >= layout.screen_h;
+    const lv_coord_t margin = 14;
+    const lv_coord_t gap = 14;
+    const lv_coord_t content_top = layout.topbar_h + 14;
+    const lv_coord_t content_h = std::max<lv_coord_t>(360, layout.screen_h - content_top - margin);
+
+    layout.back_x = margin;
+    layout.back_w = 44;
+    layout.back_h = 38;
+    layout.back_y = (layout.topbar_h - layout.back_h) / 2;
+    layout.title_x = layout.back_x + layout.back_w + 16;
+    layout.title_y = (layout.topbar_h - 28) / 2;
+    layout.cad_chip_w = 88;
+    layout.mode_chip_w = 148;
+    layout.mode_chip_h = 28;
+    layout.cad_chip_h = 28;
+    layout.cad_chip_x = layout.screen_w - margin - layout.cad_chip_w;
+    layout.mode_chip_x = layout.cad_chip_x - 10 - layout.mode_chip_w;
+    layout.mode_chip_y = (layout.topbar_h - layout.mode_chip_h) / 2;
+    layout.cad_chip_y = layout.mode_chip_y;
+
+    layout.left_panel_x = margin;
+    layout.left_panel_y = content_top;
+    if (landscape)
+    {
+        layout.right_panel_w = std::min<lv_coord_t>(340, std::max<lv_coord_t>(290, layout.screen_w / 4));
+        layout.right_panel_x = layout.screen_w - margin - layout.right_panel_w;
+        layout.right_panel_y = content_top;
+        layout.right_panel_h = content_h;
+        layout.left_panel_w = layout.right_panel_x - layout.left_panel_x - gap;
+        layout.left_panel_h = content_h;
+    }
+    else
+    {
+        layout.left_panel_w = layout.screen_w - (margin * 2);
+        layout.left_panel_h = std::max<lv_coord_t>(420, (content_h * 58) / 100);
+        layout.right_panel_x = margin;
+        layout.right_panel_y = layout.left_panel_y + layout.left_panel_h + gap;
+        layout.right_panel_w = layout.left_panel_w;
+        layout.right_panel_h = std::max<lv_coord_t>(340, layout.screen_h - layout.right_panel_y - margin);
+    }
+
+    layout.plot_x = 14;
+    layout.plot_y = 18;
+    layout.plot_w = layout.left_panel_w - 28;
+    layout.scale_x = layout.plot_x;
+    layout.scale_w = layout.plot_w;
+    layout.scale_h = 50;
+    layout.scale_y = layout.left_panel_h - layout.scale_h - 14;
+    layout.plot_h = std::max<lv_coord_t>(180, layout.scale_y - layout.plot_y - 12);
+    return layout;
+}
+
+EnergySweepLayout resolve_layout(lv_obj_t* parent)
+{
+    if (parent)
+    {
+        lv_obj_update_layout(parent);
+    }
+    const lv_coord_t parent_w = parent ? lv_obj_get_width(parent) : 0;
+    const lv_coord_t parent_h = parent ? lv_obj_get_height(parent) : 0;
+    const lv_coord_t long_side = std::max(parent_w, parent_h);
+    const lv_coord_t short_side = std::min(parent_w, parent_h);
+    if (::ui::page_profile::current().large_touch_hitbox && long_side >= 900 && short_side >= 500)
+    {
+        return make_large_touch_layout(parent_w, parent_h);
+    }
+    return make_classic_layout();
+}
 
 platform::ui::lora::ReceiveConfig make_receive_config()
 {
@@ -825,33 +951,33 @@ void refresh_plot()
             t = 1.0f;
         }
 
-        const int x0 = (i * kPlotW) / bins;
-        const int x1 = ((i + 1) * kPlotW) / bins;
+        const int x0 = (i * s_layout.plot_w) / bins;
+        const int x1 = ((i + 1) * s_layout.plot_w) / bins;
         int w = x1 - x0 - 1;
         if (w < 2)
         {
             w = 2;
         }
-        if (x0 + w > kPlotW)
+        if (x0 + w > s_layout.plot_w)
         {
-            w = kPlotW - x0;
+            w = s_layout.plot_w - x0;
         }
         if (w <= 0)
         {
             w = 1;
         }
 
-        int h = static_cast<int>(std::round(t * static_cast<float>(kPlotH)));
+        int h = static_cast<int>(std::round(t * static_cast<float>(s_layout.plot_h)));
         if (h < 2)
         {
             h = 2;
         }
-        if (h > kPlotH)
+        if (h > s_layout.plot_h)
         {
-            h = kPlotH;
+            h = s_layout.plot_h;
         }
 
-        lv_obj_set_pos(bar, x0, kPlotH - h);
+        lv_obj_set_pos(bar, x0, s_layout.plot_h - h);
         lv_obj_set_size(bar, w, h);
         lv_obj_set_style_bg_color(bar,
                                   lv_color_hex(s_state.hot[i] ? kColorWarn : kColorAmber),
@@ -859,19 +985,19 @@ void refresh_plot()
     }
 
     const int idx = clamp_index(s_state.cursor_index);
-    const int c0 = (idx * kPlotW) / bins;
-    const int c1 = ((idx + 1) * kPlotW) / bins;
+    const int c0 = (idx * s_layout.plot_w) / bins;
+    const int c1 = ((idx + 1) * s_layout.plot_w) / bins;
     const int cx = (c0 + c1) / 2;
 
     if (s_ui.cursor_line)
     {
         lv_obj_set_pos(s_ui.cursor_line, cx - 1, 0);
-        lv_obj_set_size(s_ui.cursor_line, 2, kPlotH);
+        lv_obj_set_size(s_ui.cursor_line, 2, s_layout.plot_h);
         lv_obj_move_foreground(s_ui.cursor_line);
     }
     if (s_ui.cursor_tip)
     {
-        lv_obj_set_pos(s_ui.cursor_tip, cx - 6, kPlotH - 14);
+        lv_obj_set_pos(s_ui.cursor_tip, cx - 6, s_layout.plot_h - 14);
         lv_obj_move_foreground(s_ui.cursor_tip);
     }
 }
@@ -1238,7 +1364,7 @@ void build_topbar(lv_obj_t* root)
 {
     s_ui.topbar = lv_obj_create(root);
     lv_obj_set_pos(s_ui.topbar, 0, 0);
-    lv_obj_set_size(s_ui.topbar, kScreenW, kTopBarH);
+    lv_obj_set_size(s_ui.topbar, s_layout.screen_w, s_layout.topbar_h);
     lv_obj_set_style_bg_color(s_ui.topbar, lv_color_hex(kColorPanelBg), 0);
     lv_obj_set_style_bg_opa(s_ui.topbar, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_ui.topbar, 0, 0);
@@ -1246,8 +1372,8 @@ void build_topbar(lv_obj_t* root)
     lv_obj_clear_flag(s_ui.topbar, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t* bottom_line = lv_obj_create(s_ui.topbar);
-    lv_obj_set_pos(bottom_line, 0, kTopBarH - 2);
-    lv_obj_set_size(bottom_line, kScreenW, 2);
+    lv_obj_set_pos(bottom_line, 0, s_layout.topbar_h - 2);
+    lv_obj_set_size(bottom_line, s_layout.screen_w, 2);
     lv_obj_set_style_bg_color(bottom_line, lv_color_hex(kColorLine), 0);
     lv_obj_set_style_bg_opa(bottom_line, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(bottom_line, 0, 0);
@@ -1255,8 +1381,8 @@ void build_topbar(lv_obj_t* root)
     lv_obj_clear_flag(bottom_line, LV_OBJ_FLAG_SCROLLABLE);
 
     s_ui.back_btn = lv_btn_create(s_ui.topbar);
-    lv_obj_set_pos(s_ui.back_btn, 8, 4);
-    lv_obj_set_size(s_ui.back_btn, 28, 20);
+    lv_obj_set_pos(s_ui.back_btn, s_layout.back_x, s_layout.back_y);
+    lv_obj_set_size(s_ui.back_btn, s_layout.back_w, s_layout.back_h);
     lv_obj_set_style_bg_color(s_ui.back_btn, lv_color_hex(kColorPanelBg), 0);
     lv_obj_set_style_bg_opa(s_ui.back_btn, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_ui.back_btn, 1, 0);
@@ -1276,11 +1402,11 @@ void build_topbar(lv_obj_t* root)
     ::ui::i18n::set_label_text(s_ui.title, "SUB-GHz SCAN");
     lv_obj_set_style_text_font(s_ui.title, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(s_ui.title, lv_color_hex(kColorText), 0);
-    lv_obj_set_pos(s_ui.title, 46, 0);
+    lv_obj_set_pos(s_ui.title, s_layout.title_x, s_layout.title_y);
 
     s_ui.mode_chip = lv_obj_create(s_ui.topbar);
-    lv_obj_set_pos(s_ui.mode_chip, 264, 5);
-    lv_obj_set_size(s_ui.mode_chip, 118, 18);
+    lv_obj_set_pos(s_ui.mode_chip, s_layout.mode_chip_x, s_layout.mode_chip_y);
+    lv_obj_set_size(s_ui.mode_chip, s_layout.mode_chip_w, s_layout.mode_chip_h);
     lv_obj_set_style_bg_color(s_ui.mode_chip, lv_color_hex(kColorAmber), 0);
     lv_obj_set_style_bg_opa(s_ui.mode_chip, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_ui.mode_chip, 1, 0);
@@ -1296,8 +1422,8 @@ void build_topbar(lv_obj_t* root)
     lv_obj_center(s_ui.mode_chip_label);
 
     s_ui.cad_chip = lv_obj_create(s_ui.topbar);
-    lv_obj_set_pos(s_ui.cad_chip, 388, 5);
-    lv_obj_set_size(s_ui.cad_chip, 82, 18);
+    lv_obj_set_pos(s_ui.cad_chip, s_layout.cad_chip_x, s_layout.cad_chip_y);
+    lv_obj_set_size(s_ui.cad_chip, s_layout.cad_chip_w, s_layout.cad_chip_h);
     lv_obj_set_style_bg_color(s_ui.cad_chip, lv_color_hex(kColorInfo), 0);
     lv_obj_set_style_bg_opa(s_ui.cad_chip, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_ui.cad_chip, 1, 0);
@@ -1316,8 +1442,8 @@ void build_topbar(lv_obj_t* root)
 void build_left_panel(lv_obj_t* root)
 {
     s_ui.left_panel = lv_obj_create(root);
-    lv_obj_set_pos(s_ui.left_panel, kLeftPanelX, kLeftPanelY);
-    lv_obj_set_size(s_ui.left_panel, kLeftPanelW, kLeftPanelH);
+    lv_obj_set_pos(s_ui.left_panel, s_layout.left_panel_x, s_layout.left_panel_y);
+    lv_obj_set_size(s_ui.left_panel, s_layout.left_panel_w, s_layout.left_panel_h);
     lv_obj_set_style_bg_color(s_ui.left_panel, lv_color_hex(kColorPanelBg), 0);
     lv_obj_set_style_bg_opa(s_ui.left_panel, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_ui.left_panel, 2, 0);
@@ -1327,8 +1453,8 @@ void build_left_panel(lv_obj_t* root)
     lv_obj_clear_flag(s_ui.left_panel, LV_OBJ_FLAG_SCROLLABLE);
 
     s_ui.plot_area = lv_obj_create(s_ui.left_panel);
-    lv_obj_set_pos(s_ui.plot_area, kPlotX, kPlotY);
-    lv_obj_set_size(s_ui.plot_area, kPlotW, kPlotH);
+    lv_obj_set_pos(s_ui.plot_area, s_layout.plot_x, s_layout.plot_y);
+    lv_obj_set_size(s_ui.plot_area, s_layout.plot_w, s_layout.plot_h);
     lv_obj_set_style_bg_color(s_ui.plot_area, lv_color_hex(0xF2E4C8), 0);
     lv_obj_set_style_bg_opa(s_ui.plot_area, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_ui.plot_area, 1, 0);
@@ -1340,8 +1466,8 @@ void build_left_panel(lv_obj_t* root)
     for (int i = 1; i <= 4; ++i)
     {
         lv_obj_t* grid = lv_obj_create(s_ui.plot_area);
-        lv_obj_set_pos(grid, 0, (i * kPlotH) / 5);
-        lv_obj_set_size(grid, kPlotW, 1);
+        lv_obj_set_pos(grid, 0, (i * s_layout.plot_h) / 5);
+        lv_obj_set_size(grid, s_layout.plot_w, 1);
         lv_obj_set_style_bg_color(grid, lv_color_hex(kColorLine), 0);
         lv_obj_set_style_bg_opa(grid, LV_OPA_50, 0);
         lv_obj_set_style_border_width(grid, 0, 0);
@@ -1362,7 +1488,7 @@ void build_left_panel(lv_obj_t* root)
     }
 
     s_ui.cursor_line = lv_obj_create(s_ui.plot_area);
-    lv_obj_set_size(s_ui.cursor_line, 2, kPlotH);
+    lv_obj_set_size(s_ui.cursor_line, 2, s_layout.plot_h);
     lv_obj_set_style_bg_color(s_ui.cursor_line, lv_color_hex(kColorInfo), 0);
     lv_obj_set_style_bg_opa(s_ui.cursor_line, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_ui.cursor_line, 0, 0);
@@ -1375,8 +1501,8 @@ void build_left_panel(lv_obj_t* root)
     lv_obj_set_style_text_color(s_ui.cursor_tip, lv_color_hex(kColorInfo), 0);
 
     lv_obj_t* scale_bar = lv_obj_create(s_ui.left_panel);
-    lv_obj_set_pos(scale_bar, kScaleBarX, kScaleBarY);
-    lv_obj_set_size(scale_bar, kScaleBarW, kScaleBarH);
+    lv_obj_set_pos(scale_bar, s_layout.scale_x, s_layout.scale_y);
+    lv_obj_set_size(scale_bar, s_layout.scale_w, s_layout.scale_h);
     lv_obj_set_style_bg_opa(scale_bar, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(scale_bar, 1, 0);
     lv_obj_set_style_border_color(scale_bar, lv_color_hex(kColorLine), 0);
@@ -1403,14 +1529,34 @@ void build_left_panel(lv_obj_t* root)
     lv_obj_set_style_text_color(s_ui.scale_right, lv_color_hex(kColorText), 0);
     lv_obj_set_style_text_align(s_ui.scale_right, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_width(s_ui.scale_right, 84);
-    lv_obj_set_pos(s_ui.scale_right, kScaleBarW - 86, 6);
+    lv_obj_set_pos(s_ui.scale_right, s_layout.scale_w - 86, 6);
 }
 
 void build_right_panel(lv_obj_t* root)
 {
+    const bool large = s_layout.large_touch;
+    const lv_coord_t pad = large ? 18 : 8;
+    const lv_coord_t sep_y = large ? std::min<lv_coord_t>(150, s_layout.right_panel_h / 3) : 76;
+    const lv_coord_t cursor_title_y = large ? 14 : 2;
+    const lv_coord_t cursor_freq_y = large ? 40 : 14;
+    const lv_coord_t unit_x = large ? std::min<lv_coord_t>(150, s_layout.right_panel_w - 54) : 84;
+    const lv_coord_t unit_y = large ? 48 : 22;
+    const lv_coord_t rssi_y = large ? 82 : 43;
+    const lv_coord_t noise_y = large ? 112 : 60;
+    const lv_coord_t best_title_y = large ? sep_y + 16 : 80;
+    const lv_coord_t best_freq_y = large ? best_title_y + 30 : 97;
+    const lv_coord_t best_snr_y = large ? best_freq_y + 32 : 114;
+    const lv_coord_t progress_y = large ? best_snr_y + 42 : 120;
+    const lv_coord_t progress_w = large ? std::max<lv_coord_t>(80, s_layout.right_panel_w - (pad * 2) - 54) : 66;
+    const lv_coord_t progress_pct_x = large ? pad + progress_w + 8 : 78;
+    const lv_coord_t btn_h = large ? 50 : 28;
+    const lv_coord_t btn_gap = large ? 14 : 6;
+    const lv_coord_t btn_y = large ? s_layout.right_panel_h - btn_h - 18 : 134;
+    const lv_coord_t btn_w = large ? (s_layout.right_panel_w - (pad * 2) - btn_gap) / 2 : 46;
+
     s_ui.right_panel = lv_obj_create(root);
-    lv_obj_set_pos(s_ui.right_panel, kRightPanelX, kRightPanelY);
-    lv_obj_set_size(s_ui.right_panel, kRightPanelW, kRightPanelH);
+    lv_obj_set_pos(s_ui.right_panel, s_layout.right_panel_x, s_layout.right_panel_y);
+    lv_obj_set_size(s_ui.right_panel, s_layout.right_panel_w, s_layout.right_panel_h);
     lv_obj_set_style_bg_color(s_ui.right_panel, lv_color_hex(kColorPanelBg), 0);
     lv_obj_set_style_bg_opa(s_ui.right_panel, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_ui.right_panel, 2, 0);
@@ -1420,8 +1566,8 @@ void build_right_panel(lv_obj_t* root)
     lv_obj_clear_flag(s_ui.right_panel, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t* sep1 = lv_obj_create(s_ui.right_panel);
-    lv_obj_set_pos(sep1, 0, 76);
-    lv_obj_set_size(sep1, kRightPanelW, 1);
+    lv_obj_set_pos(sep1, 0, sep_y);
+    lv_obj_set_size(sep1, s_layout.right_panel_w, 1);
     lv_obj_set_style_bg_color(sep1, lv_color_hex(kColorLine), 0);
     lv_obj_set_style_bg_opa(sep1, LV_OPA_80, 0);
     lv_obj_set_style_border_width(sep1, 0, 0);
@@ -1432,53 +1578,53 @@ void build_right_panel(lv_obj_t* root)
     ::ui::i18n::set_label_text(title_cursor, "CURSOR");
     lv_obj_set_style_text_font(title_cursor, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(title_cursor, lv_color_hex(kColorText), 0);
-    lv_obj_set_pos(title_cursor, 8, 2);
+    lv_obj_set_pos(title_cursor, pad, cursor_title_y);
 
     s_ui.cursor_freq = lv_label_create(s_ui.right_panel);
     lv_label_set_text(s_ui.cursor_freq, "433.550");
     lv_obj_set_style_text_font(s_ui.cursor_freq, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(s_ui.cursor_freq, lv_color_hex(kColorText), 0);
-    lv_obj_set_pos(s_ui.cursor_freq, 8, 14);
+    lv_obj_set_pos(s_ui.cursor_freq, pad, cursor_freq_y);
 
     s_ui.cursor_unit = lv_label_create(s_ui.right_panel);
     lv_label_set_text(s_ui.cursor_unit, "MHz");
     lv_obj_set_style_text_font(s_ui.cursor_unit, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(s_ui.cursor_unit, lv_color_hex(kColorTextDim), 0);
-    lv_obj_set_pos(s_ui.cursor_unit, 84, 22);
+    lv_obj_set_pos(s_ui.cursor_unit, unit_x, unit_y);
 
     s_ui.rssi_label = lv_label_create(s_ui.right_panel);
     ::ui::i18n::set_label_text(s_ui.rssi_label, "RSSI -92 dBm");
     lv_obj_set_style_text_font(s_ui.rssi_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(s_ui.rssi_label, lv_color_hex(kColorText), 0);
-    lv_obj_set_pos(s_ui.rssi_label, 8, 43);
+    lv_obj_set_pos(s_ui.rssi_label, pad, rssi_y);
 
     s_ui.noise_label = lv_label_create(s_ui.right_panel);
     ::ui::i18n::set_label_text(s_ui.noise_label, "NOISE -104 dBm");
     lv_obj_set_style_text_font(s_ui.noise_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(s_ui.noise_label, lv_color_hex(kColorTextDim), 0);
-    lv_obj_set_pos(s_ui.noise_label, 8, 60);
+    lv_obj_set_pos(s_ui.noise_label, pad, noise_y);
 
     lv_obj_t* title_best = lv_label_create(s_ui.right_panel);
     ::ui::i18n::set_label_text(title_best, "BEST");
     lv_obj_set_style_text_font(title_best, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(title_best, lv_color_hex(kColorText), 0);
-    lv_obj_set_pos(title_best, 8, 80);
+    lv_obj_set_pos(title_best, pad, best_title_y);
 
     s_ui.best_freq = lv_label_create(s_ui.right_panel);
     lv_label_set_text(s_ui.best_freq, "434.125");
     lv_obj_set_style_text_font(s_ui.best_freq, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(s_ui.best_freq, lv_color_hex(kColorOk), 0);
-    lv_obj_set_pos(s_ui.best_freq, 8, 97);
+    lv_obj_set_pos(s_ui.best_freq, pad, best_freq_y);
 
     s_ui.best_snr = lv_label_create(s_ui.right_panel);
     ::ui::i18n::set_label_text(s_ui.best_snr, "SNR +12");
     lv_obj_set_style_text_font(s_ui.best_snr, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(s_ui.best_snr, lv_color_hex(kColorTextDim), 0);
-    lv_obj_set_pos(s_ui.best_snr, 8, 114);
+    lv_obj_set_pos(s_ui.best_snr, pad, best_snr_y);
 
     s_ui.progress_bar = lv_bar_create(s_ui.right_panel);
-    lv_obj_set_pos(s_ui.progress_bar, 8, 120);
-    lv_obj_set_size(s_ui.progress_bar, 66, 12);
+    lv_obj_set_pos(s_ui.progress_bar, pad, progress_y);
+    lv_obj_set_size(s_ui.progress_bar, progress_w, large ? 16 : 12);
     lv_bar_set_range(s_ui.progress_bar, 0, 100);
     lv_bar_set_value(s_ui.progress_bar, 0, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(s_ui.progress_bar, lv_color_hex(kColorPanelBg), LV_PART_MAIN);
@@ -1494,11 +1640,11 @@ void build_right_panel(lv_obj_t* root)
     lv_label_set_text(s_ui.progress_pct, "0%");
     lv_obj_set_style_text_font(s_ui.progress_pct, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(s_ui.progress_pct, lv_color_hex(kColorTextDim), 0);
-    lv_obj_set_pos(s_ui.progress_pct, 78, 118);
+    lv_obj_set_pos(s_ui.progress_pct, progress_pct_x, progress_y - 2);
 
     s_ui.btn_scan = lv_btn_create(s_ui.right_panel);
-    lv_obj_set_pos(s_ui.btn_scan, 8, 134);
-    lv_obj_set_size(s_ui.btn_scan, 46, 28);
+    lv_obj_set_pos(s_ui.btn_scan, pad, btn_y);
+    lv_obj_set_size(s_ui.btn_scan, btn_w, btn_h);
     lv_obj_set_style_bg_color(s_ui.btn_scan, lv_color_hex(kColorWarn), 0);
     lv_obj_set_style_bg_opa(s_ui.btn_scan, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_ui.btn_scan, 1, 0);
@@ -1515,8 +1661,8 @@ void build_right_panel(lv_obj_t* root)
     lv_obj_center(s_ui.btn_scan_label);
 
     s_ui.btn_auto = lv_btn_create(s_ui.right_panel);
-    lv_obj_set_pos(s_ui.btn_auto, 60, 134);
-    lv_obj_set_size(s_ui.btn_auto, 46, 28);
+    lv_obj_set_pos(s_ui.btn_auto, pad + btn_w + btn_gap, btn_y);
+    lv_obj_set_size(s_ui.btn_auto, btn_w, btn_h);
     lv_obj_set_style_bg_color(s_ui.btn_auto, lv_color_hex(kColorPanelBg), 0);
     lv_obj_set_style_bg_opa(s_ui.btn_auto, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_ui.btn_auto, 1, 0);
@@ -1536,6 +1682,7 @@ void build_right_panel(lv_obj_t* root)
 void reset_ui_state()
 {
     s_ui = {};
+    s_layout = {};
 }
 
 } // namespace
@@ -1552,8 +1699,9 @@ lv_obj_t* ui_energy_sweep_create(lv_obj_t* parent)
         reset_ui_state();
     }
 
+    s_layout = resolve_layout(parent);
     s_ui.root = lv_obj_create(parent);
-    lv_obj_set_size(s_ui.root, kScreenW, kScreenH);
+    lv_obj_set_size(s_ui.root, s_layout.screen_w, s_layout.screen_h);
     lv_obj_set_style_bg_color(s_ui.root, lv_color_hex(kColorWarmBg), 0);
     lv_obj_set_style_bg_opa(s_ui.root, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_ui.root, 0, 0);
