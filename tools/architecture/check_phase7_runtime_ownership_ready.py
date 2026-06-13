@@ -44,20 +44,14 @@ PATH_ALIASES = {
         "modules/ui_map_runtime/include/ui_map_runtime/map_tiles/map_tile_decoder_cache.h",
     "modules/ui_shared/include/ui/map_tiles/map_tile_render_queue.h":
         "modules/ui_map_runtime/include/ui_map_runtime/map_tiles/map_tile_render_queue.h",
-    "modules/ui_shared/include/ui/map_tiles/legacy_filesystem_map_tile_source.h":
-        "modules/ui_map_runtime/include/ui_map_runtime/map_tiles/filesystem_map_tile_source.h",
     "modules/ui_shared/src/ui/map_tiles/map_tile_render_queue.cpp":
         "modules/ui_map_runtime/src/map_tiles/map_tile_render_queue.cpp",
     "modules/ui_shared/src/ui/map_tiles/map_tile_resolver.cpp":
         "modules/ui_map_runtime/src/map_tiles/map_tile_resolver.cpp",
-    "modules/ui_shared/src/ui/map_tiles/legacy_filesystem_map_tile_source.cpp":
-        "modules/ui_map_runtime/src/map_tiles/filesystem_map_tile_source.cpp",
     "modules/ui_shared/tests/test_map_tile_render_queue.cpp":
         "modules/ui_map_runtime/tests/test_map_tile_render_queue.cpp",
     "modules/ui_shared/tests/test_map_tile_resolver.cpp":
         "modules/ui_map_runtime/tests/test_map_tile_resolver.cpp",
-    "modules/ui_shared/tests/test_legacy_filesystem_map_tile_source.cpp":
-        "modules/ui_map_runtime/tests/test_filesystem_map_tile_source.cpp",
     "modules/ui_shared/include/ui/map_overlay/map_overlay_projector.h":
         "modules/ui_map_runtime/include/ui_map_runtime/map_overlay/map_overlay_projector.h",
     "modules/ui_shared/src/ui/map_overlay/map_overlay_projector.cpp":
@@ -213,13 +207,10 @@ def check_required_files() -> int:
         "modules/ui_shared/include/ui/map_tiles/map_tile_cache.h",
         "modules/ui_shared/include/ui/map_tiles/map_tile_decoder_cache.h",
         "modules/ui_shared/include/ui/map_tiles/map_tile_render_queue.h",
-        "modules/ui_shared/include/ui/map_tiles/legacy_filesystem_map_tile_source.h",
         "modules/ui_shared/src/ui/map_tiles/map_tile_render_queue.cpp",
         "modules/ui_shared/src/ui/map_tiles/map_tile_resolver.cpp",
-        "modules/ui_shared/src/ui/map_tiles/legacy_filesystem_map_tile_source.cpp",
         "modules/ui_shared/tests/test_map_tile_render_queue.cpp",
         "modules/ui_shared/tests/test_map_tile_resolver.cpp",
-        "modules/ui_shared/tests/test_legacy_filesystem_map_tile_source.cpp",
         "modules/ui_presentation/include/ui_presentation/map/map_overlay_snapshot.h",
         "modules/ui_presentation/include/ui_presentation/map/map_overlay_source.h",
         "modules/ui_shared/include/ui/map_overlay/map_overlay_projector.h",
@@ -413,7 +404,7 @@ def check_docs() -> int:
             "KeyVerificationModel",
             "Map tile/cache ownership",
             "MapTileResolver",
-            "LegacyFilesystemMapTileSource",
+            "FilesystemMapTileSource",
         ],
         "docs/audits/KEY_VERIFICATION_OWNERSHIP_AUDIT.md": [
             "Key verification is a standalone runtime/presentation workflow",
@@ -592,7 +583,7 @@ def check_docs() -> int:
             "Phase 7.10 establishes ownership for map tile source, path resolution, and tile availability lookup",
             "MapTileRef",
             "MapTileResolver",
-            "LegacyFilesystemMapTileSource",
+            "FilesystemMapTileSource",
             "IMapTileSource::lookup(...)",
             "MapWorkspaceSnapshot",
             "/maps/base/osm/{z}/{x}/{y}.png",
@@ -609,13 +600,13 @@ def check_docs() -> int:
             "IMapTileSource",
             "IMapTileCache",
             "MapTileResolver",
-            "LegacyFilesystemMapTileSource",
+            "FilesystemMapTileSource",
             "Phase 7.10 does not",
         ],
         "docs/audits/PHASE7_10_MAP_TILE_SOURCE_CACHE_BURNDOWN_REPORT.md": [
             "Phase 7.10 moved Trail Mate map tile path mapping and filesystem-backed availability lookup",
             "MapTileResolver",
-            "LegacyFilesystemMapTileSource",
+            "FilesystemMapTileSource",
             "MapTileRef",
             "Burned Down",
             "Still Contained",
@@ -3449,8 +3440,8 @@ def check_map_tile_source_cache_boundary() -> int:
     cache_header = "modules/ui_shared/include/ui/map_tiles/map_tile_cache.h"
     resolver_header = "modules/ui_shared/include/ui/map_tiles/map_tile_resolver.h"
     resolver_source = "modules/ui_shared/src/ui/map_tiles/map_tile_resolver.cpp"
-    legacy_header = "modules/ui_shared/include/ui/map_tiles/legacy_filesystem_map_tile_source.h"
-    legacy_source = "modules/ui_shared/src/ui/map_tiles/legacy_filesystem_map_tile_source.cpp"
+    filesystem_header = "modules/ui_map_runtime/include/ui_map_runtime/map_tiles/filesystem_map_tile_source.h"
+    filesystem_source = "modules/ui_map_runtime/src/map_tiles/filesystem_map_tile_source.cpp"
     viewport_source = "modules/ui_shared/src/ui/widgets/map/map_viewport.cpp"
     snapshot_header = "modules/ui_presentation/include/ui_presentation/map/map_workspace_snapshot.h"
     esp_tiles = "platform/esp/arduino_common/src/ui/widgets/map/map_tiles.cpp"
@@ -3535,10 +3526,10 @@ def check_map_tile_source_cache_boundary() -> int:
             if token in text:
                 failures += fail(f"MapTileResolver owns forbidden storage/render token: {token}")
 
-    if exists(legacy_header):
-        text = read_text(legacy_header)
+    if exists(filesystem_header):
+        text = read_text(filesystem_header)
         for token in [
-            "LegacyFilesystemMapTileSource",
+            "FilesystemMapTileSource",
             "IMapTileSource",
             "MapTileResolver",
             "lookup",
@@ -3549,10 +3540,12 @@ def check_map_tile_source_cache_boundary() -> int:
             "anyContourDirectoryAvailable",
         ]:
             if token not in text:
-                failures += fail(f"LegacyFilesystemMapTileSource header missing token: {token}")
+                failures += fail(f"FilesystemMapTileSource header missing token: {token}")
+        if "LegacyFilesystemMapTileSource" in text:
+            failures += fail("FilesystemMapTileSource header still exposes LegacyFilesystemMapTileSource")
 
-    if exists(legacy_source):
-        text = strip_cpp_comments(read_text(legacy_source))
+    if exists(filesystem_source):
+        text = strip_cpp_comments(read_text(filesystem_source))
         for token in [
             "MapTileStatus::Available",
             "MapTileStatus::Missing",
@@ -3562,20 +3555,16 @@ def check_map_tile_source_cache_boundary() -> int:
             "MapTileLayer::ContourMajor25",
         ]:
             if token not in text:
-                failures += fail(f"LegacyFilesystemMapTileSource source missing token: {token}")
-        if (
-            "LegacyFilesystemMapTileSource::lookup" not in text
-            and "FilesystemMapTileSource::lookup" not in text
-        ):
-            failures += fail("LegacyFilesystemMapTileSource source missing lookup implementation token")
-        if (
-            "LegacyFilesystemMapTileSource::read" not in text
-            and "FilesystemMapTileSource::read" not in text
-        ):
-            failures += fail("LegacyFilesystemMapTileSource source missing read implementation token")
+                failures += fail(f"FilesystemMapTileSource source missing token: {token}")
+        if "FilesystemMapTileSource::lookup" not in text:
+            failures += fail("FilesystemMapTileSource source missing lookup implementation token")
+        if "FilesystemMapTileSource::read" not in text:
+            failures += fail("FilesystemMapTileSource source missing read implementation token")
+        if "LegacyFilesystemMapTileSource" in text:
+            failures += fail("FilesystemMapTileSource source still references LegacyFilesystemMapTileSource")
         for token in ["lvgl.h", "lv_obj_t", "std::filesystem", "FILE*", "fopen", "SD.open", "LittleFS", "SPIFFS"]:
             if token in text:
-                failures += fail(f"LegacyFilesystemMapTileSource owns forbidden platform token: {token}")
+                failures += fail(f"FilesystemMapTileSource owns forbidden platform token: {token}")
 
     if exists(snapshot_header):
         text = strip_cpp_comments(read_text(snapshot_header))
@@ -3649,7 +3638,7 @@ def check_map_tile_source_cache_boundary() -> int:
             "contained",
             "7.10",
             "MapTileResolver",
-            "LegacyFilesystemMapTileSource",
+            "FilesystemMapTileSource",
             "decoded image cache remains contained legacy",
         ]:
             if token not in text:
@@ -3660,7 +3649,7 @@ def check_map_tile_source_cache_boundary() -> int:
         for token in [
             "Map tile path/cache legacy runtime",
             "MapTileResolver",
-            "LegacyFilesystemMapTileSource",
+            "FilesystemMapTileSource",
             "ESP decoded cache",
             "Linux downloader cache",
             "uConsole path fields",

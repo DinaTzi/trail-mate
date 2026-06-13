@@ -19,10 +19,10 @@ contour data-source credentials.
 | `MapTileFormat` | Format enum | Identify PNG/JPEG payload format | Decode ownership |
 | `MapTilePayload` | Data DTO | Optional byte payload returned by a source | Filesystem path ownership |
 | `IMapTileSource` | Port | Lookup/read tile payload by `MapTileRef` | LVGL rendering |
-| `IMapTileFileSystem` | Port | Filesystem operations needed by legacy source | Tile path policy |
+| `IMapTileFileSystem` | Port | Filesystem operations needed by filesystem source | Tile path policy |
 | `IMapTileCache` | Repository / Cache port | Runtime cache/fill contract | UI rendering |
 | `MapTileResolver` | Strategy | Resolve `MapTileRef` to Trail Mate storage path | LVGL, filesystem reads |
-| `LegacyFilesystemMapTileSource` | Anti-Corruption Adapter | Wrap current filesystem tile lookup | Spread path mapping back to renderer |
+| `FilesystemMapTileSource` | Source adapter | Wrap filesystem tile lookup behind `IMapTileSource` | Spread path mapping back to renderer |
 
 ## Directory Mapping
 
@@ -92,9 +92,9 @@ Phase 7.10 introduces:
 - `IMapTileSource`
 - `IMapTileCache`
 - `MapTileResolver`
-- `LegacyFilesystemMapTileSource`
+- `FilesystemMapTileSource`
 
-Existing platform map tile runtimes may keep LVGL drawing and decoded image cache logic temporarily, but path mapping must flow through `LegacyFilesystemMapTileSource`.
+Existing platform map tile runtimes may keep LVGL drawing and decoded image cache logic temporarily, but path mapping must flow through `FilesystemMapTileSource`.
 
 ## Non-Goals
 

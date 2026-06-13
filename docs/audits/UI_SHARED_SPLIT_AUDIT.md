@@ -166,7 +166,7 @@ Phase 8 should classify each `Legacy*` object before renaming:
 
 Examples to classify:
 
-- `LegacyFilesystemMapTileSource`
+- `FilesystemMapTileSource`
 - `LegacyMapOverlaySource`
 - `LegacyTeamActionBridge`
 - `LegacyKeyVerificationSource`
@@ -229,8 +229,7 @@ Moved to `ui_lvgl_ux_packs`:
 - `TeamPositionPickerRenderer`
 - key verification modal renderer
 
-`LegacyFilesystemMapTileSource` is now a compatibility alias for
-`FilesystemMapTileSource`. New code should include
+The old map tile source alias is retired. New code should include
 `ui_map_runtime/map_tiles/filesystem_map_tile_source.h`.
 
 ## Phase 8 Structural Consolidation Policy

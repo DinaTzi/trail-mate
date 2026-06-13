@@ -196,7 +196,7 @@ Examples recorded by Phase 7 include:
 - `LegacyTeamActionBridge`
 - `LegacyKeyVerificationSource`
 - `LegacyKeyVerificationActionSink`
-- `LegacyFilesystemMapTileSource`
+- `FilesystemMapTileSource`
 - `LegacyMapOverlaySource`
 
 `LegacyChatDeliveryEventBridge` was one of the recorded Phase 7 examples but

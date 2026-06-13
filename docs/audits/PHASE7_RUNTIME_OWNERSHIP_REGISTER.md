@@ -19,7 +19,7 @@ has direct user-visible consequences and a bounded migration path.
 | radio send failure projection | explicitly deferred | 7.3 / final matrix | mapper supports structured failure; EventBus schema exit condition in `PHASE7_FINAL_LEGACY_SURFACE_MATRIX.md` |
 | Chat runtime event pump / store flush ownership | contained | 7.7 | owned by `ChatPageRuntimeEventPump` / `ChatPageRuntimeFacade`; controller is UI refresh sink |
 | Chat retry/cancel/clear failure actions | contained | 7.4 / 7.6 | owned by `ChatDeliveryActionRequest` / `ChatDeliveryActionService`; controller direct action ownership is forbidden |
-| Map tile/cache ownership | contained | 7.10 | tile path mapping and filesystem availability are owned by `MapTileResolver` / `LegacyFilesystemMapTileSource`; decoded image cache remains contained legacy |
+| Map tile/cache ownership | contained | 7.10 | tile path mapping and filesystem availability are owned by `MapTileResolver` / `FilesystemMapTileSource`; decoded image cache remains contained legacy |
 | Map tile render queue / decoded cache ownership | contained | 7.11 | visible tile plan is projected into `MapTileRenderQueue`; ESP decoded image cache is wrapped by `LvglDecodedTileCache`; LVGL widget records remain contained legacy |
 | Map overlay/route/tracker ownership | contained / explicitly deferred | 7.12 / Team burn-down | current GPS and Team overlays project through `MapOverlaySnapshot`; Team positions come through `TeamMapOverlaySource`; route/tracker overlay sources have exit conditions in final matrix |
 | GPS page timers/tasks | contained | 7.13 | refresh cadence is owned by `GpsPageRuntimePump`; LVGL timers are tick hooks only |

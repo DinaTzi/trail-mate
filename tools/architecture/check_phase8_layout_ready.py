@@ -419,8 +419,8 @@ def check_audit_language() -> int:
             "new GPS runtime helpers",
             "new chat runtime helpers",
             "new LVGL UX pack renderers",
-            "LegacyFilesystemMapTileSource",
-            "deprecated compatibility alias",
+            "old map tile source alias is retired",
+            "Old map tile aliases must not reappear",
             "FilesystemMapTileSource",
             "check_phase8_layout_ready.py",
         ],
@@ -2048,8 +2048,6 @@ def check_forwarding_headers() -> int:
             "ui_map_runtime/map_tiles/map_tile_decoder_cache.h",
         "modules/ui_shared/include/ui/map_tiles/map_tile_render_queue.h":
             "ui_map_runtime/map_tiles/map_tile_render_queue.h",
-        "modules/ui_shared/include/ui/map_tiles/legacy_filesystem_map_tile_source.h":
-            "ui_map_runtime/map_tiles/filesystem_map_tile_source.h",
         "modules/ui_shared/include/ui/map_overlay/map_overlay_projector.h":
             "ui_map_runtime/map_overlay/map_overlay_projector.h",
         "modules/ui_shared/include/ui/screens/chat/team_position_picker_renderer.h":
@@ -2074,7 +2072,6 @@ def check_forwarding_headers() -> int:
         "modules/ui_shared/src/ui/screens/gps/gps_page_runtime_pump.cpp",
         "modules/ui_shared/src/ui/map_tiles/map_tile_resolver.cpp",
         "modules/ui_shared/src/ui/map_tiles/map_tile_render_queue.cpp",
-        "modules/ui_shared/src/ui/map_tiles/legacy_filesystem_map_tile_source.cpp",
         "modules/ui_shared/src/ui/map_overlay/map_overlay_projector.cpp",
         "modules/ui_shared/src/ui/presentation_sources/legacy_chat_delivery_event_bridge.cpp",
         "modules/ui_shared/src/ui/presentation_sources/legacy_chat_delivery_action_bridge.cpp",
@@ -2113,8 +2110,6 @@ def check_authoritative_include_paths() -> int:
             "ui_map_runtime/map_tiles/map_tile_decoder_cache.h",
         "ui/map_tiles/map_tile_render_queue.h":
             "ui_map_runtime/map_tiles/map_tile_render_queue.h",
-        "ui/map_tiles/legacy_filesystem_map_tile_source.h":
-            "ui_map_runtime/map_tiles/filesystem_map_tile_source.h",
         "ui/map_overlay/map_overlay_projector.h":
             "ui_map_runtime/map_overlay/map_overlay_projector.h",
         "ui/presentation_sources/legacy_chat_delivery_action_bridge.h":
@@ -2144,7 +2139,6 @@ def check_authoritative_include_paths() -> int:
         "modules/ui_shared/include/ui/map_tiles/map_tile_cache.h",
         "modules/ui_shared/include/ui/map_tiles/map_tile_decoder_cache.h",
         "modules/ui_shared/include/ui/map_tiles/map_tile_render_queue.h",
-        "modules/ui_shared/include/ui/map_tiles/legacy_filesystem_map_tile_source.h",
         "modules/ui_shared/include/ui/map_overlay/map_overlay_projector.h",
         "modules/ui_shared/include/ui/screens/chat/team_position_picker_renderer.h",
         "modules/ui_shared/include/ui/screens/chat/key_verification_modal_renderer.h",
@@ -2359,22 +2353,12 @@ def check_runtime_module_boundaries() -> int:
         text = read_text(filesystem_header)
         if "class FilesystemMapTileSource" not in text:
             failures += fail("FilesystemMapTileSource class is missing")
-        if "using LegacyFilesystemMapTileSource" not in text:
-            failures += fail("LegacyFilesystemMapTileSource compatibility alias is missing")
-        if "[[deprecated" not in text:
-            failures += fail("LegacyFilesystemMapTileSource alias must be deprecated")
-        if "FilesystemMapTileSource;" not in text:
-            failures += fail("LegacyFilesystemMapTileSource must alias FilesystemMapTileSource")
 
     for path in iter_code_files(ROOT / "modules/ui_map_runtime"):
         text = path.read_text(encoding="utf-8", errors="ignore")
-        if "LegacyFilesystemMapTileSource" in text and path.as_posix().endswith(
-            "filesystem_map_tile_source.h"
-        ):
-            continue
         if "LegacyFilesystemMapTileSource" in text:
             failures += fail(
-                f"{path.relative_to(ROOT)} uses deprecated LegacyFilesystemMapTileSource"
+                f"{path.relative_to(ROOT)} uses retired LegacyFilesystemMapTileSource"
             )
 
     ui_presentation_root = ROOT / "modules/ui_presentation"
@@ -2411,10 +2395,6 @@ def check_retired_ui_legacy_adapters_module() -> int:
 
 
 def check_deprecated_alias_usage() -> int:
-    allowed = {
-        "modules/ui_map_runtime/include/ui_map_runtime/map_tiles/filesystem_map_tile_source.h",
-    }
-
     failures = 0
     for root_name in ["apps", "modules", "platform", "boards"]:
         for path in iter_code_files(ROOT / root_name):
@@ -2422,12 +2402,8 @@ def check_deprecated_alias_usage() -> int:
             text = path.read_text(encoding="utf-8", errors="ignore")
             if "LegacyFilesystemMapTileSource" not in text:
                 continue
-            if rel in allowed:
-                continue
-            if "PHASE8_LEGACY_ALIAS_COMPATIBILITY_TEST" in text:
-                continue
             failures += fail(
-                f"{rel} uses deprecated LegacyFilesystemMapTileSource alias; use FilesystemMapTileSource"
+                f"{rel} uses retired LegacyFilesystemMapTileSource alias; use FilesystemMapTileSource"
             )
 
     return failures
