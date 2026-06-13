@@ -623,7 +623,7 @@ bool MeshtasticRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t por
                                          ::chat::MessageId packet_id,
                                          bool want_response)
 {
-    if (!isReady() || !payload || len == 0 || !config_.tx_enabled)
+    if (!isReady() || (len > 0 && !payload) || !config_.tx_enabled)
     {
         return false;
     }
