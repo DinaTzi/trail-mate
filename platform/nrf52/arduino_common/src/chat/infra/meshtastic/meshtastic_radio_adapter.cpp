@@ -1032,15 +1032,10 @@ void MeshtasticRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
                         static_cast<unsigned>(key_len),
                         static_cast<unsigned>(want_ack_flag ? 1U : 0U));
 
-        size_t primary_key_len = 0;
-        const uint8_t* primary_key = selectKey(config_, ::chat::ChannelId::PRIMARY, &primary_key_len);
-
         if (header.to == node_id_ && want_ack_flag)
         {
             if (header.channel == 0)
             {
-                (void)primary_key;
-                (void)primary_key_len;
                 (void)executePkiResync(::chat::runtime::MeshtasticPkiResyncCause::PeerKeyMissing,
                                        header.from,
                                        header.id,
@@ -1048,15 +1043,10 @@ void MeshtasticRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
             }
             else if (header.channel != primary_hash && header.channel != secondary_hash)
             {
-                (void)buildAndQueueNodeInfo(header.from, true, ::chat::ChannelId::PRIMARY);
-                (void)sendRoutingError(header.from,
+                (void)executePkiResync(::chat::runtime::MeshtasticPkiResyncCause::LocalNoChannel,
+                                       header.from,
                                        header.id,
-                                       primary_hash,
-                                       ::chat::ChannelId::PRIMARY,
-                                       primary_key,
-                                       primary_key_len,
-                                       meshtastic_Routing_Error_NO_CHANNEL,
-                                       0);
+                                       ::chat::ChannelId::PRIMARY);
             }
         }
         return;

@@ -11,6 +11,7 @@ namespace chat::runtime
 enum class MeshtasticPkiResyncCause : uint8_t
 {
     LocalPkiNotReady = 0,
+    LocalNoChannel,
     PeerKeyMissing,
     PeerKeyStale,
     PeerReportsUnknownPubkey,
@@ -58,7 +59,7 @@ class MeshtasticPkiResyncState
             routing.channel = input.channel;
             routing.peer = input.peer;
             routing.request_id = input.request_id;
-            routing.error_code = meshtastic_Routing_Error_PKI_UNKNOWN_PUBKEY;
+            routing.error_code = routingErrorForCause(input.cause);
             effects.add(routing);
         }
 
@@ -69,8 +70,16 @@ class MeshtasticPkiResyncState
     static bool shouldReplyWithRoutingError(MeshtasticPkiResyncCause cause)
     {
         return cause == MeshtasticPkiResyncCause::LocalPkiNotReady ||
+               cause == MeshtasticPkiResyncCause::LocalNoChannel ||
                cause == MeshtasticPkiResyncCause::PeerKeyMissing ||
                cause == MeshtasticPkiResyncCause::PeerKeyStale;
+    }
+
+    static int32_t routingErrorForCause(MeshtasticPkiResyncCause cause)
+    {
+        return cause == MeshtasticPkiResyncCause::LocalNoChannel
+                   ? meshtastic_Routing_Error_NO_CHANNEL
+                   : meshtastic_Routing_Error_PKI_UNKNOWN_PUBKEY;
     }
 };
 

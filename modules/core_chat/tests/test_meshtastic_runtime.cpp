@@ -86,6 +86,23 @@ int main()
 
     {
         MeshtasticPkiResyncInput input{};
+        input.cause = MeshtasticPkiResyncCause::LocalNoChannel;
+        input.peer = 0x11223344UL;
+        input.request_id = 0x5005UL;
+
+        const auto effects = runtime.handlePkiResync(input);
+        assert(effects.items.size() == 2);
+        assert(effectAt<SendNodeInfoEffect>(effects, 0));
+
+        const auto* routing = effectAt<SendRoutingErrorEffect>(effects, 1);
+        assert(routing);
+        assert(routing->peer == input.peer);
+        assert(routing->request_id == input.request_id);
+        assert(routing->error_code == meshtastic_Routing_Error_NO_CHANNEL);
+    }
+
+    {
+        MeshtasticPkiResyncInput input{};
         input.cause = MeshtasticPkiResyncCause::PeerKeyMissing;
         input.peer = 0;
         input.request_id = 0x4004UL;

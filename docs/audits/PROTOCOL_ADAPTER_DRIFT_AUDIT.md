@@ -18,7 +18,7 @@ Primary root cause:
 | Meshtastic NodeInfo peer reannounce | Shared policy in working tree | Medium | ESP32 and nRF now call the same reannounce gate; platform adapters still own the actual queue/send IO. |
 | Meshtastic broadcast `want_response` | Shared policy in working tree | High | ESP32 and nRF now share the app-data destination/ACK/response decision; broadcast air ACK is suppressed while request response intent is preserved. |
 | Meshtastic request/reply core | Partially shared | Medium | NodeInfo/Position reply gating, TraceRoute reply gating, TraceRoute payload mutation, and TraceRoute/Position action lifecycle tracking are shared; actual reply send still lives in adapters/UI. |
-| Meshtastic duplicated policy ownership | Partially reduced | High | App-data send intent, NodeInfo reannounce gate, NodeInfo/Position reply gates, TraceRoute reply gate, TraceRoute payload mutation, and TraceRoute/Position result lifecycle are shared; PKI resync policy still sits outside the shared core. |
+| Meshtastic duplicated policy ownership | Mostly shared | Medium | App-data send intent, NodeInfo reannounce gate, NodeInfo/Position reply gates, TraceRoute reply gate, TraceRoute payload mutation, TraceRoute/Position result lifecycle, and PKI/NO_CHANNEL resync decisions now live in shared runtime/policy. Packet construction and radio IO still live in adapters. |
 | MeshCore NodeInfo query/reply | Confirmed drift | High | ESP32 implements MeshCore NodeInfo control frames; nRF `requestNodeInfo()` ignores dest/want_response and sends advert only. |
 | MeshCore trace | Confirmed drift | Medium | ESP32 parses/forwards MeshCore `PAYLOAD_TYPE_TRACE`; nRF has no equivalent implementation. UI must not expose MC trace. |
 | MeshCore app-data ACK/capability | Confirmed drift | Medium | ESP32 claims and tracks app-data ACK; nRF can set a direct app flag but does not declare or track ACK capability. |
@@ -193,16 +193,17 @@ Evidence:
 
 Current state:
 
-- The working tree now includes the first shared State-pattern implementation,
-  `MeshtasticPkiResyncState`, which converts PKI resync causes into protocol effects:
-  send NodeInfo, send routing error, and forget stale peer key.
-- Platform adapters have not yet been switched to execute those effects.
+- `MeshtasticPkiResyncState` converts PKI and local `NO_CHANNEL` resync causes into protocol
+  effects: send NodeInfo, send routing error, and forget stale peer key.
+- ESP32 and nRF now call the shared runtime for local PKI-not-ready, missing peer key, stale peer key,
+  peer-reported PKI/NO_CHANNEL routing errors, and local channel-mismatch routing replies.
+- Platform adapters execute those effects only: choose the channel key/hash, build the NodeInfo or
+  Routing packet, forget the stored key, and queue/transmit.
 
-Next action:
+Residual risk:
 
-- Replace ESP32/nRF direct `sendNodeInfoTo/buildAndQueueNodeInfo + sendRoutingError +
-  forgetNodePublicKey` call sites with shared runtime effects.
-- Keep channel/key selection and actual TX in platform executors.
+- NodeInfo payload construction still lives in platform adapters, so PKI resync is shared at decision
+  level but not yet at packet-builder level.
 
 ## MeshCore Drift Items
 
