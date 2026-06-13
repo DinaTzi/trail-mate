@@ -96,6 +96,7 @@ struct ImePackRecord
     std::string id;
     std::string display_name;
     std::string backend;
+    std::string layout;
     bool builtin = false;
 };
 
@@ -557,10 +558,13 @@ void append_unique_string(std::vector<std::string>& values, const std::string& v
 
 bool ime_backend_supports_runtime_input(const ImePackRecord& pack)
 {
-    // The current widget has one real conversion engine and dictionary:
-    // Simplified Chinese Pinyin. Other manifests may still be cataloged as
-    // pack metadata, but exposing them would route users into the wrong script.
-    return pack.id == "zh-hans-pinyin" && pack.backend == "builtin-pinyin";
+    if (pack.id == "zh-hans-pinyin" && pack.backend == "builtin-pinyin")
+    {
+        return true;
+    }
+    return pack.id == "ru-cyrillic-keyboard" &&
+           pack.backend == "builtin-keyboard-layout" &&
+           pack.layout == "ru-cyrillic";
 }
 
 bool ime_backend_can_be_enabled(const ImePackRecord& pack)
@@ -1446,6 +1450,7 @@ void rebuild_ime_views()
         view.id = pack.id.c_str();
         view.display_name = pack.display_name.c_str();
         view.backend = pack.backend.c_str();
+        view.layout = pack.layout.empty() ? nullptr : pack.layout.c_str();
         view.builtin = pack.builtin;
         s_ime_views.push_back(view);
     }
@@ -1619,11 +1624,16 @@ bool catalog_external_ime_pack(const std::string& pack_dir)
     {
         pack.backend = "none";
     }
+    if (const char* layout = manifest_value(manifest, "layout"))
+    {
+        pack.layout = layout;
+    }
 
-    std::printf("%s ime pack catalog id=%s backend=%s\n",
+    std::printf("%s ime pack catalog id=%s backend=%s layout=%s\n",
                 kLogTag,
                 pack.id.c_str(),
-                pack.backend.c_str());
+                pack.backend.c_str(),
+                pack.layout.empty() ? "<none>" : pack.layout.c_str());
     s_ime_packs.push_back(std::move(pack));
     return true;
 }

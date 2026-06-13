@@ -31,9 +31,58 @@ static constexpr int kCompactCandidatesPerPage = 7;
 static constexpr lv_coord_t kCompactImeRowHeight = 22;
 static constexpr lv_coord_t kCompactImeControlHeight = 18;
 
-bool script_input_available()
+enum class ScriptInputKind
 {
-    return ::ui::i18n::any_enabled_script_input();
+    None,
+    Pinyin,
+    RuCyrillicKeyboard
+};
+
+const ::ui::i18n::ImeInfo* active_ime_info()
+{
+    const char* active_id = ::ui::i18n::active_ime_pack_id();
+    if (!active_id || active_id[0] == '\0')
+    {
+        return nullptr;
+    }
+
+    const std::size_t count = ::ui::i18n::ime_count();
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        const ::ui::i18n::ImeInfo* ime = ::ui::i18n::ime_at(index);
+        if (ime != nullptr && ime->id != nullptr && std::strcmp(ime->id, active_id) == 0)
+        {
+            return ime;
+        }
+    }
+    return nullptr;
+}
+
+ScriptInputKind active_script_input_kind()
+{
+    const ::ui::i18n::ImeInfo* ime = active_ime_info();
+    if (!ime || !ime->id || !ime->backend)
+    {
+        return ScriptInputKind::None;
+    }
+    if (std::strcmp(ime->id, "zh-hans-pinyin") == 0 &&
+        std::strcmp(ime->backend, "builtin-pinyin") == 0)
+    {
+        return ScriptInputKind::Pinyin;
+    }
+    if (std::strcmp(ime->id, "ru-cyrillic-keyboard") == 0 &&
+        std::strcmp(ime->backend, "builtin-keyboard-layout") == 0 &&
+        ime->layout != nullptr &&
+        std::strcmp(ime->layout, "ru-cyrillic") == 0)
+    {
+        return ScriptInputKind::RuCyrillicKeyboard;
+    }
+    return ScriptInputKind::None;
+}
+
+bool script_mode(ImeWidget::Mode mode)
+{
+    return mode == ImeWidget::Mode::SCRIPT;
 }
 
 bool hardware_keyboard_available()
@@ -57,6 +106,15 @@ static const char* kTouchNumMap[] = {
     "-", "/", ":", ";", "(", ")", "$", "&", "@", "Enter", "\n",
     ".", ",", "?", "!", "'", "\"", "%", "+", "\n",
     "Space", ""};
+
+static const char* kTouchRuCyrillicMap[] = {
+    "й", "ц", "у", "к", "е", "н", "г", "ш", "щ", "з", "х", "ъ", "Bksp", "\n",
+    "ф", "ы", "в", "а", "п", "р", "о", "л", "д", "ж", "э", "Enter", "\n",
+    "я", "ч", "с", "м", "и", "т", "ь", "б", "ю", ",", ".", "?", "\n",
+    "Space", ""};
+
+static constexpr const char* kRuCyrillicFontProbe =
+    "йцукенгшщзхъфывапролджэячсмитьбю";
 #endif
 std::string make_candidates_text(const std::vector<std::string>& candidates,
                                  int active_idx,
@@ -171,6 +229,14 @@ bool translate_touch_token(const char* token, uint32_t& key)
         return true;
     }
     return false;
+}
+
+bool touch_token_is_action(const char* token)
+{
+    return token != nullptr &&
+           (std::strcmp(token, "Bksp") == 0 ||
+            std::strcmp(token, "Enter") == 0 ||
+            std::strcmp(token, "Space") == 0);
 }
 
 bool resolve_touch_button_id(lv_event_t* e, lv_obj_t* matrix, uint32_t& button_id)
@@ -465,18 +531,20 @@ void ImeWidget::detach()
 
 void ImeWidget::setMode(Mode mode)
 {
-    if (mode == Mode::CN && !script_input_available())
+    const ScriptInputKind requested_kind = active_script_input_kind();
+    if (script_mode(mode) && requested_kind == ScriptInputKind::None)
     {
         mode = Mode::EN;
     }
 
     mode_ = mode;
-    ime_.setEnabled(mode_ == Mode::CN);
+    const bool use_pinyin = pinyin_mode();
+    ime_.setEnabled(use_pinyin);
     if (textarea_)
     {
         const char* cur = lv_textarea_get_text(textarea_);
         committed_text_ = cur ? std::string(cur) : std::string();
-        if (mode_ == Mode::CN)
+        if (use_pinyin)
         {
             ime_.reset();
             lv_textarea_set_accepted_chars(textarea_, "");
@@ -496,9 +564,20 @@ ImeWidget::Mode ImeWidget::mode() const
     return mode_;
 }
 
+bool ImeWidget::pinyin_mode() const
+{
+    return script_mode(mode_) && active_script_input_kind() == ScriptInputKind::Pinyin;
+}
+
+bool ImeWidget::direct_keyboard_mode() const
+{
+    return script_mode(mode_) &&
+           active_script_input_kind() == ScriptInputKind::RuCyrillicKeyboard;
+}
+
 void ImeWidget::cycleMode()
 {
-    if (!script_input_available())
+    if (active_script_input_kind() == ScriptInputKind::None)
     {
         setMode(mode_ == Mode::EN ? Mode::NUM : Mode::EN);
         return;
@@ -506,9 +585,9 @@ void ImeWidget::cycleMode()
 
     if (mode_ == Mode::EN)
     {
-        setMode(Mode::CN);
+        setMode(Mode::SCRIPT);
     }
-    else if (mode_ == Mode::CN)
+    else if (script_mode(mode_))
     {
         setMode(Mode::NUM);
     }
@@ -542,7 +621,7 @@ bool ImeWidget::handle_key_code(uint32_t key)
     bool consumed = false;
     bool update_text = false;
 
-    if (mode_ == Mode::CN)
+    if (pinyin_mode())
     {
         if (key == LV_KEY_BACKSPACE)
         {
@@ -679,6 +758,19 @@ bool ImeWidget::handle_key_code(uint32_t key)
     return consumed;
 }
 
+bool ImeWidget::handle_text_token(const char* token)
+{
+    if (!textarea_ || !token || token[0] == '\0' || !direct_keyboard_mode())
+    {
+        return false;
+    }
+
+    committed_text_ += token;
+    sync_textarea();
+    refresh_labels();
+    return true;
+}
+
 bool ImeWidget::handle_key(lv_event_t* e)
 {
     if (!textarea_ || !e)
@@ -718,7 +810,7 @@ void ImeWidget::setText(const char* text)
     if (!textarea_) return;
     committed_text_ = text ? std::string(text) : std::string();
     sync_textarea();
-    if (mode_ == Mode::CN)
+    if (pinyin_mode())
     {
         ime_.reset();
     }
@@ -732,7 +824,18 @@ void ImeWidget::refresh_touch_keyboard()
     {
         return;
     }
-    const char* const* map = (mode_ == Mode::NUM) ? kTouchNumMap : kTouchEnMap;
+    const char* const* map = kTouchEnMap;
+    const lv_font_t* font = ::ui::fonts::localized_font(::ui::fonts::ui_chrome_font());
+    if (mode_ == Mode::NUM)
+    {
+        map = kTouchNumMap;
+    }
+    else if (direct_keyboard_mode())
+    {
+        map = kTouchRuCyrillicMap;
+        font = ::ui::fonts::content_font(kRuCyrillicFontProbe, ::ui::fonts::ui_chrome_font());
+    }
+    lv_obj_set_style_text_font(keyboard_matrix_, font, LV_PART_ITEMS);
     lv_btnmatrix_set_map(keyboard_matrix_, map);
 }
 
@@ -743,7 +846,7 @@ void ImeWidget::refresh_touch_candidates()
         return;
     }
 
-    const bool show_candidates = mode_ == Mode::CN;
+    const bool show_candidates = pinyin_mode();
     if (!show_candidates)
     {
         lv_obj_add_flag(candidate_row_, LV_OBJ_FLAG_HIDDEN);
@@ -829,7 +932,7 @@ void ImeWidget::refresh_labels()
         return;
     }
 
-    if (mode_ == Mode::CN && !script_input_available())
+    if (script_mode(mode_) && active_script_input_kind() == ScriptInputKind::None)
     {
         mode_ = Mode::EN;
         ime_.setEnabled(false);
@@ -837,7 +940,7 @@ void ImeWidget::refresh_labels()
 
     if (textarea_)
     {
-        if (mode_ == Mode::CN && ime_.hasBuffer())
+        if (pinyin_mode() && ime_.hasBuffer())
         {
             if (lv_group_t* g = lv_group_get_default())
             {
@@ -889,6 +992,23 @@ void ImeWidget::refresh_labels()
         return;
     }
 
+    const ScriptInputKind script_kind = active_script_input_kind();
+    if (script_kind == ScriptInputKind::RuCyrillicKeyboard)
+    {
+        lv_label_set_text(toggle_label_, "RU");
+#if UI_SHARED_TOUCH_IME_ENABLED
+        if (touch_keyboard_enabled_)
+        {
+            set_candidates_label_text(candidates_label_, ::ui::i18n::tr("Cyrillic keyboard"));
+            refresh_touch_keyboard();
+            refresh_touch_candidates();
+            return;
+        }
+#endif
+        set_candidates_label_text(candidates_label_, "");
+        return;
+    }
+
     lv_label_set_text(toggle_label_, "CN");
 #if UI_SHARED_TOUCH_IME_ENABLED
     if (touch_keyboard_enabled_)
@@ -912,7 +1032,7 @@ void ImeWidget::refresh_candidates()
     {
         return;
     }
-    if (!ime_.hasBuffer())
+    if (!pinyin_mode() || !ime_.hasBuffer())
     {
         set_candidates_label_text(candidates_label_, "");
         return;
@@ -960,6 +1080,12 @@ void ImeWidget::on_touch_key_event(lv_event_t* e)
     }
 
     const char* token = lv_btnmatrix_get_btn_text(self->keyboard_matrix_, button_id);
+    if (self->direct_keyboard_mode() && !touch_token_is_action(token))
+    {
+        (void)self->handle_text_token(token);
+        return;
+    }
+
     uint32_t key = 0;
     if (!translate_touch_token(token, key))
     {

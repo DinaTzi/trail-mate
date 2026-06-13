@@ -33,7 +33,8 @@ class ImeWidget
     enum class Mode
     {
         EN,
-        CN,
+        SCRIPT,
+        CN = SCRIPT,
         NUM
     };
 
@@ -57,7 +58,10 @@ class ImeWidget
     void refresh_touch_candidates();
     void sync_textarea();
     bool handle_key_code(uint32_t key);
+    bool handle_text_token(const char* token);
     bool commit_candidate(int candidate_index);
+    bool pinyin_mode() const;
+    bool direct_keyboard_mode() const;
 
     static void on_toggle_clicked(lv_event_t* e);
     static void on_touch_key_event(lv_event_t* e);

@@ -42,6 +42,7 @@ Contacts (Meshtastic - %.3fMHz)	جهات الاتصال (Meshtastic - %.3fMHz)
 Contacts (RNode)	جهات الاتصال (RNode)
 Contacts (RNode - %.3fMHz)	جهات الاتصال (RNode - %.3fMHz)
 Conversation protocol mismatch	عدم تطابق بروتوكول المحادثة
+Cyrillic keyboard	لوحة مفاتيح سيريلية
 Data Exchange	تبادل البيانات
 Debug Logs	سجلات التصحيح
 Decoding: %d%%	فك التشفير: %d%%

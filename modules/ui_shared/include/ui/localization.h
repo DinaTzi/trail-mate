@@ -27,6 +27,7 @@ struct ImeInfo
     const char* id = nullptr;
     const char* display_name = nullptr;
     const char* backend = nullptr;
+    const char* layout = nullptr;
     bool builtin = true;
 };
 

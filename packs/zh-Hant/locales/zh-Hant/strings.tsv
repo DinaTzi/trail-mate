@@ -42,6 +42,7 @@ Contacts (Meshtastic - %.3fMHz)	聯絡人(Meshtastic - %.3fMHz)
 Contacts (RNode)	聯絡人(RNode)
 Contacts (RNode - %.3fMHz)	聯絡人(RNode - %.3fMHz)
 Conversation protocol mismatch	會話協議不匹配
+Cyrillic keyboard	西里爾鍵盤
 Data Exchange	資料交換
 Debug Logs	除錯日誌
 Decoding: %d%%	解碼中:%d%%

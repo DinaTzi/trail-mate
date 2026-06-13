@@ -232,12 +232,16 @@ python scripts/build_pack_repository.py --pack-root packs --site-root site
 
 1. `zh-Hans`
    - 可以作为 `release`。
-   - 当前唯一可发布 IME 是 `zh-hans-pinyin`。
+   - 可发布 IME 是 `zh-hans-pinyin`。
 2. `zh-Hant`
    - 按台湾繁中 `review` 包处理。
    - 不挂拼音 IME。
    - 进入 `release` 前必须经过台湾用语与输入法习惯审查。
-3. `ar`、`ru`、`de`、`es`、`fr`、`it`、`nl`、`pl`、`pt-PT`、`ja`、`ko`
+3. `ru`
+   - 可以作为 `review` 包处理。
+   - 可发布 IME 是 `ru-cyrillic-keyboard`，后端为 `builtin-keyboard-layout`，布局为 `ru-cyrillic`。
+   - 该 IME 是直接虚拟键盘布局，不承诺物理键盘硬件重映射。
+4. `ar`、`de`、`es`、`fr`、`it`、`nl`、`pl`、`pt-PT`、`ja`、`ko`
    - 可打包为 `review`。
    - 不进入普通用户语言选择器。
    - 不发布假 IME。
