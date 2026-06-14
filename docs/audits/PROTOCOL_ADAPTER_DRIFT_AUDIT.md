@@ -10,20 +10,20 @@ It focuses on protocol semantics, not UI rendering or board hardware differences
 Primary root cause:
 
 - ESP32 and nRF platform adapters historically owned too much protocol business logic.
-- The current protocol decisions are now mostly delegated to shared runtime/policy helpers.
+- The current protocol decisions covered by the runtime migration are delegated to shared runtime/policy helpers.
 - The remaining gaps are platform execution, storage, projection, and intentionally advertised capability differences.
 
 | Area | Status | Risk | Notes |
 | --- | --- | --- | --- |
 | Meshtastic NodeInfo peer reannounce | Shared policy in working tree | Medium | ESP32 and nRF now call the same reannounce gate; platform adapters still own the actual queue/send IO. |
 | Meshtastic broadcast `want_response` | Shared policy in working tree | Medium | ESP32 and nRF now share the app-data destination/ACK/response decision; broadcast air ACK is suppressed while request response intent is preserved. |
-| Meshtastic request/reply core | Mostly shared | Medium | NodeInfo/Position reply gating, NodeInfo/Position payload construction, direct Position/Waypoint share packet decisions, TraceRoute/Position outgoing request packet decisions, TraceRoute reply gating, TraceRoute payload mutation, and TraceRoute/Position action lifecycle tracking are shared; radio send still lives in adapters/UI executors. |
-| Meshtastic duplicated policy ownership | Mostly shared | Medium | App-data send intent, NodeInfo reannounce gate, NodeInfo/Position reply gates, NodeInfo self-announcement packet construction, Position/Waypoint payload construction, direct Position/Waypoint share packet decisions, TraceRoute/Position outgoing request packet decisions, TraceRoute reply gate, TraceRoute payload mutation, TraceRoute/Position result lifecycle, and PKI/NO_CHANNEL resync decisions now live in shared runtime/policy. Radio IO and local data sources still live in adapters. |
+| Meshtastic request/reply core | Shared runtime/policy, platform IO remains | Medium | NodeInfo/Position reply gating, NodeInfo/Position payload construction, direct Position/Waypoint share packet decisions, TraceRoute/Position outgoing request packet decisions, TraceRoute reply gating, TraceRoute payload mutation, and TraceRoute/Position action lifecycle tracking are shared; radio send still lives in adapters/UI executors. |
+| Meshtastic duplicated policy ownership | Shared runtime/policy, platform IO remains | Medium | App-data send intent, NodeInfo reannounce gate, NodeInfo/Position reply gates, NodeInfo self-announcement packet construction, Position/Waypoint payload construction, direct Position/Waypoint share packet decisions, TraceRoute/Position outgoing request packet decisions, TraceRoute reply gate, TraceRoute payload mutation, TraceRoute/Position result lifecycle, and PKI/NO_CHANNEL resync decisions now live in shared runtime/policy. Radio IO and local data sources still live in adapters. |
 | MeshCore NodeInfo query/reply | Shared runtime/effects | Medium | ESP32 and nRF now route `requestNodeInfo()` through `MeshCoreRuntime` and shared control payload codecs; platform adapters still own packet IO/projection. |
 | MeshCore trace | Shared lifecycle, platform-limited routing | Medium | ESP32 and nRF use native `PAYLOAD_TYPE_TRACE` and shared completion/timeout policy; nRF still uses a minimal one-hop hash route. |
 | MeshCore app-data ACK/capability | Shared lifecycle | Medium | ESP32 and nRF now declare ACK tracking only when runtime pending/completion handling is wired. ACK frame scheduling remains adapter IO. |
-| MeshCore direct routing/identity | Runtime-owned policy, capability-split execution | Medium | ESP32 advertises direct route table, identity keys, peer secret derivation, and rich trace projection; nRF advertises identity keys and peer secret derivation only. Missing-key discover now goes through `DiscoverIntent -> MeshCoreRuntime -> SendDiscoverRequestEffect`. |
-| MeshCore duplicated/incomplete ownership | Mostly shared, platform IO remains | Medium | MeshCore NodeInfo, discover, trace lifecycle, ACK lifecycle, direct route policy, and direct secret expansion are shared; route/pubkey/private-key storage, frame IO, and platform projections remain in adapters. |
+| MeshCore direct routing/identity | Runtime-owned policy, capability-split execution | Medium | ESP32 advertises direct route table, identity keys, peer secret derivation, and rich trace projection; nRF advertises identity keys and peer secret derivation only. Missing-key and auto-discover decisions now go through `MeshCoreRuntime` effects/state. |
+| MeshCore duplicated/incomplete ownership | Shared runtime/policy, platform IO remains | Medium | MeshCore NodeInfo, discover, trace lifecycle, ACK lifecycle, direct route policy, and direct secret expansion are shared; route/pubkey/private-key storage, frame IO, and platform projections remain in adapters. |
 | Capability granularity | Fine-grained flags added | Medium | Coarse legacy fields remain for compatibility; new flags describe NodeInfo, Position, TraceRoute, app response, and ACK tracking separately. |
 
 ## Architecture Finding
@@ -115,9 +115,8 @@ Current state:
 Residual risk:
 
 - The test covers policy intent, not full wire encoding on both adapters.
-- Request/reply result handling is still split across platform adapters.
 
-Next action:
+Follow-up execution coverage:
 
 - Confirm every current caller that sends broadcast `want_response`.
 - Add a small encode-level parity test once adapter-side packet builders are easier to invoke without
@@ -359,7 +358,7 @@ Residual risk:
   separate capability fields. The remaining debt is platform execution/projection coverage, not protocol policy
   ownership.
 
-## Immediate Recommended Fix Order
+## Follow-up Recommended Execution Coverage
 
 1. Add parity tests that assert ESP32 and nRF adapters advertise the fine-grained capabilities they actually
    execute once those platform adapters are easy to instantiate in host tests.
