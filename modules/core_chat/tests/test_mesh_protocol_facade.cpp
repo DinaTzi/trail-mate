@@ -243,15 +243,15 @@ int main()
 
         assert(!result.ok());
         assert(result.effect_count == 2);
-        assert(result.executed_effect_count == 2);
+        assert(result.executed_effect_count == 1);
         assert(result.failed_effect_count == 1);
         assert(result.hasActionResult());
         assert(runtime.tx_result_count == 1);
         assert(runtime.last_tx.request_id == runtime.next_request_id);
         assert(runtime.last_tx.peer == 0x33334444UL);
         assert(!runtime.last_tx.ok);
+        assert(executor.effects.size() == 1);
         assert(executor.effectAt<chat::runtime::SendTextEffect>(0));
-        assert(executor.effectAt<chat::runtime::EmitActionResultEffect>(1));
     }
 
     {
@@ -290,7 +290,7 @@ int main()
 
         assert(!result.ok());
         assert(result.effect_count == 2);
-        assert(result.executed_effect_count == 2);
+        assert(result.executed_effect_count == 1);
         assert(result.failed_effect_count == 1);
         assert(result.hasActionResult());
         assert(result.action_result.state == chat::runtime::ProtocolActionState::Failed);
@@ -301,9 +301,8 @@ int main()
         assert(runtime.last_tx.request_id == runtime.next_request_id);
         assert(runtime.last_tx.peer == 0x2222UL);
         assert(!runtime.last_tx.ok);
-        assert(executor.effects.size() == 2);
+        assert(executor.effects.size() == 1);
         assert(executor.effectAt<chat::runtime::SendPacketEffect>(0));
-        assert(executor.effectAt<chat::runtime::EmitActionResultEffect>(1));
     }
 
     {
@@ -356,12 +355,9 @@ int main()
         assert(result.ok());
         assert(runtime.incoming_count == 1);
         assert(runtime.last_peer == packet.from);
-        assert(executor.effects.size() == 1);
-        const auto* data =
-            executor.effectAt<chat::runtime::PublishIncomingDataEffect>(0);
-        assert(data);
-        assert(data->data.from == packet.from);
-        assert(data->data.payload == packet.payload);
+        assert(result.effect_count == 1);
+        assert(result.executed_effect_count == 0);
+        assert(executor.effects.empty());
     }
 
     {
@@ -382,7 +378,8 @@ int main()
         assert(result.action_result.state == chat::runtime::ProtocolActionState::Delivered);
         assert(result.action_result.peer == tx.peer);
         assert(runtime.tx_result_count == 1);
-        assert(executor.effectAt<chat::runtime::EmitActionResultEffect>(0));
+        assert(result.executed_effect_count == 0);
+        assert(executor.effects.empty());
     }
 
     {
@@ -398,7 +395,8 @@ int main()
                chat::runtime::ProtocolActionKind::ExchangePosition);
         assert(result.action_result.state == chat::runtime::ProtocolActionState::TimedOut);
         assert(runtime.tick_count == 1);
-        assert(executor.effectAt<chat::runtime::EmitActionResultEffect>(0));
+        assert(result.executed_effect_count == 0);
+        assert(executor.effects.empty());
     }
 
     return 0;

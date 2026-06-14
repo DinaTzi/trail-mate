@@ -164,6 +164,14 @@ class MeshProtocolFacade
         }
     }
 
+    static bool isAppFacingProjection(const ProtocolEffect& effect)
+    {
+        return std::get_if<EmitActionResultEffect>(&effect) ||
+               std::get_if<PublishIncomingTextEffect>(&effect) ||
+               std::get_if<PublishIncomingDataEffect>(&effect) ||
+               std::get_if<PublishNodeInfoEffect>(&effect);
+    }
+
     MeshProtocolFacadeResult executeEffects(const ProtocolEffects& effects,
                                             const RuntimeContext& context,
                                             bool allow_tx_feedback)
@@ -173,6 +181,10 @@ class MeshProtocolFacade
         for (const ProtocolEffect& effect : effects.items)
         {
             captureActionResult(result, effect);
+            if (isAppFacingProjection(effect))
+            {
+                continue;
+            }
             const bool ok = executor_.execute(effect);
             ++result.executed_effect_count;
             if (ok)

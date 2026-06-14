@@ -14,6 +14,7 @@
 #include "chat/domain/contact_types.h"
 #include "chat/ports/i_mesh_adapter.h"
 #include "chat/runtime/mesh_adapter_protocol_effect_executor.h"
+#include "chat/runtime/mesh_protocol_facade.h"
 #include "chat/runtime/meshtastic_runtime.h"
 #include "chat/usecase/chat_service.h"
 #include "chat/usecase/contact_service.h"
@@ -24,6 +25,24 @@ namespace trailmate::uconsole
 {
 namespace
 {
+
+class FixedProtocolRuntimeContextProvider final
+    : public ::chat::runtime::IProtocolRuntimeContextProvider
+{
+  public:
+    explicit FixedProtocolRuntimeContextProvider(::chat::runtime::RuntimeContext context)
+        : context_(context)
+    {
+    }
+
+    ::chat::runtime::RuntimeContext runtimeContext() const override
+    {
+        return context_;
+    }
+
+  private:
+    ::chat::runtime::RuntimeContext context_{};
+};
 
 [[nodiscard]] const char* protocolLabel(::chat::MeshProtocol protocol) noexcept
 {
@@ -1339,18 +1358,23 @@ bool UConsoleChatWorkspaceModel::sendCurrentPosition()
     ::chat::runtime::RuntimeContext context{};
     context.protocol = ::chat::MeshProtocol::Meshtastic;
     context.self_node = adapter->getNodeId();
+    context.now_ms = sys::epoch_seconds_now() * 1000UL;
+    FixedProtocolRuntimeContextProvider context_provider(context);
+    ::chat::runtime::MeshAdapterProtocolEffectExecutor executor(*adapter);
+    ::chat::runtime::MeshProtocolFacade facade(runtime, executor, context_provider);
 
-    const auto effects = runtime.prepareOutgoing(intent, context);
-    const auto result =
-        ::chat::runtime::MeshAdapterProtocolEffectExecutor::executeFirstSendPacket(
-            *adapter,
-            effects);
-    if (result.state == ::chat::runtime::ProtocolEffectExecutionState::NoSupportedEffect)
+    const auto result = facade.sharePosition(intent);
+    if (result.hasActionResult())
     {
         action_status_ = "Position encoding failed.";
         return false;
     }
-    if (!result.sent())
+    if (result.executed_effect_count == 0)
+    {
+        action_status_ = "Position encoding failed.";
+        return false;
+    }
+    if (!result.ok())
     {
         action_status_ = "Position failed to queue.";
         return false;
@@ -1396,18 +1420,23 @@ bool UConsoleChatWorkspaceModel::sendCurrentPoi()
     ::chat::runtime::RuntimeContext context{};
     context.protocol = ::chat::MeshProtocol::Meshtastic;
     context.self_node = adapter->getNodeId();
+    context.now_ms = sys::epoch_seconds_now() * 1000UL;
+    FixedProtocolRuntimeContextProvider context_provider(context);
+    ::chat::runtime::MeshAdapterProtocolEffectExecutor executor(*adapter);
+    ::chat::runtime::MeshProtocolFacade facade(runtime, executor, context_provider);
 
-    const auto effects = runtime.prepareOutgoing(intent, context);
-    const auto result =
-        ::chat::runtime::MeshAdapterProtocolEffectExecutor::executeFirstSendPacket(
-            *adapter,
-            effects);
-    if (result.state == ::chat::runtime::ProtocolEffectExecutionState::NoSupportedEffect)
+    const auto result = facade.shareWaypoint(intent);
+    if (result.hasActionResult())
     {
         action_status_ = "POI encoding failed.";
         return false;
     }
-    if (!result.sent())
+    if (result.executed_effect_count == 0)
+    {
+        action_status_ = "POI encoding failed.";
+        return false;
+    }
+    if (!result.ok())
     {
         action_status_ = "POI failed to queue.";
         return false;

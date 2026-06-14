@@ -7,6 +7,7 @@
 #include "chat/infra/meshtastic/mt_protocol_helpers.h"
 #include "chat/infra/meshtastic/mt_region.h"
 #include "chat/runtime/mesh_adapter_protocol_effect_executor.h"
+#include "chat/runtime/mesh_protocol_facade.h"
 #include "chat/runtime/meshtastic_runtime.h"
 #include "chat/runtime/self_identity_policy.h"
 #include "chat/usecase/chat_service.h"
@@ -37,6 +38,33 @@ namespace ui::mono
 {
 namespace
 {
+class FixedProtocolRuntimeContextProvider final
+    : public chat::runtime::IProtocolRuntimeContextProvider
+{
+  public:
+    explicit FixedProtocolRuntimeContextProvider(chat::runtime::RuntimeContext context)
+        : context_(context)
+    {
+    }
+
+    chat::runtime::RuntimeContext runtimeContext() const override
+    {
+        return context_;
+    }
+
+  private:
+    chat::runtime::RuntimeContext context_{};
+};
+
+class NoopProtocolEffectExecutor final : public chat::runtime::IProtocolEffectExecutor
+{
+  public:
+    bool execute(const chat::runtime::ProtocolEffect&) override
+    {
+        return false;
+    }
+};
+
 const char* inputActionName(InputAction action)
 {
     switch (action)
@@ -2204,14 +2232,24 @@ void Runtime::tick(InputAction action)
 
     expireTransientPopup();
     ensureBootExit();
-    chat::runtime::RuntimeContext protocol_context{};
-    protocol_context.protocol = chat::MeshProtocol::Meshtastic;
+    const chat::runtime::RuntimeContext protocol_context = buildMeshtasticProtocolContext();
+    FixedProtocolRuntimeContextProvider context_provider(protocol_context);
     if (auto* mesh = app() ? app()->getMeshAdapter() : nullptr)
     {
-        protocol_context.self_node = mesh->getNodeId();
+        chat::runtime::MeshAdapterProtocolEffectExecutor executor(*mesh);
+        chat::runtime::MeshProtocolFacade facade(meshtastic_protocol_runtime_,
+                                                 executor,
+                                                 context_provider);
+        handleMeshtasticFacadeResult(facade.tick());
     }
-    protocol_context.now_ms = nowMs();
-    handleMeshtasticProtocolEffects(meshtastic_protocol_runtime_.tick(protocol_context));
+    else
+    {
+        NoopProtocolEffectExecutor executor;
+        chat::runtime::MeshProtocolFacade facade(meshtastic_protocol_runtime_,
+                                                 executor,
+                                                 context_provider);
+        handleMeshtasticFacadeResult(facade.tick());
+    }
     ensureSleepTimeout(action);
     handleInput(action);
     if (shouldRenderForTick(action))
@@ -2307,15 +2345,24 @@ void Runtime::onIncomingData(const chat::MeshIncomingData& msg)
     packet.payload = msg.payload;
     packet.rx_meta = msg.rx_meta;
 
-    chat::runtime::RuntimeContext protocol_context{};
-    protocol_context.protocol = chat::MeshProtocol::Meshtastic;
+    const chat::runtime::RuntimeContext protocol_context = buildMeshtasticProtocolContext();
+    FixedProtocolRuntimeContextProvider context_provider(protocol_context);
     if (auto* mesh = app() ? app()->getMeshAdapter() : nullptr)
     {
-        protocol_context.self_node = mesh->getNodeId();
+        chat::runtime::MeshAdapterProtocolEffectExecutor executor(*mesh);
+        chat::runtime::MeshProtocolFacade facade(meshtastic_protocol_runtime_,
+                                                 executor,
+                                                 context_provider);
+        handleMeshtasticFacadeResult(facade.handleIncoming(packet));
     }
-    protocol_context.now_ms = nowMs();
-    handleMeshtasticProtocolEffects(
-        meshtastic_protocol_runtime_.handleIncoming(packet, protocol_context));
+    else
+    {
+        NoopProtocolEffectExecutor executor;
+        chat::runtime::MeshProtocolFacade facade(meshtastic_protocol_runtime_,
+                                                 executor,
+                                                 context_provider);
+        handleMeshtasticFacadeResult(facade.handleIncoming(packet));
+    }
 }
 
 void Runtime::handleInput(InputAction action)
@@ -7215,16 +7262,35 @@ chat::MessageId Runtime::nextMeshtasticActionRequestId(chat::NodeId peer)
     return value;
 }
 
-void Runtime::handleMeshtasticProtocolEffects(const chat::runtime::ProtocolEffects& effects)
+chat::runtime::RuntimeContext Runtime::buildMeshtasticProtocolContext() const
 {
-    for (const auto& effect : effects.items)
+    chat::runtime::RuntimeContext context{};
+    context.protocol = chat::MeshProtocol::Meshtastic;
+    if (auto* mesh = app() ? app()->getMeshAdapter() : nullptr)
     {
-        if (const auto* result =
-                std::get_if<chat::runtime::EmitActionResultEffect>(&effect))
-        {
-            handleMeshtasticActionResult(*result);
-        }
+        context.self_node = mesh->getNodeId();
     }
+    context.now_ms = nowMs();
+    return context;
+}
+
+void Runtime::handleMeshtasticFacadeResult(
+    const chat::runtime::MeshProtocolFacadeResult& result)
+{
+    if (!result.hasActionResult())
+    {
+        return;
+    }
+
+    chat::runtime::EmitActionResultEffect effect{};
+    effect.protocol = result.action_result.protocol;
+    effect.action = result.action_result.action;
+    effect.state = result.action_result.state;
+    effect.peer = result.action_result.peer;
+    effect.request_id = result.action_result.request_id;
+    effect.message_id = result.action_result.message_id;
+    effect.detail = result.action_result.detail;
+    handleMeshtasticActionResult(effect);
 }
 
 void Runtime::handleMeshtasticActionResult(
@@ -7434,51 +7500,33 @@ void Runtime::executeNodeAction()
             showTransientPopup("TRACE ROUTE", "UNAVAILABLE");
             return;
         }
-        chat::runtime::RuntimeContext context{};
-        context.protocol = chat::MeshProtocol::Meshtastic;
-        context.self_node = mesh->getNodeId();
-        context.now_ms = nowMs();
-
+        const chat::runtime::RuntimeContext context = buildMeshtasticProtocolContext();
+        FixedProtocolRuntimeContextProvider context_provider(context);
+        chat::runtime::MeshAdapterProtocolEffectExecutor executor(*mesh);
+        chat::runtime::MeshProtocolFacade facade(meshtastic_protocol_runtime_,
+                                                 executor,
+                                                 context_provider);
         chat::runtime::TraceRouteIntent intent{};
         intent.channel = chat::ChannelId::PRIMARY;
         intent.peer = node->node_id;
         intent.request_id = nextMeshtasticActionRequestId(node->node_id);
         intent.timeout_ms = chat::runtime::kMeshtasticAppActionTimeoutMs;
 
-        const auto effects = meshtastic_protocol_runtime_.prepareOutgoing(intent, context);
-        const auto result =
-            chat::runtime::MeshAdapterProtocolEffectExecutor::executeFirstSendPacket(
-                *mesh,
-                effects);
-        const chat::MessageId request_id =
-            result.request_id != 0 ? result.request_id : intent.request_id;
-        if (result.sent())
+        const auto result = facade.executeIntent(intent);
+        if (result.hasActionResult())
+        {
+            handleMeshtasticFacadeResult(result);
+            return;
+        }
+        if (result.ok() && result.executed_effect_count > 0)
         {
             appendBootLog("trace wait reply");
             showTransientPopup("TRACE ROUTE", "WAIT REPLY");
             return;
         }
 
-        chat::runtime::TxResult tx{};
-        tx.protocol = chat::MeshProtocol::Meshtastic;
-        tx.request_id = request_id;
-        tx.peer = node->node_id;
-        tx.ok = false;
-        tx.detail = chat::runtime::kMeshtasticActionDetailLocalSendFailed;
-        const auto failure_effects =
-            meshtastic_protocol_runtime_.handleTxResult(tx, context);
-        if (!failure_effects.items.empty())
-        {
-            handleMeshtasticProtocolEffects(failure_effects);
-            return;
-        }
-
-        handleMeshtasticProtocolEffects(effects);
-        if (effects.items.empty())
-        {
-            appendBootLog("trace send fail");
-            showTransientPopup("TRACE ROUTE", "SEND FAILED");
-        }
+        appendBootLog("trace send fail");
+        showTransientPopup("TRACE ROUTE", "SEND FAILED");
         return;
     }
     case 5:
@@ -7516,50 +7564,32 @@ void Runtime::requestNodePositionExchange()
         return;
     }
 
-    chat::runtime::RuntimeContext context{};
-    context.protocol = chat::MeshProtocol::Meshtastic;
-    context.self_node = mesh->getNodeId();
-    context.now_ms = nowMs();
-
+    const chat::runtime::RuntimeContext context = buildMeshtasticProtocolContext();
+    FixedProtocolRuntimeContextProvider context_provider(context);
+    chat::runtime::MeshAdapterProtocolEffectExecutor executor(*mesh);
+    chat::runtime::MeshProtocolFacade facade(meshtastic_protocol_runtime_,
+                                             executor,
+                                             context_provider);
     chat::runtime::ExchangePositionIntent intent{};
     intent.channel = chat::ChannelId::PRIMARY;
     intent.peer = node->node_id;
     intent.request_id = nextMeshtasticActionRequestId(node->node_id);
 
-    const auto effects = meshtastic_protocol_runtime_.prepareOutgoing(intent, context);
-    const auto result =
-        chat::runtime::MeshAdapterProtocolEffectExecutor::executeFirstSendPacket(
-            *mesh,
-            effects);
-    const chat::MessageId request_id =
-        result.request_id != 0 ? result.request_id : intent.request_id;
-    if (result.sent())
+    const auto result = facade.executeIntent(intent);
+    if (result.hasActionResult())
+    {
+        handleMeshtasticFacadeResult(result);
+        return;
+    }
+    if (result.ok() && result.executed_effect_count > 0)
     {
         appendBootLog("pos wait reply");
         showTransientPopup("EXCHANGE POSITION", "WAIT REPLY");
         return;
     }
 
-    chat::runtime::TxResult tx{};
-    tx.protocol = chat::MeshProtocol::Meshtastic;
-    tx.request_id = request_id;
-    tx.peer = node->node_id;
-    tx.ok = false;
-    tx.detail = chat::runtime::kMeshtasticActionDetailLocalSendFailed;
-    const auto failure_effects =
-        meshtastic_protocol_runtime_.handleTxResult(tx, context);
-    if (!failure_effects.items.empty())
-    {
-        handleMeshtasticProtocolEffects(failure_effects);
-        return;
-    }
-
-    handleMeshtasticProtocolEffects(effects);
-    if (effects.items.empty())
-    {
-        appendBootLog("pos req failed");
-        showTransientPopup("EXCHANGE POSITION", "SEND FAILED");
-    }
+    appendBootLog("pos req failed");
+    showTransientPopup("EXCHANGE POSITION", "SEND FAILED");
 }
 
 } // namespace ui::mono

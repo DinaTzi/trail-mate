@@ -3,6 +3,7 @@
 #include "app/app_config.h"
 #include "app/app_facades.h"
 #include "chat/domain/contact_types.h"
+#include "chat/runtime/mesh_protocol_facade.h"
 #include "chat/runtime/meshtastic_runtime.h"
 #include "chat/usecase/chat_service.h"
 #include "platform/ui/device_runtime.h"
@@ -267,7 +268,8 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
     void executeNodeAction();
     void requestNodePositionExchange();
     chat::MessageId nextMeshtasticActionRequestId(chat::NodeId peer);
-    void handleMeshtasticProtocolEffects(const chat::runtime::ProtocolEffects& effects);
+    chat::runtime::RuntimeContext buildMeshtasticProtocolContext() const;
+    void handleMeshtasticFacadeResult(const chat::runtime::MeshProtocolFacadeResult& result);
     void handleMeshtasticActionResult(const chat::runtime::EmitActionResultEffect& result);
     void showTransientPopup(const char* title, const char* message, uint32_t duration_ms = 2000U);
     void expireTransientPopup();
