@@ -60,10 +60,28 @@ class ChatComposeScreen
 
     struct Impl;
     struct LifetimeGuard;
+    struct ActionPayload
+    {
+        LifetimeGuard* guard = nullptr;
+        void (*action_cb)(ActionIntent intent, void*) = nullptr;
+        void* user_data = nullptr;
+        ActionIntent intent = ActionIntent::Send;
+    };
+    struct BackPayload
+    {
+        LifetimeGuard* guard = nullptr;
+        void (*back_cb)(void*) = nullptr;
+        void* user_data = nullptr;
+    };
     Impl* impl_ = nullptr;
 
     void init_topbar();
     void refresh_len();
+    void schedule_action_async(ActionIntent intent);
+    void schedule_back_async();
+    static void release_async_guard(LifetimeGuard* guard);
+    static void async_action_cb(void* user_data);
+    static void async_back_cb(void* user_data);
     static void on_root_deleted(lv_event_t* e);
     static void on_action_click(lv_event_t* e);
     static void on_text_changed(lv_event_t* e);

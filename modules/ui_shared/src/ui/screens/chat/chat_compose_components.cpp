@@ -31,6 +31,7 @@ static constexpr size_t kMaxInputBytes = 233;
 struct ChatComposeScreen::LifetimeGuard
 {
     bool alive = false;
+    int pending_async = 0;
 };
 
 struct ChatComposeScreen::Impl
@@ -116,7 +117,10 @@ void ChatComposeScreen::on_root_deleted(lv_event_t* e)
     LifetimeGuard* guard = impl->guard;
     screen->impl_ = nullptr;
     delete impl;
-    delete guard;
+    if (guard && guard->pending_async == 0)
+    {
+        delete guard;
+    }
 }
 
 ChatComposeScreen::ChatComposeScreen(lv_obj_t* parent, chat::ConversationId conv)
@@ -196,6 +200,18 @@ ChatComposeScreen::~ChatComposeScreen()
     {
         lv_obj_del(impl_->w.container);
     }
+    if (!impl_) return;
+    LifetimeGuard* guard = impl_->guard;
+    if (guard)
+    {
+        guard->alive = false;
+        if (guard->pending_async == 0)
+        {
+            delete guard;
+        }
+    }
+    delete impl_;
+    impl_ = nullptr;
 }
 
 lv_obj_t* ChatComposeScreen::getObj() const
@@ -347,6 +363,91 @@ void ChatComposeScreen::refresh_len()
 
 // ---------- LVGL callbacks ----------
 
+void ChatComposeScreen::release_async_guard(LifetimeGuard* guard)
+{
+    if (!guard)
+    {
+        return;
+    }
+    if (guard->pending_async > 0)
+    {
+        guard->pending_async--;
+    }
+    if (!guard->alive && guard->pending_async == 0)
+    {
+        delete guard;
+    }
+}
+
+void ChatComposeScreen::async_action_cb(void* user_data)
+{
+    auto* payload = static_cast<ActionPayload*>(user_data);
+    if (!payload)
+    {
+        return;
+    }
+    LifetimeGuard* guard = payload->guard;
+    if (guard && guard->alive && payload->action_cb)
+    {
+        payload->action_cb(payload->intent, payload->user_data);
+    }
+    release_async_guard(guard);
+    delete payload;
+}
+
+void ChatComposeScreen::async_back_cb(void* user_data)
+{
+    auto* payload = static_cast<BackPayload*>(user_data);
+    if (!payload)
+    {
+        return;
+    }
+    LifetimeGuard* guard = payload->guard;
+    if (guard && guard->alive && payload->back_cb)
+    {
+        payload->back_cb(payload->user_data);
+    }
+    release_async_guard(guard);
+    delete payload;
+}
+
+void ChatComposeScreen::schedule_action_async(ActionIntent intent)
+{
+    if (!impl_ || !impl_->guard || !impl_->guard->alive || !action_cb_)
+    {
+        return;
+    }
+    auto* payload = new ActionPayload();
+    payload->guard = impl_->guard;
+    payload->action_cb = action_cb_;
+    payload->user_data = action_cb_user_data_;
+    payload->intent = intent;
+    impl_->guard->pending_async++;
+    if (lv_async_call(async_action_cb, payload) != LV_RESULT_OK)
+    {
+        release_async_guard(payload->guard);
+        delete payload;
+    }
+}
+
+void ChatComposeScreen::schedule_back_async()
+{
+    if (!impl_ || !impl_->guard || !impl_->guard->alive || !back_cb_)
+    {
+        return;
+    }
+    auto* payload = new BackPayload();
+    payload->guard = impl_->guard;
+    payload->back_cb = back_cb_;
+    payload->user_data = back_cb_user_data_;
+    impl_->guard->pending_async++;
+    if (lv_async_call(async_back_cb, payload) != LV_RESULT_OK)
+    {
+        release_async_guard(payload->guard);
+        delete payload;
+    }
+}
+
 void ChatComposeScreen::on_action_click(lv_event_t* e)
 {
     auto* ctx = static_cast<Impl::ActionContext*>(lv_event_get_user_data(e));
@@ -363,7 +464,7 @@ void ChatComposeScreen::on_action_click(lv_event_t* e)
     {
         return;
     }
-    screen->action_cb_(ctx->intent, screen->action_cb_user_data_);
+    screen->schedule_action_async(ctx->intent);
 }
 
 void ChatComposeScreen::on_text_changed(lv_event_t* e)
@@ -386,7 +487,7 @@ void ChatComposeScreen::on_back(void* user_data)
     }
     if (screen->back_cb_)
     {
-        screen->back_cb_(screen->back_cb_user_data_);
+        screen->schedule_back_async();
     }
 }
 
