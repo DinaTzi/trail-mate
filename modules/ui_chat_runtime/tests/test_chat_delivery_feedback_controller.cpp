@@ -68,7 +68,14 @@ int main()
     controller.onChatSendResult(103, false, nullptr);
     controller.onChatSendResult(0, false, &failed);
     assert(port.sent_count == 1);
-    assert(port.failed_count == 1);
+    assert(port.failed_count == 2);
+    assert(port.last_id == 103);
+
+    controller.onChatSendResult(103, false, nullptr);
+    assert(port.failed_count == 2);
+
+    controller.onChatSendResult(104, true, nullptr);
+    assert(port.sent_count == 1);
 
     controller.clear();
     controller.onChatSendResult(100, true, &sent);

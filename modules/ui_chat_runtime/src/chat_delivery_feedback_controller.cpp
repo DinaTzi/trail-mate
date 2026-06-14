@@ -14,7 +14,18 @@ void ChatDeliveryFeedbackController::onChatSendResult(
     bool success,
     const chat::ChatMessage* message)
 {
-    if (msg_id == 0 || message == nullptr || message->from != 0)
+    if (msg_id == 0)
+    {
+        return;
+    }
+    if (message == nullptr)
+    {
+        if (success)
+        {
+            return;
+        }
+    }
+    else if (message->from != 0)
     {
         return;
     }
