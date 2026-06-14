@@ -15,6 +15,20 @@
 namespace chat::runtime
 {
 
+constexpr uint32_t kMeshCoreDiscoverRxGuardDefaultMs = 5000;
+constexpr uint32_t kMeshCoreAutoDiscoverCooldownMs = 8000;
+
+struct MeshCoreAutoDiscoverMissingPeerInput
+{
+    uint8_t peer_hash = 0;
+    uint8_t self_hash = 0;
+    uint32_t cooldown_ms = kMeshCoreAutoDiscoverCooldownMs;
+    uint8_t type_filter = chat::meshcore::kMeshCoreDiscoverTypeFilterAll;
+    bool prefix_only = false;
+    uint32_t since = 0;
+    uint32_t rx_guard_ms = kMeshCoreDiscoverRxGuardDefaultMs;
+};
+
 struct MeshCoreAppAckRegistration
 {
     uint32_t signature = 0;
@@ -277,6 +291,55 @@ class MeshCoreRuntime final : public IProtocolRuntime
         return effects;
     }
 
+    ProtocolEffects prepareAutoDiscoverMissingPeer(
+        const MeshCoreAutoDiscoverMissingPeerInput& input,
+        const RuntimeContext& context)
+    {
+        ProtocolEffects effects{};
+        const uint8_t self_hash = input.self_hash != 0
+                                      ? input.self_hash
+                                      : static_cast<uint8_t>(context.self_node & 0xFFU);
+        if (input.peer_hash == 0x00 ||
+            input.peer_hash == 0xFF ||
+            input.peer_hash == self_hash)
+        {
+            return effects;
+        }
+
+        if (auto_discover_.last_hash == input.peer_hash &&
+            auto_discover_.last_success_ms != 0 &&
+            (context.now_ms - auto_discover_.last_success_ms) < input.cooldown_ms)
+        {
+            return effects;
+        }
+
+        DiscoverIntent intent{};
+        intent.action = MeshDiscoveryAction::ScanLocal;
+        intent.type_filter = input.type_filter;
+        intent.prefix_only = input.prefix_only;
+        intent.since = input.since;
+        intent.rx_guard_ms = input.rx_guard_ms;
+        resolveDiscover(intent, context, effects);
+        return effects;
+    }
+
+    void markAutoDiscoverMissingPeerTxResult(uint8_t peer_hash,
+                                             const RuntimeContext& context,
+                                             bool ok)
+    {
+        if (!ok)
+        {
+            return;
+        }
+        auto_discover_.last_hash = peer_hash;
+        auto_discover_.last_success_ms = context.now_ms;
+    }
+
+    void resetAutoDiscoverState()
+    {
+        auto_discover_ = AutoDiscoverState{};
+    }
+
     static SendNodeInfoEffect resolveRequestNodeInfo(const RequestNodeInfoIntent& intent,
                                                      const RuntimeContext& context)
     {
@@ -308,9 +371,15 @@ class MeshCoreRuntime final : public IProtocolRuntime
         uint32_t timeout_ms = 0;
     };
 
+    struct AutoDiscoverState
+    {
+        uint8_t last_hash = 0;
+        uint32_t last_success_ms = 0;
+    };
+
     static constexpr uint32_t kDefaultTraceTimeoutMs = 15000;
     static constexpr uint32_t kDefaultAppAckTimeoutMs = 15000;
-    static constexpr uint32_t kDefaultDiscoverRxGuardMs = 5000;
+    static constexpr uint32_t kDefaultDiscoverRxGuardMs = kMeshCoreDiscoverRxGuardDefaultMs;
     static constexpr uint32_t kMinValidEpochSeconds = 1577836800UL;
     static constexpr size_t kMaxPendingAppAcks = 32;
 
@@ -591,6 +660,7 @@ class MeshCoreRuntime final : public IProtocolRuntime
 
     PendingTraceRoute pending_trace_{};
     std::deque<PendingAppAck> pending_app_acks_{};
+    AutoDiscoverState auto_discover_{};
 };
 
 } // namespace chat::runtime

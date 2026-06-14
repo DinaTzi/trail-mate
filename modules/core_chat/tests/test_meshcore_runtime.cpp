@@ -18,7 +18,10 @@ int main()
     using chat::MeshProtocol;
     using chat::runtime::IncomingPacket;
     using chat::runtime::EmitActionResultEffect;
+    using chat::runtime::kMeshCoreAutoDiscoverCooldownMs;
+    using chat::runtime::kMeshCoreDiscoverRxGuardDefaultMs;
     using chat::runtime::MeshCoreAppAckRegistration;
+    using chat::runtime::MeshCoreAutoDiscoverMissingPeerInput;
     using chat::runtime::MeshCoreRuntime;
     using chat::runtime::PublishNodeInfoEffect;
     using chat::runtime::ProtocolActionKind;
@@ -83,6 +86,63 @@ int main()
         assert(announce);
         assert(announce->protocol == MeshProtocol::MeshCore);
         assert(announce->broadcast);
+    }
+
+    {
+        MeshCoreAutoDiscoverMissingPeerInput input{};
+        input.peer_hash = 0x00;
+        context.now_ms = 100;
+        assert(runtime.prepareAutoDiscoverMissingPeer(input, context).items.empty());
+
+        input.peer_hash = 0xFF;
+        assert(runtime.prepareAutoDiscoverMissingPeer(input, context).items.empty());
+
+        input.peer_hash = static_cast<uint8_t>(context.self_node & 0xFFU);
+        assert(runtime.prepareAutoDiscoverMissingPeer(input, context).items.empty());
+    }
+
+    {
+        MeshCoreRuntime auto_runtime{};
+        RuntimeContext auto_context = context;
+        auto_context.now_ms = 1000;
+
+        MeshCoreAutoDiscoverMissingPeerInput input{};
+        input.peer_hash = 0x42;
+        input.self_hash = static_cast<uint8_t>(auto_context.self_node & 0xFFU);
+        input.rx_guard_ms = kMeshCoreDiscoverRxGuardDefaultMs;
+
+        const auto first = auto_runtime.prepareAutoDiscoverMissingPeer(input, auto_context);
+        assert(first.items.size() == 1);
+        const auto* discover = effectAt<SendDiscoverRequestEffect>(first, 0);
+        assert(discover);
+        assert(discover->protocol == MeshProtocol::MeshCore);
+        assert(discover->type_filter == chat::meshcore::kMeshCoreDiscoverTypeFilterAll);
+        assert(discover->rx_guard_ms == kMeshCoreDiscoverRxGuardDefaultMs);
+
+        auto_runtime.markAutoDiscoverMissingPeerTxResult(input.peer_hash,
+                                                         auto_context,
+                                                         true);
+        auto_context.now_ms += kMeshCoreAutoDiscoverCooldownMs - 1;
+        assert(auto_runtime.prepareAutoDiscoverMissingPeer(input, auto_context).items.empty());
+
+        auto_context.now_ms = 1000 + kMeshCoreAutoDiscoverCooldownMs;
+        assert(auto_runtime.prepareAutoDiscoverMissingPeer(input, auto_context).items.size() == 1);
+    }
+
+    {
+        MeshCoreRuntime auto_runtime{};
+        RuntimeContext auto_context = context;
+        auto_context.now_ms = 2000;
+
+        MeshCoreAutoDiscoverMissingPeerInput input{};
+        input.peer_hash = 0x43;
+
+        assert(auto_runtime.prepareAutoDiscoverMissingPeer(input, auto_context).items.size() == 1);
+        auto_runtime.markAutoDiscoverMissingPeerTxResult(input.peer_hash,
+                                                         auto_context,
+                                                         false);
+        auto_context.now_ms = 2001;
+        assert(auto_runtime.prepareAutoDiscoverMissingPeer(input, auto_context).items.size() == 1);
     }
 
     {

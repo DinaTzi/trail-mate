@@ -210,7 +210,6 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     static constexpr const char* kPeerPubKeyPrefsKey = "peer_keys";
     static constexpr const char* kPeerPubKeyPrefsKeyVer = "peer_ver";
     static constexpr uint8_t kPeerPubKeyPrefsVersion = 1;
-    static constexpr uint32_t kAutoDiscoverCooldownMs = 8000;
     static constexpr size_t kMaxEventQueue = 32;
 
     struct ScheduledFrame
@@ -298,8 +297,6 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     uint32_t tx_airtime_ms_ = 0;
     uint32_t rx_airtime_ms_ = 0;
     MeshCoreIdentity identity_;
-    uint32_t last_auto_discover_ms_ = 0;
-    uint8_t last_auto_discover_hash_ = 0;
     uint32_t discover_rx_guard_until_ms_ = 0;
 
     // Implementation state

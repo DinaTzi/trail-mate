@@ -1432,25 +1432,28 @@ void MeshCoreAdapter::savePeerPubKeysToPrefs()
 
 void MeshCoreAdapter::maybeAutoDiscoverMissingPeer(uint8_t peer_hash, uint32_t now_ms)
 {
-    if (peer_hash == 0x00 || peer_hash == 0xFF || peer_hash == self_hash_)
+    runtime::MeshCoreAutoDiscoverMissingPeerInput input{};
+    input.peer_hash = peer_hash;
+    input.self_hash = self_hash_;
+    input.type_filter = kMeshCoreDiscoverTypeFilterAll;
+    input.rx_guard_ms = kDiscoverRxGuardMs;
+
+    runtime::RuntimeContext context = buildRuntimeContext();
+    context.now_ms = now_ms;
+    const runtime::ProtocolEffects effects =
+        protocol_runtime_.prepareAutoDiscoverMissingPeer(input, context);
+    if (effects.items.empty())
     {
         return;
     }
 
-    const bool same_peer = (peer_hash == last_auto_discover_hash_);
-    if (same_peer && last_auto_discover_ms_ != 0 &&
-        (now_ms - last_auto_discover_ms_) < kAutoDiscoverCooldownMs)
+    const MeshActionResult result = executeDiscoveryEffectsDetailed(effects);
+    protocol_runtime_.markAutoDiscoverMissingPeerTxResult(peer_hash, context, result.ok);
+    if (result.ok)
     {
-        return;
-    }
-
-    if (executeDiscoverIntentDetailed(MeshDiscoveryAction::ScanLocal).ok)
-    {
-        last_auto_discover_hash_ = peer_hash;
-        last_auto_discover_ms_ = now_ms;
         MESHCORE_LOG("[MESHCORE] auto discover trigger src=%02X cooldown=%lums\n",
                      static_cast<unsigned>(peer_hash),
-                     static_cast<unsigned long>(kAutoDiscoverCooldownMs));
+                     static_cast<unsigned long>(runtime::kMeshCoreAutoDiscoverCooldownMs));
     }
 }
 
@@ -3466,8 +3469,7 @@ void MeshCoreAdapter::applyConfig(const MeshConfig& config)
     peer_routes_.clear();
     key_verify_session_ = KeyVerifySession{};
     verified_peers_.clear();
-    last_auto_discover_ms_ = 0;
-    last_auto_discover_hash_ = 0;
+    protocol_runtime_.resetAutoDiscoverState();
     loadPeerPubKeysFromPrefs();
 
 #if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280) || \

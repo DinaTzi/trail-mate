@@ -324,6 +324,8 @@ Current state:
 - Incoming MeshCore discover request/response decisions now run through `MeshCoreRuntime`: request filter/since
   matching emits `SendDiscoverResponseEffect`, and responses emit `PublishNodeInfoEffect` plus
   `UpdatePeerRouteEffect`.
+- ESP32 receive-side missing-peer auto-discover now uses `MeshCoreRuntime` for the peer-hash validity and
+  cooldown decision table; the adapter only executes the discover effect and reports TX success back to runtime.
 - MeshCore direct shared-secret expansion and nRF peer-key derivation now use `MeshCoreDirectSecretCore`;
   ESP32 keeps identity storage and peer pubkey lookup in the adapter, then delegates key expansion to the
   shared helper.

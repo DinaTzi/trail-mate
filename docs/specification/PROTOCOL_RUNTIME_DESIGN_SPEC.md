@@ -394,6 +394,9 @@ Current C++17 migration state:
   and route/channel fallback remains explicit without redefining direct-secret material.
 - ESP32 MeshCore direct text/app-data no longer fires missing-key discover through an adapter-local send shortcut;
   it enters `DiscoverIntent -> MeshCoreRuntime -> SendDiscoverRequestEffect`, then the adapter executes the effect.
+- ESP32 MeshCore receive-side missing-peer auto-discover now asks `MeshCoreRuntime` to apply the peer-hash
+  validity and cooldown decision table. The adapter executes the emitted `SendDiscoverRequestEffect` and reports
+  TX success back so runtime updates cooldown only after a successful discover request.
 - Incoming MeshCore discover request/response control payloads now flow through `MeshCoreRuntime`: filter/since
   matching emits `SendDiscoverResponseEffect`, and discover responses emit `PublishNodeInfoEffect` plus
   `UpdatePeerRouteEffect`.
