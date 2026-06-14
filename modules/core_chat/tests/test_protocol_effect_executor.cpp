@@ -48,6 +48,23 @@ class FakeMeshAdapter final : public chat::IMeshAdapter
         return true;
     }
 
+    bool sendTextWithId(chat::ChannelId channel,
+                        const std::string& text,
+                        chat::MessageId forced_msg_id,
+                        chat::MessageId* out_msg_id,
+                        chat::NodeId peer = 0) override
+    {
+        last_text_channel = channel;
+        last_text = text;
+        last_text_peer = peer;
+        last_text_forced_msg_id = forced_msg_id;
+        if (out_msg_id)
+        {
+            *out_msg_id = forced_msg_id != 0 ? forced_msg_id : 1;
+        }
+        return next_text_result;
+    }
+
     bool pollIncomingText(chat::MeshIncomingText*) override
     {
         return false;
@@ -94,6 +111,11 @@ class FakeMeshAdapter final : public chat::IMeshAdapter
     }
 
     bool next_send_result = true;
+    bool next_text_result = true;
+    chat::ChannelId last_text_channel = chat::ChannelId::PRIMARY;
+    std::string last_text{};
+    chat::NodeId last_text_peer = 0;
+    chat::MessageId last_text_forced_msg_id = 0;
     chat::ChannelId last_channel = chat::ChannelId::PRIMARY;
     uint32_t last_portnum = 0;
     chat::NodeId last_dest = 0;
@@ -196,6 +218,37 @@ int main()
         assert(!executeAll(executor, effects));
         assert(executor.effects.size() == 1);
         assert(executor.effectAt<chat::runtime::SendSelfAnnouncementEffect>(0));
+    }
+
+    {
+        chat::runtime::SendTextEffect text{};
+        text.protocol = chat::MeshProtocol::Meshtastic;
+        text.channel = chat::ChannelId::SECONDARY;
+        text.peer = 0x55667788UL;
+        text.message_id = 0x11223344UL;
+        text.text = "hello bridge";
+
+        FakeMeshAdapter adapter{};
+        chat::runtime::MeshAdapterProtocolEffectExecutor executor(adapter);
+
+        assert(executor.execute(text));
+        assert(adapter.last_text_channel == text.channel);
+        assert(adapter.last_text == text.text);
+        assert(adapter.last_text_peer == text.peer);
+        assert(adapter.last_text_forced_msg_id == text.message_id);
+    }
+
+    {
+        chat::runtime::SendTextEffect text{};
+        text.message_id = 0x99UL;
+        text.text = "fail";
+
+        FakeMeshAdapter adapter{};
+        adapter.next_text_result = false;
+        chat::runtime::MeshAdapterProtocolEffectExecutor executor(adapter);
+
+        assert(!executor.execute(text));
+        assert(adapter.last_text_forced_msg_id == text.message_id);
     }
 
     {

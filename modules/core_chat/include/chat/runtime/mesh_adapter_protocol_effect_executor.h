@@ -34,11 +34,26 @@ class MeshAdapterProtocolEffectExecutor final : public IProtocolEffectExecutor
 
     bool execute(const ProtocolEffect& effect) override
     {
+        if (const auto* text = std::get_if<SendTextEffect>(&effect))
+        {
+            return sendText(*text).sent();
+        }
         if (const auto* packet = std::get_if<SendPacketEffect>(&effect))
         {
             return sendPacket(*packet).sent();
         }
         return false;
+    }
+
+    ProtocolEffectExecutionResult sendText(const SendTextEffect& text)
+    {
+        const MeshSendResult sent =
+            adapter_.sendTextDetailed(text.channel, text.text, text.message_id, text.peer);
+        ProtocolEffectExecutionResult result{};
+        result.state = sent.ok ? ProtocolEffectExecutionState::Sent
+                               : ProtocolEffectExecutionState::Failed;
+        result.request_id = sent.msg_id != 0 ? sent.msg_id : text.message_id;
+        return result;
     }
 
     ProtocolEffectExecutionResult sendPacket(const SendPacketEffect& packet)

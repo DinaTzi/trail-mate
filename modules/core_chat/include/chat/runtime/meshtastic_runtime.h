@@ -18,6 +18,7 @@ namespace chat::runtime
 constexpr int32_t kMeshtasticActionDetailInvalidPeer = -1;
 constexpr int32_t kMeshtasticActionDetailEncodeFailed = -2;
 constexpr int32_t kMeshtasticActionDetailLocalSendFailed = -3;
+constexpr int32_t kMeshtasticActionDetailInvalidInput = -4;
 
 enum class MeshtasticPkiResyncCause : uint8_t
 {
@@ -105,7 +106,11 @@ class MeshtasticRuntime final : public IProtocolRuntime
             [this, &effects, &context](const auto& item)
             {
                 using Intent = std::decay_t<decltype(item)>;
-                if constexpr (std::is_same_v<Intent, TraceRouteIntent>)
+                if constexpr (std::is_same_v<Intent, SendTextIntent>)
+                {
+                    resolveSendText(item, context, effects);
+                }
+                else if constexpr (std::is_same_v<Intent, TraceRouteIntent>)
                 {
                     resolveTraceRoute(item, context, effects);
                 }
@@ -188,6 +193,7 @@ class MeshtasticRuntime final : public IProtocolRuntime
     }
 
   private:
+    static constexpr uint32_t kTextRequestSalt = 0x4D545854UL;
     static constexpr uint32_t kTraceRouteRequestSalt = 0x4D545254UL;
     static constexpr uint32_t kPositionRequestSalt = 0x4D54504FUL;
 
@@ -222,6 +228,33 @@ class MeshtasticRuntime final : public IProtocolRuntime
         failed.request_id = request_id;
         failed.detail = detail;
         return failed;
+    }
+
+    void resolveSendText(const SendTextIntent& intent,
+                         const RuntimeContext& context,
+                         ProtocolEffects& effects)
+    {
+        const NodeId peer = normalizePeer(intent.peer);
+        const MessageId message_id = makeRequestId(intent.message_id,
+                                                   peer,
+                                                   context,
+                                                   kTextRequestSalt);
+        if (intent.text.empty())
+        {
+            effects.add(buildFailedAction(ProtocolActionKind::SendText,
+                                          peer,
+                                          message_id,
+                                          kMeshtasticActionDetailInvalidInput));
+            return;
+        }
+
+        SendTextEffect text{};
+        text.protocol = MeshProtocol::Meshtastic;
+        text.channel = intent.channel;
+        text.peer = peer;
+        text.message_id = message_id;
+        text.text = intent.text;
+        effects.add(std::move(text));
     }
 
     void resolveTraceRoute(const TraceRouteIntent& intent,

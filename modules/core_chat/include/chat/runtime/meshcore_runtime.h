@@ -17,6 +17,7 @@ namespace chat::runtime
 
 constexpr uint32_t kMeshCoreDiscoverRxGuardDefaultMs = 5000;
 constexpr uint32_t kMeshCoreAutoDiscoverCooldownMs = 8000;
+constexpr int32_t kMeshCoreActionDetailInvalidInput = -4;
 
 struct MeshCoreAutoDiscoverMissingPeerInput
 {
@@ -49,7 +50,11 @@ class MeshCoreRuntime final : public IProtocolRuntime
             [this, &effects, &context](const auto& item)
             {
                 using Intent = std::decay_t<decltype(item)>;
-                if constexpr (std::is_same_v<Intent, RequestNodeInfoIntent>)
+                if constexpr (std::is_same_v<Intent, SendTextIntent>)
+                {
+                    resolveSendText(item, context, effects);
+                }
+                else if constexpr (std::is_same_v<Intent, RequestNodeInfoIntent>)
                 {
                     effects.add(resolveRequestNodeInfo(item, context));
                 }
@@ -380,12 +385,26 @@ class MeshCoreRuntime final : public IProtocolRuntime
     static constexpr uint32_t kDefaultTraceTimeoutMs = 15000;
     static constexpr uint32_t kDefaultAppAckTimeoutMs = 15000;
     static constexpr uint32_t kDefaultDiscoverRxGuardMs = kMeshCoreDiscoverRxGuardDefaultMs;
+    static constexpr uint32_t kTextMessageSalt = 0x4D435854UL;
     static constexpr uint32_t kMinValidEpochSeconds = 1577836800UL;
     static constexpr size_t kMaxPendingAppAcks = 32;
 
     static NodeId normalizePeer(NodeId peer)
     {
         return peer == 0xFFFFFFFFUL ? 0 : peer;
+    }
+
+    static MessageId makeTextMessageId(const SendTextIntent& intent,
+                                       const RuntimeContext& context)
+    {
+        if (intent.message_id != 0)
+        {
+            return intent.message_id;
+        }
+        const NodeId peer = normalizePeer(intent.peer);
+        MessageId id = static_cast<MessageId>(
+            context.now_ms ^ context.self_node ^ peer ^ kTextMessageSalt);
+        return id == 0 ? 1 : id;
     }
 
     static MessageId makeTraceRequestId(const TraceRouteIntent& intent,
@@ -416,6 +435,21 @@ class MeshCoreRuntime final : public IProtocolRuntime
         return seconds >= kMinValidEpochSeconds;
     }
 
+    static EmitActionResultEffect buildFailedAction(ProtocolActionKind action,
+                                                    NodeId peer,
+                                                    MessageId request_id,
+                                                    int32_t detail)
+    {
+        EmitActionResultEffect failed{};
+        failed.protocol = MeshProtocol::MeshCore;
+        failed.action = action;
+        failed.state = ProtocolActionState::Failed;
+        failed.peer = peer;
+        failed.request_id = request_id;
+        failed.detail = detail;
+        return failed;
+    }
+
     static int16_t snrQuarterDbToX10(int8_t snr_qdb)
     {
         const int32_t value = static_cast<int32_t>(snr_qdb) * 10;
@@ -427,6 +461,30 @@ class MeshCoreRuntime final : public IProtocolRuntime
         char name[8] = {};
         std::snprintf(name, sizeof(name), "%02X", static_cast<unsigned>(peer_hash));
         return std::string{name};
+    }
+
+    static void resolveSendText(const SendTextIntent& intent,
+                                const RuntimeContext& context,
+                                ProtocolEffects& effects)
+    {
+        const NodeId peer = normalizePeer(intent.peer);
+        const MessageId message_id = makeTextMessageId(intent, context);
+        if (intent.text.empty())
+        {
+            effects.add(buildFailedAction(ProtocolActionKind::SendText,
+                                          peer,
+                                          message_id,
+                                          kMeshCoreActionDetailInvalidInput));
+            return;
+        }
+
+        SendTextEffect text{};
+        text.protocol = MeshProtocol::MeshCore;
+        text.channel = intent.channel;
+        text.peer = peer;
+        text.message_id = message_id;
+        text.text = intent.text;
+        effects.add(std::move(text));
     }
 
     void resolveDiscover(const DiscoverIntent& intent,

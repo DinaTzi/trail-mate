@@ -15,9 +15,11 @@ const T* effectAt(const chat::runtime::ProtocolEffects& effects, size_t index)
 
 int main()
 {
+    using chat::ChannelId;
     using chat::MeshProtocol;
     using chat::runtime::IncomingPacket;
     using chat::runtime::EmitActionResultEffect;
+    using chat::runtime::kMeshCoreActionDetailInvalidInput;
     using chat::runtime::kMeshCoreAutoDiscoverCooldownMs;
     using chat::runtime::kMeshCoreDiscoverRxGuardDefaultMs;
     using chat::runtime::MeshCoreAppAckRegistration;
@@ -33,6 +35,8 @@ int main()
     using chat::runtime::SendDiscoverResponseEffect;
     using chat::runtime::SendNodeInfoEffect;
     using chat::runtime::SendSelfAnnouncementEffect;
+    using chat::runtime::SendTextEffect;
+    using chat::runtime::SendTextIntent;
     using chat::runtime::SendTraceRouteEffect;
     using chat::runtime::TraceRouteIntent;
     using chat::runtime::TxResult;
@@ -44,6 +48,40 @@ int main()
     context.self_node = 0x11111111UL;
     context.meshcore_discover_node_type = chat::meshcore::kMeshCoreAdvertTypeChat;
     context.meshcore_local_modified_epoch = 1781259000UL;
+
+    {
+        SendTextIntent intent{};
+        intent.channel = ChannelId::SECONDARY;
+        intent.peer = 0x22222222UL;
+        intent.message_id = 0x01020304UL;
+        intent.text = "hello meshcore";
+
+        const auto effects = runtime.prepareOutgoing(intent, context);
+        assert(effects.items.size() == 1);
+        const auto* text = effectAt<SendTextEffect>(effects, 0);
+        assert(text);
+        assert(text->protocol == MeshProtocol::MeshCore);
+        assert(text->channel == intent.channel);
+        assert(text->peer == intent.peer);
+        assert(text->message_id == intent.message_id);
+        assert(text->text == intent.text);
+    }
+
+    {
+        SendTextIntent intent{};
+        intent.peer = 0xFFFFFFFFUL;
+
+        const auto effects = runtime.prepareOutgoing(intent, context);
+        assert(effects.items.size() == 1);
+        const auto* failed = effectAt<EmitActionResultEffect>(effects, 0);
+        assert(failed);
+        assert(failed->protocol == MeshProtocol::MeshCore);
+        assert(failed->action == ProtocolActionKind::SendText);
+        assert(failed->state == ProtocolActionState::Failed);
+        assert(failed->peer == 0);
+        assert(failed->request_id != 0);
+        assert(failed->detail == kMeshCoreActionDetailInvalidInput);
+    }
 
     {
         DiscoverIntent intent{};

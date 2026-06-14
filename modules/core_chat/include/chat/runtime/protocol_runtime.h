@@ -46,6 +46,7 @@ struct SendTextIntent
 {
     ChannelId channel = ChannelId::PRIMARY;
     NodeId peer = 0;
+    MessageId message_id = 0;
     std::string text;
 };
 
@@ -156,6 +157,15 @@ struct TxResult
     NodeId peer = 0;
     bool ok = false;
     int32_t detail = 0;
+};
+
+struct SendTextEffect
+{
+    MeshProtocol protocol = MeshProtocol::Meshtastic;
+    ChannelId channel = ChannelId::PRIMARY;
+    NodeId peer = 0;
+    MessageId message_id = 0;
+    std::string text;
 };
 
 struct SendPacketEffect
@@ -287,7 +297,8 @@ struct UpdatePeerRouteEffect
     std::vector<uint8_t> payload;
 };
 
-using ProtocolEffect = std::variant<SendPacketEffect,
+using ProtocolEffect = std::variant<SendTextEffect,
+                                    SendPacketEffect,
                                     SendNodeInfoEffect,
                                     SendRoutingErrorEffect,
                                     SendTraceRouteEffect,

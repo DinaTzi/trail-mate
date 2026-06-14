@@ -150,6 +150,18 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_protocol_effect_executor_smoke
              COMMAND trailmate_protocol_effect_executor_smoke)
 
+    add_executable(trailmate_meshcore_runtime_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/tests/test_meshcore_runtime.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/meshcore_payload_helpers.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshcore/meshcore_protocol_helpers.cpp")
+    target_include_directories(trailmate_meshcore_runtime_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_meshcore_runtime_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_meshcore_runtime_smoke
+             COMMAND trailmate_meshcore_runtime_smoke)
+
     add_executable(trailmate_meshtastic_runtime_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/tests/test_meshtastic_runtime.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/runtime/meshtastic_position_core.cpp"
