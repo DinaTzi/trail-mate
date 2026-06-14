@@ -1780,7 +1780,14 @@ void MeshCoreAdapter::prunePendingAppAcks(uint32_t now_ms)
 {
     runtime::RuntimeContext context = buildRuntimeContext();
     context.now_ms = now_ms;
-    executeProtocolEffects(protocol_runtime_.tick(context));
+    runtime::FixedProtocolRuntimeContextProvider context_provider(context);
+    const auto bundle = protocolRuntimeBundle(context_provider);
+    if (!bundle.valid())
+    {
+        return;
+    }
+    auto facade = bundle.createFacade(runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+    facade.tick();
 }
 
 void MeshCoreAdapter::trackPendingAppAck(uint32_t signature, NodeId dest, uint32_t portnum, uint32_t now_ms)
@@ -1976,10 +1983,14 @@ bool MeshCoreAdapter::requestNodeInfo(NodeId dest, bool want_response)
         return false;
     }
 
-    runtime::RequestNodeInfoIntent intent{};
-    intent.peer = dest;
-    intent.want_response = want_response;
-    return executeProtocolEffects(protocol_runtime_.prepareOutgoing(intent, buildRuntimeContext()));
+    runtime::FixedProtocolRuntimeContextProvider context_provider(buildRuntimeContext());
+    const auto bundle = protocolRuntimeBundle(context_provider);
+    if (!bundle.valid())
+    {
+        return false;
+    }
+    auto facade = bundle.createFacade(runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+    return facade.requestNodeInfo(dest, want_response).ok();
 }
 
 runtime::RuntimeContext MeshCoreAdapter::buildRuntimeContext() const
@@ -1995,12 +2006,28 @@ runtime::RuntimeContext MeshCoreAdapter::buildRuntimeContext() const
     return context;
 }
 
+runtime::ProtocolRuntimeBundle MeshCoreAdapter::protocolRuntimeBundle(
+    const runtime::IProtocolRuntimeContextProvider& context_provider)
+{
+    runtime::ProtocolRuntimeSelection selection{};
+    selection.meshcore = &protocol_runtime_;
+    return runtime::protocolRuntimeFor(MeshProtocol::MeshCore,
+                                       selection,
+                                       *this,
+                                       context_provider);
+}
+
+bool MeshCoreAdapter::execute(const runtime::ProtocolEffect& effect)
+{
+    return executeProtocolEffect(effect);
+}
+
 bool MeshCoreAdapter::executeProtocolEffects(const runtime::ProtocolEffects& effects)
 {
     bool ok = true;
     for (const auto& effect : effects.items)
     {
-        ok = executeProtocolEffect(effect) && ok;
+        ok = execute(effect) && ok;
     }
     return ok;
 }
@@ -2057,8 +2084,15 @@ bool MeshCoreAdapter::executeProtocolEffect(const runtime::ProtocolEffect& effec
                     result.peer = item.peer;
                     result.ok = ok;
                     result.detail = ok ? static_cast<int32_t>(timeout_ms) : 0;
-                    executeProtocolEffects(protocol_runtime_.handleTxResult(result,
-                                                                            buildRuntimeContext()));
+                    runtime::FixedProtocolRuntimeContextProvider context_provider(
+                        buildRuntimeContext());
+                    const auto bundle = protocolRuntimeBundle(context_provider);
+                    if (bundle.valid())
+                    {
+                        auto facade = bundle.createFacade(
+                            runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+                        facade.handleTxResult(result);
+                    }
                 }
             }
             else if constexpr (std::is_same_v<Effect, runtime::SendDiscoverRequestEffect>)
@@ -2822,8 +2856,13 @@ bool MeshCoreAdapter::handleNodeInfoControl(const MeshIncomingData& incoming)
     packet.payload = incoming.payload;
     packet.rx_meta = incoming.rx_meta;
 
-    const auto effects = protocol_runtime_.handleIncoming(packet, buildRuntimeContext());
-    executeProtocolEffects(effects);
+    runtime::FixedProtocolRuntimeContextProvider context_provider(buildRuntimeContext());
+    const auto bundle = protocolRuntimeBundle(context_provider);
+    if (bundle.valid())
+    {
+        auto facade = bundle.createFacade(runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+        facade.handleIncoming(packet);
+    }
     if (decoded.type == MeshCoreNodeInfoControlType::Info && decoded.complete)
     {
         NodeId node = decoded.info.node_id;
@@ -3816,7 +3855,14 @@ void MeshCoreAdapter::handleRawPacketInternal(const uint8_t* data, size_t size, 
             {
                 packet.path.assign(parsed.path, parsed.path + parsed.path_len);
             }
-            executeProtocolEffects(protocol_runtime_.handleIncoming(packet, buildRuntimeContext()));
+            runtime::FixedProtocolRuntimeContextProvider context_provider(buildRuntimeContext());
+            const auto bundle = protocolRuntimeBundle(context_provider);
+            if (bundle.valid())
+            {
+                auto facade = bundle.createFacade(
+                    runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+                facade.handleIncoming(packet);
+            }
 
             MESHCORE_LOG("[MESHCORE] RX TRACE done tag=%08lX auth=%08lX hops=%u route=%s\n",
                          static_cast<unsigned long>(trace.tag),
@@ -3877,7 +3923,14 @@ void MeshCoreAdapter::handleRawPacketInternal(const uint8_t* data, size_t size, 
                 packet.rx_meta.rssi_dbm_x10 = static_cast<int16_t>(std::lround(last_rx_rssi_ * 10.0f));
             }
 
-            executeProtocolEffects(protocol_runtime_.handleIncoming(packet, buildRuntimeContext()));
+            runtime::FixedProtocolRuntimeContextProvider context_provider(buildRuntimeContext());
+            const auto bundle = protocolRuntimeBundle(context_provider);
+            if (bundle.valid())
+            {
+                auto facade = bundle.createFacade(
+                    runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+                facade.handleIncoming(packet);
+            }
 
             DecodedDiscoverRequest discover_request{};
             DecodedDiscoverResponse discover_response{};
@@ -4924,7 +4977,14 @@ void MeshCoreAdapter::handleRawPacketInternal(const uint8_t* data, size_t size, 
             {
                 packet.path.assign(parsed.path, parsed.path + parsed.path_len);
             }
-            executeProtocolEffects(protocol_runtime_.handleIncoming(packet, buildRuntimeContext()));
+            runtime::FixedProtocolRuntimeContextProvider context_provider(buildRuntimeContext());
+            const auto bundle = protocolRuntimeBundle(context_provider);
+            if (bundle.valid())
+            {
+                auto facade = bundle.createFacade(
+                    runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+                facade.handleIncoming(packet);
+            }
 
             MESHCORE_LOG("[MESHCORE] RX TRACE done tag=%08lX auth=%08lX hops=%u route=%s\n",
                          static_cast<unsigned long>(trace.tag),
@@ -4956,7 +5016,13 @@ void MeshCoreAdapter::processSendQueue()
     uint32_t now_ms = millis();
     prunePendingAppAcks(now_ms);
     prunePeerRoutes(now_ms);
-    executeProtocolEffects(protocol_runtime_.tick(buildRuntimeContext()));
+    runtime::FixedProtocolRuntimeContextProvider context_provider(buildRuntimeContext());
+    const auto bundle = protocolRuntimeBundle(context_provider);
+    if (bundle.valid())
+    {
+        auto facade = bundle.createFacade(runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+        facade.tick();
+    }
 
     if (scheduled_tx_.empty())
     {

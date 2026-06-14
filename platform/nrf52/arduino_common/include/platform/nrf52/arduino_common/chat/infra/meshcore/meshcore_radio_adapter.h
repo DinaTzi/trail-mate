@@ -4,6 +4,7 @@
 #include "chat/infra/meshcore/meshcore_identity_crypto.h"
 #include "chat/ports/i_mesh_adapter.h"
 #include "chat/runtime/meshcore_runtime.h"
+#include "chat/runtime/protocol_runtime_factory.h"
 #include "chat/runtime/self_identity_policy.h"
 #include "chat/runtime/self_identity_provider.h"
 
@@ -14,7 +15,9 @@
 namespace platform::nrf52::arduino_common::chat::meshcore
 {
 
-class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter, public ::chat::meshcore::IMeshCoreBleBackend
+class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter,
+                                   public ::chat::meshcore::IMeshCoreBleBackend,
+                                   public ::chat::runtime::IProtocolEffectExecutor
 {
   public:
     explicit MeshCoreRadioAdapter(const ::chat::runtime::SelfIdentityProvider* identity_provider = nullptr);
@@ -80,6 +83,9 @@ class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter, public ::chat::m
     bool sendAdvert(bool broadcast);
     bool handleNodeInfoAppData(const ::chat::MeshIncomingData& incoming);
     ::chat::runtime::RuntimeContext buildRuntimeContext() const;
+    ::chat::runtime::ProtocolRuntimeBundle protocolRuntimeBundle(
+        const ::chat::runtime::IProtocolRuntimeContextProvider& context_provider);
+    bool execute(const ::chat::runtime::ProtocolEffect& effect) override;
     bool executeProtocolEffects(const ::chat::runtime::ProtocolEffects& effects);
     bool executeProtocolEffect(const ::chat::runtime::ProtocolEffect& effect);
     bool executeNodeInfoEffect(const ::chat::runtime::SendNodeInfoEffect& effect);

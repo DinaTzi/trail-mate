@@ -238,10 +238,15 @@ bool MeshCoreRadioAdapter::requestNodeInfo(::chat::NodeId dest, bool want_respon
         return false;
     }
 
-    ::chat::runtime::RequestNodeInfoIntent intent{};
-    intent.peer = dest;
-    intent.want_response = want_response;
-    return executeProtocolEffects(protocol_runtime_.prepareOutgoing(intent, buildRuntimeContext()));
+    ::chat::runtime::FixedProtocolRuntimeContextProvider context_provider(buildRuntimeContext());
+    const auto bundle = protocolRuntimeBundle(context_provider);
+    if (!bundle.valid())
+    {
+        return false;
+    }
+    auto facade = bundle.createFacade(
+        ::chat::runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+    return facade.requestNodeInfo(dest, want_response).ok();
 }
 
 ::chat::runtime::RuntimeContext MeshCoreRadioAdapter::buildRuntimeContext() const
@@ -255,12 +260,28 @@ bool MeshCoreRadioAdapter::requestNodeInfo(::chat::NodeId dest, bool want_respon
     return context;
 }
 
+::chat::runtime::ProtocolRuntimeBundle MeshCoreRadioAdapter::protocolRuntimeBundle(
+    const ::chat::runtime::IProtocolRuntimeContextProvider& context_provider)
+{
+    ::chat::runtime::ProtocolRuntimeSelection selection{};
+    selection.meshcore = &protocol_runtime_;
+    return ::chat::runtime::protocolRuntimeFor(::chat::MeshProtocol::MeshCore,
+                                               selection,
+                                               *this,
+                                               context_provider);
+}
+
+bool MeshCoreRadioAdapter::execute(const ::chat::runtime::ProtocolEffect& effect)
+{
+    return executeProtocolEffect(effect);
+}
+
 bool MeshCoreRadioAdapter::executeProtocolEffects(const ::chat::runtime::ProtocolEffects& effects)
 {
     bool ok = true;
     for (const auto& effect : effects.items)
     {
-        ok = executeProtocolEffect(effect) && ok;
+        ok = execute(effect) && ok;
     }
     return ok;
 }
@@ -305,8 +326,15 @@ bool MeshCoreRadioAdapter::executeProtocolEffect(const ::chat::runtime::Protocol
                     result.peer = item.peer;
                     result.ok = ok;
                     result.detail = ok ? static_cast<int32_t>(timeout_ms) : 0;
-                    executeProtocolEffects(protocol_runtime_.handleTxResult(result,
-                                                                            buildRuntimeContext()));
+                    ::chat::runtime::FixedProtocolRuntimeContextProvider context_provider(
+                        buildRuntimeContext());
+                    const auto bundle = protocolRuntimeBundle(context_provider);
+                    if (bundle.valid())
+                    {
+                        auto facade = bundle.createFacade(
+                            ::chat::runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+                        facade.handleTxResult(result);
+                    }
                 }
             }
             else if constexpr (std::is_same_v<Effect, ::chat::runtime::SendDiscoverRequestEffect>)
@@ -480,7 +508,15 @@ bool MeshCoreRadioAdapter::triggerDiscoveryAction(::chat::MeshDiscoveryAction ac
     ::chat::runtime::DiscoverIntent intent{};
     intent.action = action;
     intent.type_filter = ::chat::meshcore::kMeshCoreDiscoverTypeFilterAll;
-    return executeProtocolEffects(protocol_runtime_.prepareOutgoing(intent, buildRuntimeContext()));
+    ::chat::runtime::FixedProtocolRuntimeContextProvider context_provider(buildRuntimeContext());
+    const auto bundle = protocolRuntimeBundle(context_provider);
+    if (!bundle.valid())
+    {
+        return false;
+    }
+    auto facade = bundle.createFacade(
+        ::chat::runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+    return facade.discover(intent).ok();
 }
 
 void MeshCoreRadioAdapter::applyConfig(const ::chat::MeshConfig& config)
@@ -556,7 +592,14 @@ void MeshCoreRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
         {
             packet.path.assign(parsed.path, parsed.path + parsed.path_len);
         }
-        executeProtocolEffects(protocol_runtime_.handleIncoming(packet, buildRuntimeContext()));
+        ::chat::runtime::FixedProtocolRuntimeContextProvider context_provider(buildRuntimeContext());
+        const auto bundle = protocolRuntimeBundle(context_provider);
+        if (bundle.valid())
+        {
+            auto facade = bundle.createFacade(
+                ::chat::runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+            facade.handleIncoming(packet);
+        }
         return;
     }
 
@@ -572,7 +615,14 @@ void MeshCoreRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
         {
             packet.path.assign(parsed.path, parsed.path + parsed.path_len);
         }
-        executeProtocolEffects(protocol_runtime_.handleIncoming(packet, buildRuntimeContext()));
+        ::chat::runtime::FixedProtocolRuntimeContextProvider context_provider(buildRuntimeContext());
+        const auto bundle = protocolRuntimeBundle(context_provider);
+        if (bundle.valid())
+        {
+            auto facade = bundle.createFacade(
+                ::chat::runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+            facade.handleIncoming(packet);
+        }
         return;
     }
 
@@ -713,23 +763,38 @@ bool MeshCoreRadioAdapter::handleNodeInfoAppData(const ::chat::MeshIncomingData&
     packet.payload = incoming.payload;
     packet.rx_meta = incoming.rx_meta;
 
-    const auto effects = protocol_runtime_.handleIncoming(packet, buildRuntimeContext());
-    if (effects.empty())
+    ::chat::runtime::FixedProtocolRuntimeContextProvider context_provider(buildRuntimeContext());
+    const auto bundle = protocolRuntimeBundle(context_provider);
+    if (!bundle.valid())
+    {
+        return false;
+    }
+    auto facade = bundle.createFacade(
+        ::chat::runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+    const auto result = facade.handleIncoming(packet);
+    if (result.effect_count == 0)
     {
         return decoded.type == ::chat::meshcore::MeshCoreNodeInfoControlType::Query;
     }
 
-    const bool ok = executeProtocolEffects(effects);
     if (decoded.type == ::chat::meshcore::MeshCoreNodeInfoControlType::Query)
     {
         return true;
     }
-    return ok;
+    return result.ok();
 }
 
 void MeshCoreRadioAdapter::processSendQueue()
 {
-    executeProtocolEffects(protocol_runtime_.tick(buildRuntimeContext()));
+    ::chat::runtime::FixedProtocolRuntimeContextProvider context_provider(buildRuntimeContext());
+    const auto bundle = protocolRuntimeBundle(context_provider);
+    if (!bundle.valid())
+    {
+        return;
+    }
+    auto facade = bundle.createFacade(
+        ::chat::runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+    facade.tick();
 }
 
 bool MeshCoreRadioAdapter::exportIdentityPublicKey(uint8_t out_pubkey[::chat::meshcore::kMeshCorePubKeySize])

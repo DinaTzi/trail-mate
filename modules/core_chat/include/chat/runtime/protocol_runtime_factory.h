@@ -46,9 +46,11 @@ struct ProtocolRuntimeBundle
         return runtime != nullptr && executor != nullptr && context_provider != nullptr;
     }
 
-    MeshProtocolFacade createFacade() const
+    MeshProtocolFacade createFacade(
+        ProtocolProjectionPolicy projection_policy =
+            ProtocolProjectionPolicy::CaptureAppFacing) const
     {
-        return MeshProtocolFacade(*runtime, *executor, *context_provider);
+        return MeshProtocolFacade(*runtime, *executor, *context_provider, projection_policy);
     }
 };
 

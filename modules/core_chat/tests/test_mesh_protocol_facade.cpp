@@ -363,6 +363,31 @@ int main()
     {
         FakeRuntime runtime{};
         RecordingExecutor executor{};
+        chat::runtime::MeshProtocolFacade facade(
+            runtime,
+            executor,
+            context_provider,
+            chat::runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+
+        chat::runtime::IncomingPacket packet{};
+        packet.protocol = chat::MeshProtocol::Meshtastic;
+        packet.from = 0x5656UL;
+        packet.to = context_provider.context.self_node;
+        packet.portnum = 100;
+        packet.payload.assign({0xCC, 0xDD});
+
+        const auto result = facade.handleIncoming(packet);
+
+        assert(result.ok());
+        assert(result.effect_count == 1);
+        assert(result.executed_effect_count == 1);
+        assert(executor.effects.size() == 1);
+        assert(executor.effectAt<chat::runtime::PublishIncomingDataEffect>(0));
+    }
+
+    {
+        FakeRuntime runtime{};
+        RecordingExecutor executor{};
         chat::runtime::MeshProtocolFacade facade(runtime, executor, context_provider);
 
         chat::runtime::TxResult tx{};

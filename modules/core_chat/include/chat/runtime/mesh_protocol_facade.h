@@ -45,15 +45,24 @@ struct MeshProtocolFacadeResult
     }
 };
 
+enum class ProtocolProjectionPolicy : uint8_t
+{
+    CaptureAppFacing = 0,
+    ExecuteAppFacing,
+};
+
 class MeshProtocolFacade
 {
   public:
     MeshProtocolFacade(IProtocolRuntime& runtime,
                        IProtocolEffectExecutor& executor,
-                       const IProtocolRuntimeContextProvider& context_provider)
+                       const IProtocolRuntimeContextProvider& context_provider,
+                       ProtocolProjectionPolicy projection_policy =
+                           ProtocolProjectionPolicy::CaptureAppFacing)
         : runtime_(runtime),
           executor_(executor),
-          context_provider_(context_provider)
+          context_provider_(context_provider),
+          projection_policy_(projection_policy)
     {
     }
 
@@ -174,6 +183,12 @@ class MeshProtocolFacade
                std::get_if<PublishNodeInfoEffect>(&effect);
     }
 
+    bool shouldCaptureAppFacingProjection(const ProtocolEffect& effect) const
+    {
+        return projection_policy_ == ProtocolProjectionPolicy::CaptureAppFacing &&
+               isAppFacingProjection(effect);
+    }
+
     MeshProtocolFacadeResult executeEffects(const ProtocolEffects& effects,
                                             const RuntimeContext& context,
                                             bool allow_tx_feedback)
@@ -183,7 +198,7 @@ class MeshProtocolFacade
         for (const ProtocolEffect& effect : effects.items)
         {
             captureActionResult(result, effect);
-            if (isAppFacingProjection(effect))
+            if (shouldCaptureAppFacingProjection(effect))
             {
                 continue;
             }
@@ -237,6 +252,7 @@ class MeshProtocolFacade
     IProtocolRuntime& runtime_;
     IProtocolEffectExecutor& executor_;
     const IProtocolRuntimeContextProvider& context_provider_;
+    ProtocolProjectionPolicy projection_policy_ = ProtocolProjectionPolicy::CaptureAppFacing;
 };
 
 } // namespace chat::runtime

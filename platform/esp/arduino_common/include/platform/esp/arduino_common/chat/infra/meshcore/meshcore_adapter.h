@@ -9,6 +9,7 @@
 #include "chat/infra/meshcore/meshcore_ble_backend.h"
 #include "chat/ports/i_mesh_adapter.h"
 #include "chat/runtime/meshcore_runtime.h"
+#include "chat/runtime/protocol_runtime_factory.h"
 #include "platform/esp/arduino_common/chat/infra/meshcore/meshcore_identity.h"
 #include <deque>
 #include <limits>
@@ -24,7 +25,9 @@ namespace meshcore
 /**
  * @brief MeshCore protocol adapter
  */
-class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
+class MeshCoreAdapter : public IMeshAdapter,
+                        public IMeshCoreBleBackend,
+                        public runtime::IProtocolEffectExecutor
 {
   public:
     /**
@@ -377,6 +380,9 @@ class MeshCoreAdapter : public IMeshAdapter, public IMeshCoreBleBackend
     void pushEvent(Event&& ev);
     bool sendNodeInfoFrame(NodeId dest, bool is_query, bool request_reply);
     runtime::RuntimeContext buildRuntimeContext() const;
+    runtime::ProtocolRuntimeBundle protocolRuntimeBundle(
+        const runtime::IProtocolRuntimeContextProvider& context_provider);
+    bool execute(const runtime::ProtocolEffect& effect) override;
     bool executeProtocolEffects(const runtime::ProtocolEffects& effects);
     bool executeProtocolEffect(const runtime::ProtocolEffect& effect);
     MeshActionResult executeDiscoverIntentDetailed(MeshDiscoveryAction action);

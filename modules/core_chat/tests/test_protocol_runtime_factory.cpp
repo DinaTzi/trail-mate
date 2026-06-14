@@ -25,7 +25,10 @@ class FakeRuntime final : public chat::runtime::IProtocolRuntime
         const chat::runtime::IncomingPacket&,
         const chat::runtime::RuntimeContext&) override
     {
-        return {};
+        chat::runtime::ProtocolEffects effects{};
+        chat::runtime::PublishIncomingDataEffect data{};
+        effects.add(data);
+        return effects;
     }
 
     chat::runtime::ProtocolEffects handleTxResult(
@@ -108,6 +111,21 @@ int main()
         assert(meshcore.prepare_count == 1);
         assert(executor.execute_count == 1);
         assert(executor.last_protocol == chat::MeshProtocol::MeshCore);
+    }
+
+    {
+        const auto bundle = chat::runtime::protocolRuntimeFor(chat::MeshProtocol::MeshCore,
+                                                              selection,
+                                                              executor,
+                                                              context_provider);
+        auto facade = bundle.createFacade(
+            chat::runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
+        chat::runtime::IncomingPacket packet{};
+        packet.protocol = chat::MeshProtocol::MeshCore;
+        const auto result = facade.handleIncoming(packet);
+        assert(result.ok());
+        assert(result.effect_count == 1);
+        assert(result.executed_effect_count == 1);
     }
 
     {
