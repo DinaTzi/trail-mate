@@ -14,8 +14,8 @@
 #include "chat/domain/contact_types.h"
 #include "chat/ports/i_mesh_adapter.h"
 #include "chat/runtime/mesh_adapter_protocol_effect_executor.h"
-#include "chat/runtime/mesh_protocol_facade.h"
 #include "chat/runtime/meshtastic_runtime.h"
+#include "chat/runtime/protocol_runtime_factory.h"
 #include "chat/usecase/chat_service.h"
 #include "chat/usecase/contact_service.h"
 #include "platform/ui/gps_runtime.h"
@@ -25,24 +25,6 @@ namespace trailmate::uconsole
 {
 namespace
 {
-
-class FixedProtocolRuntimeContextProvider final
-    : public ::chat::runtime::IProtocolRuntimeContextProvider
-{
-  public:
-    explicit FixedProtocolRuntimeContextProvider(::chat::runtime::RuntimeContext context)
-        : context_(context)
-    {
-    }
-
-    ::chat::runtime::RuntimeContext runtimeContext() const override
-    {
-        return context_;
-    }
-
-  private:
-    ::chat::runtime::RuntimeContext context_{};
-};
 
 [[nodiscard]] const char* protocolLabel(::chat::MeshProtocol protocol) noexcept
 {
@@ -1359,9 +1341,20 @@ bool UConsoleChatWorkspaceModel::sendCurrentPosition()
     context.protocol = ::chat::MeshProtocol::Meshtastic;
     context.self_node = adapter->getNodeId();
     context.now_ms = sys::epoch_seconds_now() * 1000UL;
-    FixedProtocolRuntimeContextProvider context_provider(context);
+    ::chat::runtime::FixedProtocolRuntimeContextProvider context_provider(context);
     ::chat::runtime::MeshAdapterProtocolEffectExecutor executor(*adapter);
-    ::chat::runtime::MeshProtocolFacade facade(runtime, executor, context_provider);
+    ::chat::runtime::ProtocolRuntimeSelection runtime_selection{};
+    runtime_selection.meshtastic = &runtime;
+    const auto bundle = ::chat::runtime::protocolRuntimeFor(::chat::MeshProtocol::Meshtastic,
+                                                            runtime_selection,
+                                                            executor,
+                                                            context_provider);
+    if (!bundle.valid())
+    {
+        action_status_ = "Position encoding failed.";
+        return false;
+    }
+    auto facade = bundle.createFacade();
 
     const auto result = facade.sharePosition(intent);
     if (result.hasActionResult())
@@ -1421,9 +1414,20 @@ bool UConsoleChatWorkspaceModel::sendCurrentPoi()
     context.protocol = ::chat::MeshProtocol::Meshtastic;
     context.self_node = adapter->getNodeId();
     context.now_ms = sys::epoch_seconds_now() * 1000UL;
-    FixedProtocolRuntimeContextProvider context_provider(context);
+    ::chat::runtime::FixedProtocolRuntimeContextProvider context_provider(context);
     ::chat::runtime::MeshAdapterProtocolEffectExecutor executor(*adapter);
-    ::chat::runtime::MeshProtocolFacade facade(runtime, executor, context_provider);
+    ::chat::runtime::ProtocolRuntimeSelection runtime_selection{};
+    runtime_selection.meshtastic = &runtime;
+    const auto bundle = ::chat::runtime::protocolRuntimeFor(::chat::MeshProtocol::Meshtastic,
+                                                            runtime_selection,
+                                                            executor,
+                                                            context_provider);
+    if (!bundle.valid())
+    {
+        action_status_ = "POI encoding failed.";
+        return false;
+    }
+    auto facade = bundle.createFacade();
 
     const auto result = facade.shareWaypoint(intent);
     if (result.hasActionResult())

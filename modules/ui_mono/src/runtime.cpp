@@ -7,8 +7,8 @@
 #include "chat/infra/meshtastic/mt_protocol_helpers.h"
 #include "chat/infra/meshtastic/mt_region.h"
 #include "chat/runtime/mesh_adapter_protocol_effect_executor.h"
-#include "chat/runtime/mesh_protocol_facade.h"
 #include "chat/runtime/meshtastic_runtime.h"
+#include "chat/runtime/protocol_runtime_factory.h"
 #include "chat/runtime/self_identity_policy.h"
 #include "chat/usecase/chat_service.h"
 #include "chat/usecase/contact_service.h"
@@ -38,24 +38,6 @@ namespace ui::mono
 {
 namespace
 {
-class FixedProtocolRuntimeContextProvider final
-    : public chat::runtime::IProtocolRuntimeContextProvider
-{
-  public:
-    explicit FixedProtocolRuntimeContextProvider(chat::runtime::RuntimeContext context)
-        : context_(context)
-    {
-    }
-
-    chat::runtime::RuntimeContext runtimeContext() const override
-    {
-        return context_;
-    }
-
-  private:
-    chat::runtime::RuntimeContext context_{};
-};
-
 class NoopProtocolEffectExecutor final : public chat::runtime::IProtocolEffectExecutor
 {
   public:
@@ -2233,22 +2215,34 @@ void Runtime::tick(InputAction action)
     expireTransientPopup();
     ensureBootExit();
     const chat::runtime::RuntimeContext protocol_context = buildMeshtasticProtocolContext();
-    FixedProtocolRuntimeContextProvider context_provider(protocol_context);
+    chat::runtime::FixedProtocolRuntimeContextProvider context_provider(protocol_context);
+    chat::runtime::ProtocolRuntimeSelection runtime_selection{};
+    runtime_selection.meshtastic = &meshtastic_protocol_runtime_;
     if (auto* mesh = app() ? app()->getMeshAdapter() : nullptr)
     {
         chat::runtime::MeshAdapterProtocolEffectExecutor executor(*mesh);
-        chat::runtime::MeshProtocolFacade facade(meshtastic_protocol_runtime_,
-                                                 executor,
-                                                 context_provider);
-        handleMeshtasticFacadeResult(facade.tick());
+        const auto bundle = chat::runtime::protocolRuntimeFor(chat::MeshProtocol::Meshtastic,
+                                                              runtime_selection,
+                                                              executor,
+                                                              context_provider);
+        if (bundle.valid())
+        {
+            auto facade = bundle.createFacade();
+            handleMeshtasticFacadeResult(facade.tick());
+        }
     }
     else
     {
         NoopProtocolEffectExecutor executor;
-        chat::runtime::MeshProtocolFacade facade(meshtastic_protocol_runtime_,
-                                                 executor,
-                                                 context_provider);
-        handleMeshtasticFacadeResult(facade.tick());
+        const auto bundle = chat::runtime::protocolRuntimeFor(chat::MeshProtocol::Meshtastic,
+                                                              runtime_selection,
+                                                              executor,
+                                                              context_provider);
+        if (bundle.valid())
+        {
+            auto facade = bundle.createFacade();
+            handleMeshtasticFacadeResult(facade.tick());
+        }
     }
     ensureSleepTimeout(action);
     handleInput(action);
@@ -2346,22 +2340,34 @@ void Runtime::onIncomingData(const chat::MeshIncomingData& msg)
     packet.rx_meta = msg.rx_meta;
 
     const chat::runtime::RuntimeContext protocol_context = buildMeshtasticProtocolContext();
-    FixedProtocolRuntimeContextProvider context_provider(protocol_context);
+    chat::runtime::FixedProtocolRuntimeContextProvider context_provider(protocol_context);
+    chat::runtime::ProtocolRuntimeSelection runtime_selection{};
+    runtime_selection.meshtastic = &meshtastic_protocol_runtime_;
     if (auto* mesh = app() ? app()->getMeshAdapter() : nullptr)
     {
         chat::runtime::MeshAdapterProtocolEffectExecutor executor(*mesh);
-        chat::runtime::MeshProtocolFacade facade(meshtastic_protocol_runtime_,
-                                                 executor,
-                                                 context_provider);
-        handleMeshtasticFacadeResult(facade.handleIncoming(packet));
+        const auto bundle = chat::runtime::protocolRuntimeFor(chat::MeshProtocol::Meshtastic,
+                                                              runtime_selection,
+                                                              executor,
+                                                              context_provider);
+        if (bundle.valid())
+        {
+            auto facade = bundle.createFacade();
+            handleMeshtasticFacadeResult(facade.handleIncoming(packet));
+        }
     }
     else
     {
         NoopProtocolEffectExecutor executor;
-        chat::runtime::MeshProtocolFacade facade(meshtastic_protocol_runtime_,
-                                                 executor,
-                                                 context_provider);
-        handleMeshtasticFacadeResult(facade.handleIncoming(packet));
+        const auto bundle = chat::runtime::protocolRuntimeFor(chat::MeshProtocol::Meshtastic,
+                                                              runtime_selection,
+                                                              executor,
+                                                              context_provider);
+        if (bundle.valid())
+        {
+            auto facade = bundle.createFacade();
+            handleMeshtasticFacadeResult(facade.handleIncoming(packet));
+        }
     }
 }
 
@@ -7501,11 +7507,21 @@ void Runtime::executeNodeAction()
             return;
         }
         const chat::runtime::RuntimeContext context = buildMeshtasticProtocolContext();
-        FixedProtocolRuntimeContextProvider context_provider(context);
+        chat::runtime::FixedProtocolRuntimeContextProvider context_provider(context);
         chat::runtime::MeshAdapterProtocolEffectExecutor executor(*mesh);
-        chat::runtime::MeshProtocolFacade facade(meshtastic_protocol_runtime_,
-                                                 executor,
-                                                 context_provider);
+        chat::runtime::ProtocolRuntimeSelection runtime_selection{};
+        runtime_selection.meshtastic = &meshtastic_protocol_runtime_;
+        const auto bundle = chat::runtime::protocolRuntimeFor(chat::MeshProtocol::Meshtastic,
+                                                              runtime_selection,
+                                                              executor,
+                                                              context_provider);
+        if (!bundle.valid())
+        {
+            appendBootLog("trace runtime na");
+            showTransientPopup("TRACE ROUTE", "UNAVAILABLE");
+            return;
+        }
+        auto facade = bundle.createFacade();
         chat::runtime::TraceRouteIntent intent{};
         intent.channel = chat::ChannelId::PRIMARY;
         intent.peer = node->node_id;
@@ -7565,11 +7581,21 @@ void Runtime::requestNodePositionExchange()
     }
 
     const chat::runtime::RuntimeContext context = buildMeshtasticProtocolContext();
-    FixedProtocolRuntimeContextProvider context_provider(context);
+    chat::runtime::FixedProtocolRuntimeContextProvider context_provider(context);
     chat::runtime::MeshAdapterProtocolEffectExecutor executor(*mesh);
-    chat::runtime::MeshProtocolFacade facade(meshtastic_protocol_runtime_,
-                                             executor,
-                                             context_provider);
+    chat::runtime::ProtocolRuntimeSelection runtime_selection{};
+    runtime_selection.meshtastic = &meshtastic_protocol_runtime_;
+    const auto bundle = chat::runtime::protocolRuntimeFor(chat::MeshProtocol::Meshtastic,
+                                                          runtime_selection,
+                                                          executor,
+                                                          context_provider);
+    if (!bundle.valid())
+    {
+        appendBootLog("pos runtime na");
+        showTransientPopup("EXCHANGE POSITION", "UNAVAILABLE");
+        return;
+    }
+    auto facade = bundle.createFacade();
     chat::runtime::ExchangePositionIntent intent{};
     intent.channel = chat::ChannelId::PRIMARY;
     intent.peer = node->node_id;
