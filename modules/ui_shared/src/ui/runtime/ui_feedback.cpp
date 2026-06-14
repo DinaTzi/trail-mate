@@ -3,8 +3,9 @@
 #include "lvgl.h"
 #include "ui/widgets/system_notification.h"
 
+#include <atomic>
+#include <cstddef>
 #include <cstring>
-#include <new>
 
 namespace ui::feedback
 {
@@ -12,12 +13,15 @@ namespace
 {
 
 constexpr size_t kMaxNoticeTextBytes = 192;
+constexpr size_t kNoticeQueueCapacity = 8;
+constexpr uint32_t kDrainPeriodMs = 20;
 
 struct PostedNotice
 {
-    char text[kMaxNoticeTextBytes];
+    char text[kMaxNoticeTextBytes]{};
     uint32_t duration_ms = 3000;
     Severity severity = Severity::Info;
+    bool hide = false;
 };
 
 class LvglSystemNotificationPresenter final : public IFeedbackPresenter
@@ -42,6 +46,31 @@ class LvglSystemNotificationPresenter final : public IFeedbackPresenter
 LvglSystemNotificationPresenter s_default_presenter;
 IFeedbackPresenter* s_presenter = &s_default_presenter;
 bool s_ready = false;
+lv_timer_t* s_drain_timer = nullptr;
+
+PostedNotice s_queue[kNoticeQueueCapacity]{};
+size_t s_queue_head = 0;
+size_t s_queue_count = 0;
+std::atomic_flag s_queue_lock = ATOMIC_FLAG_INIT;
+
+class QueueLock
+{
+  public:
+    QueueLock()
+    {
+        while (s_queue_lock.test_and_set(std::memory_order_acquire))
+        {
+        }
+    }
+
+    ~QueueLock()
+    {
+        s_queue_lock.clear(std::memory_order_release);
+    }
+
+    QueueLock(const QueueLock&) = delete;
+    QueueLock& operator=(const QueueLock&) = delete;
+};
 
 void copy_notice_text(char* out, size_t out_len, const char* text)
 {
@@ -53,6 +82,34 @@ void copy_notice_text(char* out, size_t out_len, const char* text)
     out[out_len - 1] = '\0';
 }
 
+void enqueue_notice(const PostedNotice& notice)
+{
+    QueueLock lock;
+    if (s_queue_count == kNoticeQueueCapacity)
+    {
+        s_queue_head = (s_queue_head + 1) % kNoticeQueueCapacity;
+        --s_queue_count;
+    }
+
+    const size_t tail = (s_queue_head + s_queue_count) % kNoticeQueueCapacity;
+    s_queue[tail] = notice;
+    ++s_queue_count;
+}
+
+bool pop_notice(PostedNotice& out)
+{
+    QueueLock lock;
+    if (s_queue_count == 0)
+    {
+        return false;
+    }
+
+    out = s_queue[s_queue_head];
+    s_queue_head = (s_queue_head + 1) % kNoticeQueueCapacity;
+    --s_queue_count;
+    return true;
+}
+
 IFeedbackPresenter& active_presenter()
 {
     if (!s_presenter)
@@ -62,7 +119,7 @@ IFeedbackPresenter& active_presenter()
     return *s_presenter;
 }
 
-void ensure_ready()
+void ensure_presenter_ready()
 {
     if (s_ready)
     {
@@ -72,27 +129,42 @@ void ensure_ready()
     s_ready = true;
 }
 
-void show_notice_async(void* user_data)
+void drain_queued_notices()
 {
-    PostedNotice* payload = static_cast<PostedNotice*>(user_data);
-    if (!payload)
+    PostedNotice payload{};
+    while (pop_notice(payload))
+    {
+        ensure_presenter_ready();
+        if (payload.hide)
+        {
+            active_presenter().hide_notice();
+            continue;
+        }
+
+        NoticeIntent intent{};
+        intent.text = payload.text;
+        intent.duration_ms = payload.duration_ms;
+        intent.severity = payload.severity;
+        active_presenter().show_notice(intent);
+    }
+}
+
+void drain_timer_cb(lv_timer_t* /*timer*/)
+{
+    drain_queued_notices();
+}
+
+void ensure_drain_timer()
+{
+    if (s_drain_timer)
     {
         return;
     }
-
-    ensure_ready();
-    NoticeIntent intent{};
-    intent.text = payload->text;
-    intent.duration_ms = payload->duration_ms;
-    intent.severity = payload->severity;
-    active_presenter().show_notice(intent);
-    delete payload;
-}
-
-void hide_notice_async(void* /*user_data*/)
-{
-    ensure_ready();
-    active_presenter().hide_notice();
+    s_drain_timer = lv_timer_create(drain_timer_cb, kDrainPeriodMs, nullptr);
+    if (s_drain_timer)
+    {
+        lv_timer_set_repeat_count(s_drain_timer, -1);
+    }
 }
 
 } // namespace
@@ -110,7 +182,9 @@ IFeedbackPresenter& presenter()
 
 void init()
 {
-    ensure_ready();
+    ensure_presenter_ready();
+    ensure_drain_timer();
+    drain_queued_notices();
 }
 
 bool is_ready()
@@ -120,21 +194,12 @@ bool is_ready()
 
 bool show_notice(const NoticeIntent& intent)
 {
-    PostedNotice* payload = new (std::nothrow) PostedNotice{};
-    if (!payload)
-    {
-        return false;
-    }
-
-    copy_notice_text(payload->text, sizeof(payload->text), intent.text);
-    payload->duration_ms = intent.duration_ms;
-    payload->severity = intent.severity;
-
-    if (lv_async_call(show_notice_async, payload) != LV_RESULT_OK)
-    {
-        delete payload;
-        return false;
-    }
+    PostedNotice payload{};
+    copy_notice_text(payload.text, sizeof(payload.text), intent.text);
+    payload.duration_ms = intent.duration_ms;
+    payload.severity = intent.severity;
+    payload.hide = false;
+    enqueue_notice(payload);
     return true;
 }
 
@@ -149,7 +214,10 @@ bool show_notice(const char* text, uint32_t duration_ms)
 
 bool hide_notice()
 {
-    return lv_async_call(hide_notice_async, nullptr) == LV_RESULT_OK;
+    PostedNotice payload{};
+    payload.hide = true;
+    enqueue_notice(payload);
+    return true;
 }
 
 } // namespace ui::feedback
