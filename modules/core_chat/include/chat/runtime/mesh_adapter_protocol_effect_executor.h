@@ -58,6 +58,14 @@ class MeshAdapterProtocolEffectExecutor final : public IProtocolEffectExecutor
 
     ProtocolEffectExecutionResult sendPacket(const SendPacketEffect& packet)
     {
+        if (packet.response_request_id != 0)
+        {
+            ProtocolEffectExecutionResult result{};
+            result.state = ProtocolEffectExecutionState::Failed;
+            result.request_id = packet.response_request_id;
+            return result;
+        }
+
         const uint8_t* payload = packet.payload.empty() ? nullptr : packet.payload.data();
         const bool ok = adapter_.sendAppData(packet.channel,
                                              packet.portnum,

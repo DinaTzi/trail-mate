@@ -133,7 +133,6 @@ class MtAdapter : public chat::IMeshAdapter
     std::map<uint32_t, uint32_t> node_key_last_seen_;
     std::map<uint32_t, ChannelId> node_last_channel_;
     std::map<uint32_t, uint32_t> nodeinfo_reply_ms_;
-    uint32_t last_position_reply_ms_;
     std::map<uint32_t, std::string> node_long_names_;
     std::string user_long_name_;
     std::string user_short_name_;
@@ -220,18 +219,6 @@ class MtAdapter : public chat::IMeshAdapter
     bool sendNodeInfo();
     bool sendNodeInfoTo(uint32_t dest, bool want_response,
                         ChannelId channel = ChannelId::PRIMARY);
-    bool sendPositionTo(uint32_t dest, ChannelId channel, uint32_t request_id = 0);
-    bool sendTraceRouteResponse(uint32_t dest,
-                                uint32_t request_id,
-                                const meshtastic_RouteDiscovery& route,
-                                ChannelId channel,
-                                bool want_ack);
-    bool handleTraceRoutePacket(const PacketHeaderWire& header,
-                                meshtastic_Data* decoded,
-                                const chat::RxMeta* rx_meta,
-                                ChannelId channel,
-                                bool want_ack_flag,
-                                bool want_response);
     void maybeBroadcastNodeInfo(uint32_t now_ms);
     void maybeBroadcastNodeInfoAfterPeerAnnouncement(uint32_t from_node,
                                                      uint32_t now_ms,
@@ -275,6 +262,8 @@ class MtAdapter : public chat::IMeshAdapter
     bool sendRoutingError(uint32_t dest, uint32_t request_id, uint8_t channel_hash,
                           const uint8_t* psk, size_t psk_len,
                           meshtastic_Routing_Error reason);
+    runtime::RuntimeContext buildProtocolRuntimeContext() const;
+    bool sendProtocolPacketEffect(const runtime::SendPacketEffect& packet);
     bool executeProtocolEffects(const runtime::ProtocolEffects& effects);
     bool executeProtocolEffect(const runtime::ProtocolEffect& effect);
     bool executePkiResync(runtime::MeshtasticPkiResyncCause cause,

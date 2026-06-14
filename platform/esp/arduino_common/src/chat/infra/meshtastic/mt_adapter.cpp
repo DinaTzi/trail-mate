@@ -72,7 +72,6 @@ using chat::meshtastic::initPkiNonce;
 using chat::meshtastic::makeEncryptedPacketFromWire;
 using chat::meshtastic::readPbString;
 using chat::meshtastic::shouldSetAirWantAck;
-using chat::meshtastic::updateTraceRoutePayload;
 
 static const char* portName(uint32_t portnum)
 {
@@ -193,7 +192,7 @@ using chat::meshtastic::keyVerificationStage;
 using chat::meshtastic::routingErrorName;
 using chat::meshtastic::toHex;
 
-static bool build_self_position_payload(uint8_t* out_buf, size_t* out_len)
+static chat::runtime::MeshtasticPositionInput build_self_position_input()
 {
     gps::GpsState gps_state = gps::gps_get_data();
 
@@ -209,8 +208,7 @@ static bool build_self_position_payload(uint8_t* out_buf, size_t* out_len)
     input.course_deg = gps_state.course_deg;
     input.satellites = gps_state.satellites;
     input.timestamp_s = static_cast<uint32_t>(time(nullptr));
-
-    return chat::runtime::MeshtasticPositionCore::buildPositionPayload(input, out_buf, out_len);
+    return input;
 }
 
 static void publishPositionEvent(uint32_t node_id,
@@ -291,7 +289,6 @@ MtAdapter::MtAdapter(LoraBoard& board)
       pki_ready_(false),
       pki_public_key_{},
       pki_private_key_{},
-      last_position_reply_ms_(0),
       last_rx_rssi_(std::numeric_limits<float>::quiet_NaN()),
       last_rx_snr_(std::numeric_limits<float>::quiet_NaN()),
       kv_state_(KeyVerificationState::Idle),
@@ -2084,7 +2081,6 @@ void MtAdapter::processReceivedPacket(const uint8_t* data, size_t size)
         bool is_text_port = (decoded.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP ||
                              decoded.portnum == meshtastic_PortNum_TEXT_MESSAGE_COMPRESSED_APP);
         bool is_nodeinfo_port = (decoded.portnum == meshtastic_PortNum_NODEINFO_APP);
-        bool is_position_port = (decoded.portnum == meshtastic_PortNum_POSITION_APP);
         bool is_traceroute_port = (decoded.portnum == meshtastic_PortNum_TRACEROUTE_APP);
         ChannelId channel_id = decoded_channel_id;
         if (header.channel != 0 && header.from != node_id_)
@@ -2117,15 +2113,24 @@ void MtAdapter::processReceivedPacket(const uint8_t* data, size_t size)
             }
         }
 
-        if (is_traceroute_port)
-        {
-            handleTraceRoutePacket(header,
-                                   &decoded,
-                                   &rx_meta,
-                                   channel_id,
-                                   want_ack_flag,
-                                   want_response);
-        }
+        runtime::IncomingPacket runtime_packet{};
+        runtime_packet.protocol = MeshProtocol::Meshtastic;
+        runtime_packet.channel = channel_id;
+        runtime_packet.from = header.from;
+        runtime_packet.to = header.to;
+        runtime_packet.packet_id = header.id;
+        runtime_packet.request_id = decoded.request_id;
+        runtime_packet.portnum = decoded.portnum;
+        runtime_packet.want_response = want_response;
+        runtime_packet.encrypted = used_pki_transport || (psk != nullptr && psk_len > 0);
+        runtime_packet.payload.assign(decoded.payload.bytes,
+                                      decoded.payload.bytes + decoded.payload.size);
+        runtime_packet.rx_meta = rx_meta;
+        (void)executeProtocolEffects(
+            protocol_runtime_.handleIncomingPacket(
+                runtime_packet,
+                buildProtocolRuntimeContext())
+                .effects);
 
         if (is_nodeinfo_port)
         {
@@ -2156,36 +2161,10 @@ void MtAdapter::processReceivedPacket(const uint8_t* data, size_t size)
                          (unsigned long)reply_policy.age_ms);
             }
         }
-        else if (is_position_port)
-        {
-            uint32_t now_ms = millis();
-            const auto reply_policy = chat::runtime::resolveMeshtasticPositionReplyPolicy(
-                want_response, to_us_or_broadcast, now_ms, last_position_reply_ms_);
-            if (reply_policy.should_reply)
-            {
-                if (sendPositionTo(header.from, channel_id, header.id))
-                {
-                    last_position_reply_ms_ = now_ms;
-                    LORA_LOG("[LORA] TX position reply to=%08lX\n",
-                             (unsigned long)header.from);
-                }
-                else
-                {
-                    LORA_LOG("[LORA] TX position reply skip/fail to=%08lX\n",
-                             (unsigned long)header.from);
-                }
-            }
-            else if (reply_policy.reason == chat::runtime::MeshtasticReplyReason::Suppressed)
-            {
-                LORA_LOG("[LORA] TX position reply suppressed to=%08lX age=%lu\n",
-                         (unsigned long)header.from,
-                         (unsigned long)reply_policy.age_ms);
-            }
-        }
 
         queueMqttProxyPublishFromWire(data, size, &decoded, channel_id);
 
-        if (!is_text_port && decoded.payload.size > 0)
+        if (!is_text_port && !is_traceroute_port && decoded.payload.size > 0)
         {
             MeshIncomingData incoming;
             incoming.portnum = decoded.portnum;
@@ -2630,143 +2609,6 @@ bool MtAdapter::sendNodeInfoTo(uint32_t dest, bool want_response, ChannelId chan
              (unsigned)packet.wire_size,
              ok ? 1 : 0);
     return ok;
-}
-
-bool MtAdapter::sendPositionTo(uint32_t dest, ChannelId channel, uint32_t request_id)
-{
-    uint8_t payload[128];
-    size_t payload_len = sizeof(payload);
-    if (!build_self_position_payload(payload, &payload_len))
-    {
-        return false;
-    }
-
-    if (request_id != 0)
-    {
-        ChannelId out_channel = channel;
-        if (encrypt_mode_ == 0 || encrypt_mode_ == 2)
-        {
-            out_channel = ChannelId::PRIMARY;
-        }
-
-        meshtastic_MeshPacket packet = meshtastic_MeshPacket_init_zero;
-        packet.to = dest;
-        packet.channel = (out_channel == ChannelId::SECONDARY) ? 1 : 0;
-        packet.hop_limit = config_.hop_limit;
-        packet.want_ack = false;
-        packet.which_payload_variant = meshtastic_MeshPacket_decoded_tag;
-        packet.decoded = meshtastic_Data_init_default;
-        packet.decoded.portnum = meshtastic_PortNum_POSITION_APP;
-        packet.decoded.want_response = false;
-        packet.decoded.request_id = request_id;
-        packet.decoded.has_bitfield = true;
-        packet.decoded.bitfield = 0;
-        packet.decoded.payload.size =
-            static_cast<pb_size_t>(std::min(payload_len, sizeof(packet.decoded.payload.bytes)));
-        if (packet.decoded.payload.size > 0)
-        {
-            std::memcpy(packet.decoded.payload.bytes,
-                        payload,
-                        packet.decoded.payload.size);
-        }
-        return sendMeshPacket(packet);
-    }
-
-    return sendAppData(channel,
-                       meshtastic_PortNum_POSITION_APP,
-                       payload,
-                       payload_len,
-                       dest,
-                       false);
-}
-
-bool MtAdapter::sendTraceRouteResponse(uint32_t dest,
-                                       uint32_t request_id,
-                                       const meshtastic_RouteDiscovery& route,
-                                       ChannelId channel,
-                                       bool want_ack)
-{
-    meshtastic_MeshPacket packet = meshtastic_MeshPacket_init_zero;
-    packet.to = dest;
-    packet.channel = (channel == ChannelId::SECONDARY) ? 1 : 0;
-    packet.hop_limit = config_.hop_limit;
-    packet.want_ack = want_ack;
-    packet.which_payload_variant = meshtastic_MeshPacket_decoded_tag;
-    packet.decoded = meshtastic_Data_init_default;
-    packet.decoded.portnum = meshtastic_PortNum_TRACEROUTE_APP;
-    packet.decoded.want_response = false;
-    packet.decoded.request_id = request_id;
-    packet.decoded.has_bitfield = true;
-    packet.decoded.bitfield = 0;
-
-    pb_ostream_t ostream =
-        pb_ostream_from_buffer(packet.decoded.payload.bytes, sizeof(packet.decoded.payload.bytes));
-    if (!pb_encode(&ostream, meshtastic_RouteDiscovery_fields, &route))
-    {
-        LORA_LOG("[LORA] traceroute response encode fail req=%08lX err=%s\n",
-                 (unsigned long)request_id,
-                 PB_GET_ERROR(&ostream));
-        return false;
-    }
-
-    packet.decoded.payload.size = static_cast<pb_size_t>(ostream.bytes_written);
-    return sendMeshPacket(packet);
-}
-
-bool MtAdapter::handleTraceRoutePacket(const PacketHeaderWire& header,
-                                       meshtastic_Data* decoded,
-                                       const chat::RxMeta* rx_meta,
-                                       ChannelId channel,
-                                       bool want_ack_flag,
-                                       bool want_response)
-{
-    if (!decoded || decoded->portnum != meshtastic_PortNum_TRACEROUTE_APP)
-    {
-        return false;
-    }
-
-    const bool is_response = decoded->request_id != 0;
-    const bool is_broadcast = header.to == kBroadcastNodeId;
-    const bool to_us = header.to == node_id_;
-
-    meshtastic_RouteDiscovery route = meshtastic_RouteDiscovery_init_zero;
-    if (!updateTraceRoutePayload(decoded, header.flags, node_id_, rx_meta, is_response, to_us, &route))
-    {
-        LORA_LOG("[LORA] traceroute update fail from=%08lX\n",
-                 (unsigned long)header.from);
-        return false;
-    }
-
-    const uint8_t hop_limit = header.flags & PACKET_FLAGS_HOP_LIMIT_MASK;
-    const uint8_t hop_start =
-        (header.flags & PACKET_FLAGS_HOP_START_MASK) >> PACKET_FLAGS_HOP_START_SHIFT;
-    const auto reply_policy = chat::runtime::resolveMeshtasticTraceRouteReplyPolicy(
-        is_response, want_response, to_us, is_broadcast, hop_limit, hop_start);
-    if (reply_policy.should_reply)
-    {
-        if (sendTraceRouteResponse(header.from, header.id, route, channel, want_ack_flag))
-        {
-            LORA_LOG("[LORA] TX traceroute reply to=%08lX req=%08lX\n",
-                     (unsigned long)header.from,
-                     (unsigned long)header.id);
-        }
-        else
-        {
-            LORA_LOG("[LORA] TX traceroute reply fail to=%08lX req=%08lX\n",
-                     (unsigned long)header.from,
-                     (unsigned long)header.id);
-        }
-    }
-    else if (reply_policy.reason ==
-             chat::runtime::MeshtasticTraceRouteReplyReason::BroadcastStillInFlight)
-    {
-        LORA_LOG("[LORA] traceroute reply ignored broadcast req=%08lX hop=%u/%u\n",
-                 (unsigned long)header.id,
-                 static_cast<unsigned>(hop_limit),
-                 static_cast<unsigned>(hop_start));
-    }
-
-    return true;
 }
 
 void MtAdapter::maybeBroadcastNodeInfo(uint32_t now_ms)
@@ -3928,6 +3770,69 @@ bool MtAdapter::sendRoutingError(uint32_t dest, uint32_t request_id, uint8_t cha
     return false;
 }
 
+runtime::RuntimeContext MtAdapter::buildProtocolRuntimeContext() const
+{
+    runtime::RuntimeContext context{};
+    context.protocol = MeshProtocol::Meshtastic;
+    context.self_node = node_id_;
+    context.now_ms = millis();
+
+    const runtime::MeshtasticPositionInput position = build_self_position_input();
+    context.self_position_valid = position.valid;
+    context.self_latitude_deg = position.latitude_deg;
+    context.self_longitude_deg = position.longitude_deg;
+    context.self_has_altitude = position.has_altitude;
+    context.self_altitude_m = position.altitude_m;
+    context.self_has_speed = position.has_speed;
+    context.self_speed_mps = position.speed_mps;
+    context.self_has_course = position.has_course;
+    context.self_course_deg = position.course_deg;
+    context.self_satellites = position.satellites;
+    context.self_position_timestamp_s = position.timestamp_s;
+    return context;
+}
+
+bool MtAdapter::sendProtocolPacketEffect(const runtime::SendPacketEffect& packet)
+{
+    const uint8_t* payload = packet.payload.empty() ? nullptr : packet.payload.data();
+    const size_t payload_len = packet.payload.size();
+    if (packet.response_request_id == 0)
+    {
+        return sendAppData(packet.channel,
+                           packet.portnum,
+                           payload,
+                           payload_len,
+                           packet.dest,
+                           packet.want_ack,
+                           packet.request_id,
+                           packet.want_response);
+    }
+
+    meshtastic_MeshPacket mesh_packet = meshtastic_MeshPacket_init_zero;
+    mesh_packet.id = packet.request_id;
+    mesh_packet.to = packet.dest;
+    mesh_packet.channel = (packet.channel == ChannelId::SECONDARY) ? 1 : 0;
+    mesh_packet.hop_limit = config_.hop_limit;
+    mesh_packet.want_ack = packet.want_ack;
+    mesh_packet.which_payload_variant = meshtastic_MeshPacket_decoded_tag;
+    mesh_packet.decoded = meshtastic_Data_init_default;
+    mesh_packet.decoded.portnum = static_cast<meshtastic_PortNum>(packet.portnum);
+    mesh_packet.decoded.want_response = packet.want_response;
+    mesh_packet.decoded.request_id = packet.response_request_id;
+    mesh_packet.decoded.has_bitfield = true;
+    mesh_packet.decoded.bitfield = packet.want_response ? kBitfieldWantResponseMask : 0;
+    if (payload_len > sizeof(mesh_packet.decoded.payload.bytes))
+    {
+        return false;
+    }
+    mesh_packet.decoded.payload.size = static_cast<pb_size_t>(payload_len);
+    if (payload_len > 0)
+    {
+        std::memcpy(mesh_packet.decoded.payload.bytes, payload, payload_len);
+    }
+    return sendMeshPacket(mesh_packet);
+}
+
 bool MtAdapter::executeProtocolEffects(const runtime::ProtocolEffects& effects)
 {
     bool ok = true;
@@ -3969,6 +3874,22 @@ bool MtAdapter::executeProtocolEffect(const runtime::ProtocolEffect& effect)
             {
                 forgetNodePublicKey(item.peer);
                 ok = true;
+            }
+            else if constexpr (std::is_same_v<Effect, runtime::SendPacketEffect>)
+            {
+                ok = sendProtocolPacketEffect(item);
+            }
+            else if constexpr (std::is_same_v<Effect, runtime::PublishIncomingDataEffect>)
+            {
+                if (app_receive_queue_.size() < MAX_APP_QUEUE)
+                {
+                    app_receive_queue_.push(item.data);
+                    ok = true;
+                }
+                else
+                {
+                    ok = false;
+                }
             }
         });
     return ok;

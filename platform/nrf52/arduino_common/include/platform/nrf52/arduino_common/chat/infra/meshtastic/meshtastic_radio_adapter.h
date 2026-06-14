@@ -154,22 +154,14 @@ class MeshtasticRadioAdapter final : public ::chat::IMeshAdapter
     bool sendRoutingError(::chat::NodeId dest, uint32_t request_id, uint8_t channel_hash,
                           ::chat::ChannelId channel, const uint8_t* key, size_t key_len,
                           meshtastic_Routing_Error reason, uint8_t hop_limit);
+    ::chat::runtime::RuntimeContext buildProtocolRuntimeContext() const;
+    bool sendProtocolPacketEffect(const ::chat::runtime::SendPacketEffect& packet);
     bool executeProtocolEffects(const ::chat::runtime::ProtocolEffects& effects);
     bool executeProtocolEffect(const ::chat::runtime::ProtocolEffect& effect);
     bool executePkiResync(::chat::runtime::MeshtasticPkiResyncCause cause,
                           ::chat::NodeId peer,
                           ::chat::MessageId request_id,
                           ::chat::ChannelId channel);
-    bool sendTraceRouteResponse(::chat::NodeId dest, uint32_t request_id,
-                                const meshtastic_RouteDiscovery& route,
-                                ::chat::ChannelId channel, bool want_ack);
-    bool sendPositionTo(::chat::NodeId dest, ::chat::ChannelId channel, uint32_t request_id = 0);
-    bool handleTraceRoutePacket(const ::chat::meshtastic::PacketHeaderWire& header,
-                                meshtastic_Data* decoded,
-                                const ::chat::RxMeta* rx_meta,
-                                ::chat::ChannelId channel,
-                                bool want_ack_flag,
-                                bool want_response);
     void maybeBroadcastNodeInfo(uint32_t now_ms);
     void maybeBroadcastNodeInfoAfterPeerAnnouncement(::chat::NodeId from_node,
                                                      uint32_t now_ms,
@@ -281,7 +273,6 @@ class MeshtasticRadioAdapter final : public ::chat::IMeshAdapter
     std::map<::chat::NodeId, ::chat::ChannelId> node_last_channel_;
     std::map<::chat::NodeId, uint32_t> nodeinfo_last_seen_ms_;
     std::map<::chat::NodeId, uint32_t> nodeinfo_reply_ms_;
-    uint32_t last_position_reply_ms_ = 0;
     TxScratchBuffers tx_scratch_{};
     RxScratchBuffers rx_scratch_{};
     MqttScratchBuffers mqtt_scratch_{};

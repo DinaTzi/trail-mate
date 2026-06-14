@@ -40,6 +40,17 @@ struct RuntimeContext
     uint32_t now_ms = 0;
     uint8_t meshcore_discover_node_type = 0;
     uint32_t meshcore_local_modified_epoch = 0;
+    bool self_position_valid = false;
+    double self_latitude_deg = 0.0;
+    double self_longitude_deg = 0.0;
+    bool self_has_altitude = false;
+    double self_altitude_m = 0.0;
+    bool self_has_speed = false;
+    double self_speed_mps = 0.0;
+    bool self_has_course = false;
+    double self_course_deg = 0.0;
+    uint32_t self_satellites = 0;
+    uint32_t self_position_timestamp_s = 0;
 };
 
 struct SendTextIntent
@@ -183,6 +194,7 @@ struct SendPacketEffect
     NodeId dest = 0;
     uint32_t portnum = 0;
     MessageId request_id = 0;
+    MessageId response_request_id = 0;
     bool want_ack = false;
     bool want_response = false;
     std::vector<uint8_t> payload;

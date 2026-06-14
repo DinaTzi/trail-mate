@@ -49,6 +49,7 @@ int main()
     using chat::runtime::PacketHandling;
     using chat::runtime::ProtocolActionKind;
     using chat::runtime::ProtocolActionState;
+    using chat::runtime::PublishIncomingDataEffect;
     using chat::runtime::RuntimeContext;
     using chat::runtime::SendNodeInfoEffect;
     using chat::runtime::SendPacketEffect;
@@ -168,6 +169,97 @@ int main()
         assert(!packet->want_ack);
         assert(packet->want_response);
         assert(packet->payload.empty());
+    }
+
+    {
+        MeshtasticRuntime reply_runtime;
+        RuntimeContext reply_context = context;
+        reply_context.self_node = 0xA1B3B57CUL;
+        reply_context.now_ms = 10000;
+
+        IncomingPacket request{};
+        request.protocol = MeshProtocol::Meshtastic;
+        request.channel = ChannelId::PRIMARY;
+        request.from = 0xE2A7B711UL;
+        request.to = reply_context.self_node;
+        request.packet_id = 0x9578D958UL;
+        request.portnum = meshtastic_PortNum_TRACEROUTE_APP;
+        request.want_response = true;
+        request.rx_meta.wire_flags = 0x4A;
+        request.rx_meta.snr_db_x10 = 58;
+
+        const auto result = reply_runtime.handleIncomingPacket(request, reply_context);
+        assert(result.handling == PacketHandling::HandledContinue);
+        assert(result.effects.items.size() == 2);
+
+        const auto* publish = effectAt<PublishIncomingDataEffect>(result.effects, 0);
+        assert(publish);
+        assert(publish->data.portnum == meshtastic_PortNum_TRACEROUTE_APP);
+        assert(publish->data.from == request.from);
+        assert(publish->data.to == request.to);
+        assert(publish->data.packet_id == request.packet_id);
+        assert(!publish->data.payload.empty());
+
+        const auto* reply = effectAt<SendPacketEffect>(result.effects, 1);
+        assert(reply);
+        assert(reply->protocol == MeshProtocol::Meshtastic);
+        assert(reply->channel == request.channel);
+        assert(reply->dest == request.from);
+        assert(reply->portnum == meshtastic_PortNum_TRACEROUTE_APP);
+        assert(reply->request_id == 0);
+        assert(reply->response_request_id == request.packet_id);
+        assert(!reply->want_response);
+        assert(reply->payload == publish->data.payload);
+    }
+
+    {
+        MeshtasticRuntime reply_runtime;
+        RuntimeContext reply_context = context;
+        reply_context.self_node = 0xA1B3B57CUL;
+        reply_context.now_ms = 11000;
+        reply_context.self_position_valid = true;
+        reply_context.self_latitude_deg = 26.67773;
+        reply_context.self_longitude_deg = 107.28225;
+        reply_context.self_has_altitude = true;
+        reply_context.self_altitude_m = 1903.6;
+        reply_context.self_position_timestamp_s = 1710001234U;
+
+        IncomingPacket request{};
+        request.protocol = MeshProtocol::Meshtastic;
+        request.channel = ChannelId::SECONDARY;
+        request.from = 0xE2A7B711UL;
+        request.to = reply_context.self_node;
+        request.packet_id = 0x69112BFEUL;
+        request.portnum = meshtastic_PortNum_POSITION_APP;
+        request.want_response = true;
+
+        const auto result = reply_runtime.handleIncomingPacket(request, reply_context);
+        assert(result.handling == PacketHandling::HandledContinue);
+        assert(result.effects.items.size() == 1);
+
+        const auto* reply = effectAt<SendPacketEffect>(result.effects, 0);
+        assert(reply);
+        assert(reply->protocol == MeshProtocol::Meshtastic);
+        assert(reply->channel == request.channel);
+        assert(reply->dest == request.from);
+        assert(reply->portnum == meshtastic_PortNum_POSITION_APP);
+        assert(reply->request_id == 0);
+        assert(reply->response_request_id == request.packet_id);
+        assert(!reply->want_ack);
+        assert(!reply->want_response);
+        assert(!reply->payload.empty());
+
+        meshtastic_Position decoded = meshtastic_Position_init_zero;
+        pb_istream_t stream = pb_istream_from_buffer(reply->payload.data(),
+                                                     reply->payload.size());
+        assert(pb_decode(&stream, meshtastic_Position_fields, &decoded));
+        assert(decoded.has_latitude_i);
+        assert(decoded.latitude_i == static_cast<int32_t>(reply_context.self_latitude_deg * 1e7));
+        assert(decoded.has_longitude_i);
+        assert(decoded.longitude_i == static_cast<int32_t>(reply_context.self_longitude_deg * 1e7));
+        assert(decoded.has_altitude);
+        assert(decoded.altitude == 1904);
+        assert(decoded.timestamp == reply_context.self_position_timestamp_s);
     }
 
     {
