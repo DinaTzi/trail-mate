@@ -11,6 +11,24 @@
 
 static LilyGoDispArduinoSPI* g_display_spi = nullptr;
 
+namespace
+{
+constexpr TickType_t kDisplayFrameLockWait = pdMS_TO_TICKS(8);
+constexpr TickType_t kDisplayControlLockWait = pdMS_TO_TICKS(50);
+
+bool lock_or_log(LilyGoDispArduinoSPI& spi, TickType_t wait_ticks, const char* op)
+{
+    if (spi.lock(wait_ticks))
+    {
+        return true;
+    }
+    Serial.printf("[SPI][DISPLAY] lock_timeout op=%s wait_ticks=%lu\n",
+                  op ? op : "",
+                  static_cast<unsigned long>(wait_ticks));
+    return false;
+}
+} // namespace
+
 namespace platform::esp::common
 {
 
@@ -179,7 +197,7 @@ void LilyGoDispArduinoSPI::setRotation(uint8_t rotation)
 
 void LilyGoDispArduinoSPI::pushColors(uint16_t* data, uint32_t len)
 {
-    if (!lock(portMAX_DELAY))
+    if (!lock_or_log(*this, kDisplayFrameLockWait, "pushColors"))
     {
         return;
     }
@@ -226,7 +244,7 @@ void LilyGoDispArduinoSPI::pushColorsLocked(uint16_t* data, uint32_t len)
 
 void LilyGoDispArduinoSPI::pushColors(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t* color)
 {
-    if (!lock(portMAX_DELAY))
+    if (!lock_or_log(*this, kDisplayFrameLockWait, "pushColorsArea"))
     {
         return;
     }
@@ -247,7 +265,7 @@ void LilyGoDispArduinoSPI::wakeup()
 
 void LilyGoDispArduinoSPI::setAddrWindow(uint16_t xs, uint16_t ys, uint16_t xe, uint16_t ye)
 {
-    if (!lock(portMAX_DELAY))
+    if (!lock_or_log(*this, kDisplayControlLockWait, "setAddrWindow"))
     {
         return;
     }
@@ -274,7 +292,7 @@ void LilyGoDispArduinoSPI::setAddrWindowLocked(uint16_t xs, uint16_t ys, uint16_
 
 void LilyGoDispArduinoSPI::writeCommand(uint8_t cmd)
 {
-    if (!lock(portMAX_DELAY))
+    if (!lock_or_log(*this, kDisplayControlLockWait, "writeCommand"))
     {
         return;
     }
@@ -295,7 +313,7 @@ void LilyGoDispArduinoSPI::writeCommandLocked(uint8_t cmd)
 
 void LilyGoDispArduinoSPI::writeData(uint8_t data)
 {
-    if (!lock(portMAX_DELAY))
+    if (!lock_or_log(*this, kDisplayControlLockWait, "writeData"))
     {
         return;
     }
@@ -315,7 +333,7 @@ void LilyGoDispArduinoSPI::writeDataLocked(uint8_t data)
 
 void LilyGoDispArduinoSPI::writeParams(uint8_t cmd, uint8_t* data, size_t length)
 {
-    if (!lock(portMAX_DELAY))
+    if (!lock_or_log(*this, kDisplayControlLockWait, "writeParams"))
     {
         return;
     }
