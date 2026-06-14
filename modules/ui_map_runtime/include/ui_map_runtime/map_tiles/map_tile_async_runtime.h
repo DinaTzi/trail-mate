@@ -42,8 +42,11 @@ struct LoadTileCommand
     MapTileRef tile{};
 };
 
-struct MapTileAsyncEvent
+using MapTileEventKind = MapTileAsyncEventKind;
+
+class MapTileEvent
 {
+  public:
     MapTileAsyncEventKind kind = MapTileAsyncEventKind::Failed;
     uint32_t command_id = 0;
     uint32_t generation = 0;
@@ -51,6 +54,37 @@ struct MapTileAsyncEvent
     MapTileFormat format = MapTileFormat::Unknown;
     std::size_t payload_size = 0;
     int32_t error = 0;
+};
+
+using MapTileAsyncEvent = MapTileEvent;
+
+struct MapTileDecodeInput
+{
+    const uint8_t* payload = nullptr;
+    std::size_t payload_size = 0;
+    MapTileFormat format = MapTileFormat::Unknown;
+};
+
+struct MapTileDecodeResult
+{
+    bool ok = false;
+    int32_t error = 0;
+};
+
+class IMapTileDecoder
+{
+  public:
+    virtual ~IMapTileDecoder() = default;
+
+    virtual MapTileDecodeResult decode(const MapTileDecodeInput& input) = 0;
+};
+
+class IMapTileUiSink
+{
+  public:
+    virtual ~IMapTileUiSink() = default;
+
+    virtual bool applyTile(const MapTileEvent& event) = 0;
 };
 
 class IMapTileCommandSink
@@ -83,6 +117,57 @@ class IMapTileWorkerBackend
                       MapTileFormat& out_format) = 0;
 };
 
+struct MapTileStateSnapshot
+{
+    uint32_t active_generation = 0;
+    std::size_t ready_count = 0;
+    std::size_t failed_count = 0;
+    int32_t last_error = 0;
+};
+
+class MapTileStateMachine
+{
+  public:
+    void transition(const MapTileEvent& event)
+    {
+        active_generation_ = event.generation;
+        last_error_ = event.error;
+        if (event.kind == MapTileAsyncEventKind::Ready)
+        {
+            ++ready_count_;
+        }
+        else if (event.kind == MapTileAsyncEventKind::Failed ||
+                 event.kind == MapTileAsyncEventKind::ResourceBusy)
+        {
+            ++failed_count_;
+        }
+    }
+
+    void cancelGeneration(uint32_t generation)
+    {
+        if (active_generation_ == generation)
+        {
+            active_generation_ = 0;
+        }
+    }
+
+    MapTileStateSnapshot snapshot() const
+    {
+        MapTileStateSnapshot snapshot{};
+        snapshot.active_generation = active_generation_;
+        snapshot.ready_count = ready_count_;
+        snapshot.failed_count = failed_count_;
+        snapshot.last_error = last_error_;
+        return snapshot;
+    }
+
+  private:
+    uint32_t active_generation_ = 0;
+    std::size_t ready_count_ = 0;
+    std::size_t failed_count_ = 0;
+    int32_t last_error_ = 0;
+};
+
 class MapTileAsyncRuntime
 {
   public:
@@ -91,6 +176,7 @@ class MapTileAsyncRuntime
 
     uint32_t activeGeneration() const;
     std::size_t requestVisibleTiles(const MapViewportPlan& plan, uint32_t now_ms);
+    std::size_t cancelGeneration(uint32_t generation);
     bool handleEvent(const MapTileAsyncEvent& event, MapTileRenderQueue& render_queue);
 
   private:
@@ -103,6 +189,49 @@ class MapTileAsyncRuntime
     sys::runtime::RuntimeState state_{};
     uint32_t active_generation_ = 0;
     uint32_t next_command_id_ = 1;
+};
+
+class MapTileRuntime
+{
+  public:
+    MapTileRuntime(MapTileAsyncRuntime& runtime,
+                   MapTileStateMachine& state_machine,
+                   IMapTileUiSink* ui_sink = nullptr)
+        : runtime_(runtime), state_machine_(state_machine), ui_sink_(ui_sink)
+    {
+    }
+
+    std::size_t requestVisibleTiles(const MapViewportPlan& plan, uint32_t now_ms)
+    {
+        return runtime_.requestVisibleTiles(plan, now_ms);
+    }
+
+    std::size_t cancelGeneration(uint32_t generation)
+    {
+        state_machine_.cancelGeneration(generation);
+        return runtime_.cancelGeneration(generation);
+    }
+
+    bool handle(const MapTileEvent& event, MapTileRenderQueue& render_queue)
+    {
+        state_machine_.transition(event);
+        const bool accepted = runtime_.handleEvent(event, render_queue);
+        if (accepted && ui_sink_)
+        {
+            (void)ui_sink_->applyTile(event);
+        }
+        return accepted;
+    }
+
+    MapTileStateSnapshot snapshot() const
+    {
+        return state_machine_.snapshot();
+    }
+
+  private:
+    MapTileAsyncRuntime& runtime_;
+    MapTileStateMachine& state_machine_;
+    IMapTileUiSink* ui_sink_ = nullptr;
 };
 
 class MapTileWorker

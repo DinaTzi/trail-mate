@@ -60,6 +60,15 @@ std::size_t MapTileAsyncRuntime::requestVisibleTiles(const MapViewportPlan& plan
     return queued;
 }
 
+std::size_t MapTileAsyncRuntime::cancelGeneration(uint32_t generation)
+{
+    if (active_generation_ == generation)
+    {
+        active_generation_ = 0;
+    }
+    return commands_.cancelGeneration(generation);
+}
+
 bool MapTileAsyncRuntime::handleEvent(const MapTileAsyncEvent& event, MapTileRenderQueue& render_queue)
 {
     if (event.generation != active_generation_)

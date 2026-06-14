@@ -1,28 +1,19 @@
 #include "ui/runtime/ui_feedback.h"
 
 #include "lvgl.h"
+#include "sys/feedback_runtime.h"
 #include "ui/widgets/system_notification.h"
 
 #include <atomic>
 #include <cstddef>
-#include <cstring>
 
 namespace ui::feedback
 {
 namespace
 {
 
-constexpr size_t kMaxNoticeTextBytes = 192;
 constexpr size_t kNoticeQueueCapacity = 8;
 constexpr uint32_t kDrainPeriodMs = 20;
-
-struct PostedNotice
-{
-    char text[kMaxNoticeTextBytes]{};
-    uint32_t duration_ms = 3000;
-    Severity severity = Severity::Info;
-    bool hide = false;
-};
 
 class LvglSystemNotificationPresenter final : public IFeedbackPresenter
 {
@@ -47,11 +38,12 @@ LvglSystemNotificationPresenter s_default_presenter;
 IFeedbackPresenter* s_presenter = &s_default_presenter;
 bool s_ready = false;
 lv_timer_t* s_drain_timer = nullptr;
-
-PostedNotice s_queue[kNoticeQueueCapacity]{};
-size_t s_queue_head = 0;
-size_t s_queue_count = 0;
 std::atomic_flag s_queue_lock = ATOMIC_FLAG_INIT;
+std::atomic<uint32_t> s_hide_requests{0};
+sys::runtime::FeedbackEvent s_last_feedback_event{};
+
+IFeedbackPresenter& active_presenter();
+void ensure_presenter_ready();
 
 class QueueLock
 {
@@ -72,43 +64,71 @@ class QueueLock
     QueueLock& operator=(const QueueLock&) = delete;
 };
 
-void copy_notice_text(char* out, size_t out_len, const char* text)
+sys::runtime::NoticeSeverity to_runtime_severity(Severity severity)
 {
-    if (!out || out_len == 0)
+    switch (severity)
     {
-        return;
+    case Severity::Success:
+        return sys::runtime::NoticeSeverity::Success;
+    case Severity::Warning:
+        return sys::runtime::NoticeSeverity::Warning;
+    case Severity::Error:
+        return sys::runtime::NoticeSeverity::Error;
+    case Severity::Info:
+    default:
+        return sys::runtime::NoticeSeverity::Info;
     }
-    std::strncpy(out, text ? text : "", out_len - 1);
-    out[out_len - 1] = '\0';
 }
 
-void enqueue_notice(const PostedNotice& notice)
+Severity from_runtime_severity(sys::runtime::NoticeSeverity severity)
 {
-    QueueLock lock;
-    if (s_queue_count == kNoticeQueueCapacity)
+    switch (severity)
     {
-        s_queue_head = (s_queue_head + 1) % kNoticeQueueCapacity;
-        --s_queue_count;
+    case sys::runtime::NoticeSeverity::Success:
+        return Severity::Success;
+    case sys::runtime::NoticeSeverity::Warning:
+        return Severity::Warning;
+    case sys::runtime::NoticeSeverity::Error:
+        return Severity::Error;
+    case sys::runtime::NoticeSeverity::Info:
+    default:
+        return Severity::Info;
     }
-
-    const size_t tail = (s_queue_head + s_queue_count) % kNoticeQueueCapacity;
-    s_queue[tail] = notice;
-    ++s_queue_count;
 }
 
-bool pop_notice(PostedNotice& out)
+class RuntimeFeedbackEventSink final : public sys::runtime::IFeedbackEventSink
 {
-    QueueLock lock;
-    if (s_queue_count == 0)
+  public:
+    bool publish(const sys::runtime::FeedbackEvent& event) override
     {
-        return false;
+        s_last_feedback_event = event;
+        return true;
     }
+};
 
-    out = s_queue[s_queue_head];
-    s_queue_head = (s_queue_head + 1) % kNoticeQueueCapacity;
-    --s_queue_count;
-    return true;
-}
+class RuntimeFeedbackPresenter final : public sys::runtime::IFeedbackPresenter
+{
+  public:
+    bool present(const sys::runtime::NoticeIntent& intent) override
+    {
+        ensure_presenter_ready();
+        NoticeIntent ui_intent{};
+        ui_intent.text = intent.message;
+        ui_intent.duration_ms = intent.duration_ms;
+        ui_intent.severity = from_runtime_severity(intent.severity);
+        active_presenter().show_notice(ui_intent);
+        return true;
+    }
+};
+
+sys::runtime::FeedbackQueue<kNoticeQueueCapacity> s_feedback_queue;
+sys::runtime::DefaultFeedbackPolicy s_feedback_policy;
+RuntimeFeedbackEventSink s_feedback_events;
+RuntimeFeedbackPresenter s_feedback_presenter;
+sys::runtime::FeedbackRuntime<kNoticeQueueCapacity> s_feedback_runtime(s_feedback_queue,
+                                                                       s_feedback_policy,
+                                                                       s_feedback_presenter,
+                                                                       s_feedback_events);
 
 IFeedbackPresenter& active_presenter()
 {
@@ -131,21 +151,13 @@ void ensure_presenter_ready()
 
 void drain_queued_notices()
 {
-    PostedNotice payload{};
-    while (pop_notice(payload))
+    QueueLock lock;
+    (void)s_feedback_runtime.drainToUi(lv_tick_get());
+    const uint32_t hide_count = s_hide_requests.exchange(0, std::memory_order_acq_rel);
+    if (hide_count > 0)
     {
         ensure_presenter_ready();
-        if (payload.hide)
-        {
-            active_presenter().hide_notice();
-            continue;
-        }
-
-        NoticeIntent intent{};
-        intent.text = payload.text;
-        intent.duration_ms = payload.duration_ms;
-        intent.severity = payload.severity;
-        active_presenter().show_notice(intent);
+        active_presenter().hide_notice();
     }
 }
 
@@ -194,13 +206,15 @@ bool is_ready()
 
 bool show_notice(const NoticeIntent& intent)
 {
-    PostedNotice payload{};
-    copy_notice_text(payload.text, sizeof(payload.text), intent.text);
-    payload.duration_ms = intent.duration_ms;
-    payload.severity = intent.severity;
-    payload.hide = false;
-    enqueue_notice(payload);
-    return true;
+    sys::runtime::NoticeIntent runtime_intent{};
+    sys::runtime::setNoticeMessage(runtime_intent, intent.text);
+    runtime_intent.category = sys::runtime::NoticeCategory::General;
+    runtime_intent.severity = to_runtime_severity(intent.severity);
+    runtime_intent.duration_ms = intent.duration_ms;
+    runtime_intent.created_at_ms = lv_tick_get();
+
+    QueueLock lock;
+    return s_feedback_runtime.post(runtime_intent);
 }
 
 bool show_notice(const char* text, uint32_t duration_ms)
@@ -214,9 +228,7 @@ bool show_notice(const char* text, uint32_t duration_ms)
 
 bool hide_notice()
 {
-    PostedNotice payload{};
-    payload.hide = true;
-    enqueue_notice(payload);
+    s_hide_requests.fetch_add(1, std::memory_order_acq_rel);
     return true;
 }
 
