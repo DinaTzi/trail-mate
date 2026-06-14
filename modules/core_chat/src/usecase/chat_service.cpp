@@ -147,7 +147,19 @@ bool ChatService::resendFailed(MessageId msg_id)
         return false;
     }
 
-    return sendText(msg.channel, msg.text, msg.peer) != 0;
+    const MeshSendResult result =
+        adapter_.sendTextDetailed(msg.channel, msg.text, msg.msg_id, msg.peer);
+    if (!result.ok || result.msg_id != msg.msg_id)
+    {
+        return false;
+    }
+
+    if (model_enabled_)
+    {
+        model_.updateMessageStatus(msg.msg_id, MessageStatus::Queued);
+    }
+    store_.updateMessageStatus(msg.msg_id, MessageStatus::Queued);
+    return true;
 }
 
 std::vector<ChatMessage> ChatService::getRecentMessages(const ConversationId& conv, size_t limit) const

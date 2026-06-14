@@ -271,6 +271,7 @@ constexpr const char* kActionItems[] = {
 constexpr const char* kMessageMenuItems[] = {
     "INFO",
     "REPLY",
+    "RETRY",
 };
 
 constexpr size_t kNodeActionItemCount = 7;
@@ -2637,9 +2638,13 @@ void Runtime::handleInput(InputAction action)
             {
                 enterPage(Page::MessageInfo);
             }
-            else
+            else if (message_menu_index_ == 1)
             {
                 openCompose(EditTarget::Message);
+            }
+            else
+            {
+                retrySelectedMessage();
             }
         }
         break;
@@ -5540,6 +5545,31 @@ void Runtime::sendComposeMessage()
         showTransientPopup("MESSAGE", "SEND FAILED", 2000U);
     }
     finishTextEdit(false);
+    enterPage(Page::Conversation);
+}
+
+void Runtime::retrySelectedMessage()
+{
+    const chat::ChatMessage* msg = selectedMessage();
+    if (!app() || !msg)
+    {
+        showTransientPopup("MESSAGE", "NO MESSAGE", 1600U);
+        return;
+    }
+    if (msg->from != 0 || msg->status != chat::MessageStatus::Failed || msg->msg_id == 0)
+    {
+        showTransientPopup("MESSAGE", "NOT RETRYABLE", 1800U);
+        return;
+    }
+
+    if (!app()->getChatService().resendFailed(msg->msg_id))
+    {
+        showTransientPopup("MESSAGE", "RETRY FAILED", 2000U);
+        return;
+    }
+
+    showTransientPopup("MESSAGE", "RETRY QUEUED", 1600U);
+    rebuildMessages();
     enterPage(Page::Conversation);
 }
 

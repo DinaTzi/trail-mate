@@ -207,6 +207,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
     void rebuildMessages();
     void buildMessageInfo();
     void sendComposeMessage();
+    void retrySelectedMessage();
     void commitConfig();
     void ensureBootExit();
     void ensureSleepTimeout(InputAction action);
