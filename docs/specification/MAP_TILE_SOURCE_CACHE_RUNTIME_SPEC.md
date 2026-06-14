@@ -10,6 +10,12 @@ contour data-source credentials.
 
 `MapWorkspaceSnapshot` carries viewport, layer, and tool state. It must not carry tile bitmap bytes, decoded image cache objects, or filesystem cache objects.
 
+Tile source/cache work must also conform to
+`UI_STORAGE_EVENT_RUNTIME_DESIGN_SPEC.md`: UI owner code submits tile intents,
+workers perform filesystem/storage work, and tile results return as events. A
+renderer must not open tile files, wait for shared-SPI, or decode tile payloads
+from an input callback, LVGL timer, GTK callback, or page render callback.
+
 ## Objects
 
 | Object | Pattern | Responsibility | Forbidden |

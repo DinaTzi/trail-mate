@@ -151,6 +151,21 @@ produce visible feedback. It then emits a stable feedback intent through
 The platform implementation of that port must post to the UI feedback runtime.
 It must not call `SystemNotification` directly.
 
+## Simulation Requirement
+
+Feedback runtime behavior must be testable without concrete renderer widgets.
+Tests must use a fake presenter/event drain to simulate:
+
+- producer posts feedback and immediately returns
+- page is destroyed before the feedback is rendered
+- chat send success or failure arrives while another page is active
+- renderer presenter is unavailable or rejects a notice
+- duplicate notices are deduplicated or queued according to policy
+
+These tests must assert that no feature/page/protocol code imports or calls
+`SystemNotification` directly. `SystemNotification` remains only a platform
+presenter implementation detail.
+
 ## Compatibility Burn-Down
 
 The following are legacy coupling points and must not remain in active feature

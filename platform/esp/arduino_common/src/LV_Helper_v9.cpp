@@ -10,6 +10,7 @@
 #include "display/DisplayInterface.h"
 #include "input/morse_engine.h"
 #include "platform/esp/arduino_common/storage/sd_card_runtime.h"
+#include "platform/esp/common/shared_spi_lock.h"
 #include "screen_sleep.h"
 #include "ui/LV_Helper.h"
 #include "ui/app_runtime.h"
@@ -44,6 +45,8 @@ namespace
 {
 constexpr char kLvglFlashFsLetter = 'F';
 constexpr const char* kLvglFlashFsMountPoint = "/fs";
+constexpr TickType_t kLvglSdFsWait = pdMS_TO_TICKS(2);
+constexpr TickType_t kLvglSdFsCloseWait = pdMS_TO_TICKS(10);
 
 lv_fs_drv_t s_flash_fs_drv;
 lv_fs_drv_t s_sd_fs_drv;
@@ -107,6 +110,11 @@ bool sd_fs_ready_cb(lv_fs_drv_t* drv)
 void* sd_fs_open(lv_fs_drv_t* drv, const char* path, lv_fs_mode_t mode)
 {
     LV_UNUSED(drv);
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kLvglSdFsWait);
+    if (!spi_guard.locked())
+    {
+        return nullptr;
+    }
 
     const char* open_mode = "r";
     if (mode == LV_FS_MODE_WR)
@@ -139,6 +147,7 @@ lv_fs_res_t sd_fs_close(lv_fs_drv_t* drv, void* file_p)
     {
         return LV_FS_RES_INV_PARAM;
     }
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kLvglSdFsCloseWait);
     file->close();
     delete file;
     return LV_FS_RES_OK;
@@ -151,6 +160,11 @@ lv_fs_res_t sd_fs_read(lv_fs_drv_t* drv, void* file_p, void* buf, uint32_t btr, 
     if (file == nullptr || buf == nullptr)
     {
         return LV_FS_RES_INV_PARAM;
+    }
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kLvglSdFsWait);
+    if (!spi_guard.locked())
+    {
+        return LV_FS_RES_BUSY;
     }
 
     const int result = file->read(buf, btr);
@@ -177,6 +191,11 @@ lv_fs_res_t sd_fs_write(lv_fs_drv_t* drv,
     {
         return LV_FS_RES_INV_PARAM;
     }
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kLvglSdFsWait);
+    if (!spi_guard.locked())
+    {
+        return LV_FS_RES_BUSY;
+    }
 
     const std::size_t result = file->write(buf, btw);
     if (bw != nullptr)
@@ -193,6 +212,11 @@ lv_fs_res_t sd_fs_seek(lv_fs_drv_t* drv, void* file_p, uint32_t pos, lv_fs_whenc
     if (file == nullptr)
     {
         return LV_FS_RES_INV_PARAM;
+    }
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kLvglSdFsWait);
+    if (!spi_guard.locked())
+    {
+        return LV_FS_RES_BUSY;
     }
 
     uint64_t target = pos;
@@ -221,6 +245,11 @@ lv_fs_res_t sd_fs_tell(lv_fs_drv_t* drv, void* file_p, uint32_t* pos_p)
     {
         return LV_FS_RES_INV_PARAM;
     }
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kLvglSdFsWait);
+    if (!spi_guard.locked())
+    {
+        return LV_FS_RES_BUSY;
+    }
     *pos_p = static_cast<uint32_t>(file->position());
     return LV_FS_RES_OK;
 }
@@ -228,6 +257,11 @@ lv_fs_res_t sd_fs_tell(lv_fs_drv_t* drv, void* file_p, uint32_t* pos_p)
 void* sd_fs_dir_open(lv_fs_drv_t* drv, const char* path)
 {
     LV_UNUSED(drv);
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kLvglSdFsWait);
+    if (!spi_guard.locked())
+    {
+        return nullptr;
+    }
 
     auto* dir = new (std::nothrow)::platform::esp::arduino_common::storage::SdRuntimeDir();
     if (dir == nullptr)
@@ -249,6 +283,11 @@ lv_fs_res_t sd_fs_dir_read(lv_fs_drv_t* drv, void* dir_p, char* fn, uint32_t fn_
     if (dir == nullptr || fn == nullptr || fn_len == 0)
     {
         return LV_FS_RES_INV_PARAM;
+    }
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kLvglSdFsWait);
+    if (!spi_guard.locked())
+    {
+        return LV_FS_RES_BUSY;
     }
 
     bool is_dir = false;
@@ -274,6 +313,7 @@ lv_fs_res_t sd_fs_dir_close(lv_fs_drv_t* drv, void* dir_p)
     {
         return LV_FS_RES_INV_PARAM;
     }
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kLvglSdFsCloseWait);
     dir->close();
     delete dir;
     return LV_FS_RES_OK;

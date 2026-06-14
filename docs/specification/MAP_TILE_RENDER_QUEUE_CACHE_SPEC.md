@@ -10,6 +10,11 @@ Render queue owns the current visible tile plan.
 
 Renderer draws widgets from the visible plan. It must not own tile path policy.
 
+The render queue is a UI-facing projection of tile state. It is not the owner of
+slow tile work. File lookup, SD access, shared-SPI arbitration, image decode,
+and cache fill must run through the command/worker/event design described in
+`UI_STORAGE_EVENT_RUNTIME_DESIGN_SPEC.md`.
+
 ## Objects
 
 | Object | Pattern | Responsibility | Forbidden |
@@ -33,6 +38,10 @@ Renderer draws widgets from the visible plan. It must not own tile path policy.
 It is C++11-compatible and does not allocate.
 
 Platform map tile runtimes may populate the queue from existing `MapTile` records during this burn-down phase.
+
+When asynchronous tile workers are introduced, render queue updates must carry a
+viewport generation. Results for stale generations must not mutate the current
+renderer state.
 
 ## Decoded Cache Contract
 

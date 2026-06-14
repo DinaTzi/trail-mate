@@ -327,6 +327,39 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_map_overlay_snapshot_source_smoke
              COMMAND trailmate_map_overlay_snapshot_source_smoke)
 
+    add_executable(trailmate_runtime_async_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/tests/test_runtime_async.cpp")
+    target_include_directories(trailmate_runtime_async_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include")
+    target_compile_features(trailmate_runtime_async_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_runtime_async_smoke
+             COMMAND trailmate_runtime_async_smoke)
+
+    add_executable(trailmate_storage_event_runtime_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/tests/test_storage_event_runtime.cpp")
+    target_include_directories(trailmate_storage_event_runtime_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include")
+    target_compile_features(trailmate_storage_event_runtime_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_storage_event_runtime_smoke
+             COMMAND trailmate_storage_event_runtime_smoke)
+
+    add_executable(trailmate_map_tile_async_runtime_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_map_runtime/tests/test_map_tile_async_runtime.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_map_runtime/src/map_tiles/map_tile_async_runtime.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_map_runtime/src/map_tiles/map_tile_render_queue.cpp")
+    target_include_directories(trailmate_map_tile_async_runtime_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_map_runtime/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/include")
+    target_compile_features(trailmate_map_tile_async_runtime_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_map_tile_async_runtime_smoke
+             COMMAND trailmate_map_tile_async_runtime_smoke)
+
     add_executable(trailmate_runtime_map_presentation_adapters_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_runtime_map_presentation_adapters.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/presentation_sources/runtime_map_workspace_source.cpp"

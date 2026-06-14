@@ -30,7 +30,7 @@ struct RuntimeImpl
     ui::map_tiles::MapTileRenderQueue render_queue{};
     TileContext tile_ctx{};
     lv_timer_t* loader_timer = nullptr;
-    uint32_t loader_interval_ms = 200;
+    uint32_t loader_interval_ms = 50;
     bool alive = false;
     bool has_map_data = false;
     bool has_visible_map_data = false;

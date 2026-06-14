@@ -852,6 +852,7 @@ void GpsService::gpsTask(void* pvParameters)
                 {
                     gps::TrackRecorder::getInstance().appendPoint(track_pt);
                 }
+                gps::TrackRecorder::getInstance().flushPending(false);
             }
             else
             {

@@ -128,7 +128,7 @@ class Runtime
     friend void set_gesture_callback(Runtime& runtime, GestureCallback callback, void* user_data);
 };
 
-Widgets create(Runtime& runtime, lv_obj_t* parent, uint32_t loader_interval_ms = 200);
+Widgets create(Runtime& runtime, lv_obj_t* parent, uint32_t loader_interval_ms = 50);
 void destroy(Runtime& runtime);
 const Widgets& widgets(const Runtime& runtime);
 void set_size(Runtime& runtime, lv_coord_t width, lv_coord_t height);

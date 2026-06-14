@@ -14,6 +14,7 @@
 #include "platform/esp/arduino_common/device_identity.h"
 #include "platform/esp/arduino_common/hostlink/hostlink_service.h"
 #include "platform/ui/settings_store.h"
+#include "platform/ui/tracker_runtime.h"
 #include "sys/event_bus.h"
 #include "team/usecase/team_pairing_service.h"
 #include "team/usecase/team_service.h"
@@ -155,6 +156,8 @@ void tickRuntime(app::IAppFacade& app_context)
 void updateCoreServices(app::IAppFacade& app_context)
 {
     hostlink::process_pending_commands();
+
+    platform::ui::tracker::poll();
 
     app_context.getChatService().processIncoming();
     app_context.getChatService().flushStore();

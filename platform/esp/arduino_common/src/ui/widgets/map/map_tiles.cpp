@@ -6,7 +6,6 @@
 #include "ui/widgets/map/map_tiles.h"
 #include "freertos/FreeRTOS.h"
 #include "lvgl.h"
-#include "platform/esp/common/shared_spi_lock.h"
 #include "src/draw/lv_image_decoder_private.h"
 #include "src/misc/cache/instance/lv_image_cache.h"
 #include "sys/clock.h"
@@ -1119,17 +1118,6 @@ static void load_tile_image(TileContext& ctx, MapTile& tile)
         return;
     }
 
-    ::platform::esp::common::SharedSpiLockGuard spi_lock(pdMS_TO_TICKS(20));
-    if (!spi_lock.locked())
-    {
-        GPS_LOG("[GPS] load_tile_image: SPI lock busy, deferring tile %d/%d/%d\n",
-                tile.z,
-                fmt_tile_coord(tile.x),
-                fmt_tile_coord(tile.y));
-        tile.last_used_ms = sys::millis_now();
-        return;
-    }
-
     char path[96];
     build_base_tile_path(tile.z, tile.x, tile.y, g_active_map_source, path, sizeof(path));
 
@@ -1959,8 +1947,8 @@ void tile_loader_step(TileContext& ctx)
     sync_render_settings(ctx);
 
     const uint32_t start_ms = sys::millis_now();
-    const uint32_t budget_ms = 12;
-    const int max_tiles_per_step = 3;
+    const uint32_t budget_ms = 6;
+    const int max_tiles_per_step = 1;
     MapTile* attempted[max_tiles_per_step] = {NULL};
     int attempted_count = 0;
 

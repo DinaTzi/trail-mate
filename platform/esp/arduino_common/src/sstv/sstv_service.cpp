@@ -475,7 +475,12 @@ bool save_frame_to_sd()
         set_error("No frame");
         return false;
     }
-    ::platform::esp::common::SharedSpiLockGuard guard;
+    ::platform::esp::common::SharedSpiLockGuard guard(pdMS_TO_TICKS(200));
+    if (!guard.locked())
+    {
+        set_error("SD busy");
+        return false;
+    }
 #if defined(TRAIL_MATE_ESP_BOARD_TAB5)
     if (SD.cardType() == CARD_NONE)
 #else
