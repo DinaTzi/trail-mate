@@ -177,8 +177,15 @@ Facade 不得：
 - 变成新的 God Object 或 Mediator。
 
 Facade 的职责是隔离上层与协议编排。上层不应该直接拼 `ProtocolIntent` 后调用 runtime，
-也不应该直接遍历 `ProtocolEffects` 后调用 executor。过渡期允许少量平台 adapter 仍然这样做，
-但每个 active UI / ChatService 入口必须有迁入 `MeshProtocolFacade` 的计划和测试。
+也不应该直接遍历 `ProtocolEffects` 后调用 executor。active UI / ChatService 入口必须迁入
+`MeshProtocolFacade` 或本规格明确命名的等价边界。
+
+`MeshProtocolFacade` 默认捕获 `EmitActionResultEffect`、`PublishIncomingTextEffect`、
+`PublishIncomingDataEffect`、`PublishNodeInfoEffect` 等 app-facing projection，让 UI 可以从
+`MeshProtocolFacadeResult` 读取结果而不把 projection 当平台 IO 执行。平台 adapter 需要把这些
+projection 写入平台队列、路由表或 contact projection 时，必须显式选择
+`ProtocolProjectionPolicy::ExecuteAppFacing`，这样 projection 处理策略是组合配置，而不是散落的
+if 分支。
 
 ### Effect
 
@@ -227,12 +234,18 @@ facts provider 接起来。这里使用 Abstract Factory / Factory Method 的意
 ```cpp
 struct ProtocolRuntimeBundle
 {
-    MeshProtocolFacade* facade;
+    MeshProtocol protocol;
     IProtocolRuntime* runtime;
     IProtocolEffectExecutor* executor;
+    const IProtocolRuntimeContextProvider* contextProvider;
+
+    MeshProtocolFacade createFacade(ProtocolProjectionPolicy policy);
 };
 
-ProtocolRuntimeBundle protocolRuntimeFor(MeshProtocol protocol);
+ProtocolRuntimeBundle protocolRuntimeFor(MeshProtocol protocol,
+                                         const ProtocolRuntimeSelection& selection,
+                                         IProtocolEffectExecutor& executor,
+                                         const IProtocolRuntimeContextProvider& contextProvider);
 ```
 
 Factory 可以知道产品/平台能力，但不得决定协议语义。它选择“用哪套 runtime/executor”，不决定
@@ -252,6 +265,10 @@ enum class PacketHandling
     DropWithEffects,
 };
 ```
+
+代码级边界是 `IProtocolRuntime::handleIncomingPacket(...) -> IncomingPacketHandlingResult`。
+旧的 `handleIncoming(...) -> ProtocolEffects` 可以保留为兼容入口，但 active facade path 必须调用
+`handleIncomingPacket(...)`，并且 shared tests 必须断言 `PacketHandling`。
 
 Meshtastic incoming chain 的概念顺序必须是：
 
@@ -328,7 +345,7 @@ classDiagram
     class RecordingProtocolExecutor
 
     class ProtocolRuntimeFactory {
-        +protocolRuntimeFor(MeshProtocol protocol) ProtocolRuntimeBundle
+        +protocolRuntimeFor(MeshProtocol protocol, selection, executor, contextProvider) ProtocolRuntimeBundle
     }
 
     class MeshtasticCodec
@@ -427,7 +444,7 @@ sequenceDiagram
     Platform->>Adapter: raw packet/frame
     Adapter->>Adapter: decode/decrypt enough to form IncomingPacket facts
     Adapter->>Facade: handleIncoming(IncomingPacket)
-    Facade->>Runtime: handleIncoming(IncomingPacket)
+    Facade->>Runtime: handleIncomingPacket(IncomingPacket)
     Runtime->>Chain: decrypt/classify/route handlers
     alt NodeInfo request
         Chain->>State: apply NodeInfo rule
@@ -641,18 +658,43 @@ radio execution details. The question "is this local send still pending, complet
    分支维持。
 8. 如果规格中的核心类名只存在于 Mermaid 图中，而代码里没有真实对象或等价声明，则该项未完成。
 
-## Current Implementation Gaps
+## Implementation Status
 
-截至本规格日期，runtime / effect 主干已经部分落地，但以下缺口仍然阻止本规格被判定为完成：
+截至 2026-06-14，本规格中的核心 runtime architecture 已落成代码对象，并由 shared smoke /
+platform build 覆盖：
 
-1. `MeshProtocolFacade` 还没有真实代码对象。当前若干 active UI / platform path 仍直接构造
-   `ProtocolIntent`、调用 `IProtocolRuntime`、遍历 `ProtocolEffects` 或手动处理 TX failure 回灌。
-2. Product composition 还没有统一的 factory / bundle 边界。平台代码各自持有 runtime / executor，
-   组合逻辑仍可能继续散落。
-3. Incoming handler chain 尚未以 `PacketHandling` 或等价返回语义显式化。部分平台 adapter 仍保留
-   巨型 decode/classify 分支，虽然其中若干协议决策已经下沉到 runtime/policy。
-4. `RecordingProtocolExecutor` 已覆盖 effect 可记录性，但还缺少 `MeshProtocolFacade` 级别的 smoke，
-   用来证明 UI / ChatService 可以只通过 facade 发起 action 并观察 app-facing result。
+1. `IProtocolRuntime`、`MeshtasticRuntime`、`MeshCoreRuntime` 是真实代码对象；
+   `trailmate_meshtastic_runtime_smoke` 和 `trailmate_meshcore_runtime_smoke` 覆盖 outgoing /
+   incoming / tx result / tick。
+2. `MeshProtocolFacade` 是真实代码对象；`trailmate_mesh_protocol_facade_smoke` 覆盖 send text、
+   trace、NodeInfo、position、incoming、tx result、tick，以及 UI capture / platform execute 两种
+   projection policy。
+3. `ProtocolRuntimeBundle`、`ProtocolRuntimeSelection`、`protocolRuntimeFor(...)` 是真实 product
+   composition 边界；`trailmate_protocol_runtime_factory_smoke` 覆盖 protocol selection、
+   invalid protocol、context provider 更新和 platform-style projection execution。
+4. nRF mono UI、Linux uConsole 的 active protocol use-case path 已经通过 facade / factory 进入
+   runtime；ESP32 与 nRF MeshCore adapter 的标准 NodeInfo、discover、incoming、tx result、tick path
+   也通过 facade / factory 进入 runtime。
+5. Incoming handler chain 已以 `PacketHandling` / `IncomingPacketHandlingResult` 显式化；
+   `MeshtasticRuntime` 和 `MeshCoreRuntime` 都由 `handleIncomingPacket(...)` 组织 handler 顺序，
+   shared tests 直接断言 `HandledStop` / `NotHandled`。
+6. `MeshAdapterProtocolEffectExecutor` 和 platform adapters 只执行 `ProtocolEffect`。执行层可以选择
+   projection policy，但不得重新决定协议语义。
+
+### Accepted Runtime Extensions
+
+以下保留项不是 legacy adapter 逻辑，而是目前尚未纳入通用 facade API 的 MeshCore runtime extension：
+
+- MeshCore app ACK registration / binding / incoming ACK completion 仍通过
+  `MeshCoreRuntime::trackAppAck(...)`、`bindAppAckToMessage(...)`、`handleAppAck(...)` 表达。ACK burst
+  frame scheduling 和 multi-ACK frame construction 仍是 adapter IO。
+- ESP32 receive-side missing-peer auto-discover 的 cooldown state 仍通过
+  `prepareAutoDiscoverMissingPeer(...)`、`markAutoDiscoverMissingPeerTxResult(...)`、
+  `resetAutoDiscoverState()` 表达。协议决策在 runtime，route cache 和 radio scheduling 仍在 adapter。
+- ESP32 detailed discovery result (`MeshActionResult`) 仍使用 runtime effects 后由 adapter 映射成
+  platform-specific detailed result；通用 `MeshProtocolFacadeResult` 目前不承诺替代该产品级结果类型。
+
+这些 extension 可以在未来提升为 facade use-case API，但在提升前不得在 adapter 中复制协议决策表。
 
 ## Migration Rules
 
