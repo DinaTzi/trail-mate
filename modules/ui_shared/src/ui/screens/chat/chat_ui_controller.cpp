@@ -16,7 +16,6 @@
 #include "ui/assets/fonts/font_utils.h"
 #include "ui/localization.h"
 #include "ui/screens/chat/chat_protocol_support.h"
-#include "ui/screens/chat/chat_send_flow.h"
 #include "ui/screens/chat/chat_team_workflow.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/ime/ime_widget.h"
@@ -823,26 +822,12 @@ void UiController::handleSendMessage(const std::string& text)
         return;
     }
 
-    if (state_ == State::Compose && compose_)
-    {
-        if (chat::ui::send_flow::begin_local_text_send(compose_.get(),
-                                                       &service_,
-                                                       current_conv_,
-                                                       text,
-                                                       handleComposeSendDoneCallback,
-                                                       this))
-        {
-            return;
-        }
-
-        ::ui::SystemNotification::show("Send failed", 2000);
-        handleComposeSendDone(false, false);
-        return;
-    }
-
     const ::ui::UiActionResult result = chat_model_.sendMessage(text.c_str());
-    ::ui::SystemNotification::show(result.ok ? "Sent" : local_text_send_failure_message(result),
-                                  result.ok ? 1400 : 2000);
+    if (!result.ok)
+    {
+        ::ui::SystemNotification::show(local_text_send_failure_message(result),
+                                      2000);
+    }
     handleComposeSendDone(result.ok, false);
 }
 
@@ -853,15 +838,6 @@ void UiController::handleComposeSendDone(bool ok, bool timeout)
     if (state_ == State::Compose)
     {
         switchToConversation(current_conv_);
-    }
-}
-
-void UiController::handleComposeSendDoneCallback(bool ok, bool timeout, void* user_data)
-{
-    auto* controller = static_cast<UiController*>(user_data);
-    if (controller)
-    {
-        controller->handleComposeSendDone(ok, timeout);
     }
 }
 

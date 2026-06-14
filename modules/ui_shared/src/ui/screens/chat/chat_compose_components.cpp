@@ -9,15 +9,9 @@
 #include "ui/localization.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/ime/ime_widget.h"
-#include "ui/widgets/toast/toast_widget.h"
 
-#include "chat/usecase/chat_service.h"
-#include "sys/clock.h"
-
-#include <algorithm>
 #include <cstdio> // snprintf
 #include <cstring>
-#include <vector>
 
 #ifndef CHAT_COMPOSE_LOG_ENABLE
 #define CHAT_COMPOSE_LOG_ENABLE 0
@@ -33,28 +27,10 @@ namespace chat::ui
 {
 
 static constexpr size_t kMaxInputBytes = 233;
-static constexpr uint32_t kSendTimeoutMs = 3000;
-
-enum class SendState
-{
-    Idle,
-    Waiting
-};
 
 struct ChatComposeScreen::LifetimeGuard
 {
     bool alive = false;
-    int pending_async = 0;
-    ChatComposeScreen* owner = nullptr;
-};
-
-struct ChatComposeScreen::DonePayload
-{
-    LifetimeGuard* guard = nullptr;
-    void (*done_cb)(bool ok, bool timeout, void*) = nullptr;
-    void* user_data = nullptr;
-    bool ok = false;
-    bool timeout = false;
 };
 
 struct ChatComposeScreen::Impl
@@ -63,7 +39,6 @@ struct ChatComposeScreen::Impl
     chat::ui::compose::layout::Widgets w;
     chat::ui::compose::input::State input_state;
     LifetimeGuard* guard = nullptr;
-    std::vector<lv_timer_t*> timers;
     struct ActionContext
     {
         ChatComposeScreen* screen = nullptr;
@@ -72,13 +47,6 @@ struct ChatComposeScreen::Impl
     ActionContext send_ctx;
     ActionContext position_ctx;
     ActionContext cancel_ctx;
-    lv_timer_t* send_timer = nullptr;
-    uint32_t send_start_ms = 0;
-    chat::MessageId pending_msg_id = 0;
-    chat::ChatService* send_service = nullptr;
-    SendState send_state = SendState::Idle;
-    void (*send_done_cb)(bool ok, bool timeout, void*) = nullptr;
-    void* send_done_user_data = nullptr;
 };
 
 static void set_btn_label_white(lv_obj_t* btn)
@@ -127,111 +95,6 @@ static void refresh_textarea_content_font(lv_obj_t* textarea)
     ::ui::fonts::apply_content_font(textarea, text ? text : "", ::ui::fonts::ui_chrome_font());
 }
 
-void ChatComposeScreen::setEnabled(bool enabled)
-{
-    if (!impl_) return;
-    auto set = [enabled](lv_obj_t* o)
-    {
-        if (!o) return;
-        if (enabled) lv_obj_clear_state(o, LV_STATE_DISABLED);
-        else lv_obj_add_state(o, LV_STATE_DISABLED);
-    };
-
-    set(impl_->w.send_btn);
-    set(impl_->w.position_btn);
-    set(impl_->w.cancel_btn);
-    set(impl_->w.textarea);
-    if (impl_->w.top_bar.back_btn) set(impl_->w.top_bar.back_btn);
-}
-
-lv_obj_t* ChatComposeScreen::toastHost() const
-{
-    if (!impl_ || !impl_->w.container) return lv_screen_active();
-    lv_obj_t* p = lv_obj_get_parent(impl_->w.container);
-    return p ? p : lv_screen_active();
-}
-
-void ChatComposeScreen::showSendToast(bool ok, bool timeout, const char* message)
-{
-    ::ui::widgets::Toast::Type type = ::ui::widgets::Toast::Type::Info;
-    if (timeout) type = ::ui::widgets::Toast::Type::Error;
-    else if (ok) type = ::ui::widgets::Toast::Type::Success;
-    else type = ::ui::widgets::Toast::Type::Error;
-
-    ::ui::widgets::Toast::show(toastHost(), ::ui::i18n::tr(message ? message : ""), type);
-}
-
-lv_timer_t* ChatComposeScreen::add_timer(ChatComposeScreen::Impl* impl,
-                                         lv_timer_cb_t cb,
-                                         uint32_t period_ms,
-                                         void* user_data)
-{
-    if (!impl) return nullptr;
-    lv_timer_t* timer = lv_timer_create(cb, period_ms, user_data);
-    if (timer)
-    {
-        impl->timers.push_back(timer);
-    }
-    return timer;
-}
-
-void ChatComposeScreen::clear_timers(ChatComposeScreen::Impl* impl)
-{
-    if (!impl) return;
-    for (auto* timer : impl->timers)
-    {
-        if (timer)
-        {
-            lv_timer_del(timer);
-        }
-    }
-    impl->timers.clear();
-    impl->send_timer = nullptr;
-}
-
-void ChatComposeScreen::async_done_cb(void* user_data)
-{
-    auto* payload = static_cast<DonePayload*>(user_data);
-    if (!payload)
-    {
-        return;
-    }
-    LifetimeGuard* guard = payload->guard;
-    if (guard && guard->alive && payload->done_cb)
-    {
-        payload->done_cb(payload->ok, payload->timeout, payload->user_data);
-    }
-    if (guard)
-    {
-        guard->pending_async = std::max(0, guard->pending_async - 1);
-        if (!guard->alive && guard->pending_async == 0)
-        {
-            delete guard;
-        }
-    }
-    delete payload;
-}
-
-void ChatComposeScreen::schedule_done_async(LifetimeGuard* guard,
-                                            void (*done_cb)(bool ok, bool timeout, void*),
-                                            void* user_data,
-                                            bool ok,
-                                            bool timeout)
-{
-    if (!guard || !done_cb)
-    {
-        return;
-    }
-    auto* payload = new DonePayload();
-    payload->guard = guard;
-    payload->done_cb = done_cb;
-    payload->user_data = user_data;
-    payload->ok = ok;
-    payload->timeout = timeout;
-    guard->pending_async++;
-    lv_async_call(async_done_cb, payload);
-}
-
 void ChatComposeScreen::on_root_deleted(lv_event_t* e)
 {
     auto* screen = static_cast<ChatComposeScreen*>(lv_event_get_user_data(e));
@@ -244,10 +107,6 @@ void ChatComposeScreen::on_root_deleted(lv_event_t* e)
     {
         impl->guard->alive = false;
     }
-    clear_timers(impl);
-    impl->send_service = nullptr;
-    impl->send_done_cb = nullptr;
-    impl->send_done_user_data = nullptr;
     screen->action_cb_ = nullptr;
     screen->action_cb_user_data_ = nullptr;
     screen->back_cb_ = nullptr;
@@ -257,10 +116,7 @@ void ChatComposeScreen::on_root_deleted(lv_event_t* e)
     LifetimeGuard* guard = impl->guard;
     screen->impl_ = nullptr;
     delete impl;
-    if (guard && guard->pending_async == 0)
-    {
-        delete guard;
-    }
+    delete guard;
 }
 
 ChatComposeScreen::ChatComposeScreen(lv_obj_t* parent, chat::ConversationId conv)
@@ -279,8 +135,6 @@ ChatComposeScreen::ChatComposeScreen(lv_obj_t* parent, chat::ConversationId conv
     impl_ = new Impl();
     impl_->guard = new LifetimeGuard();
     impl_->guard->alive = true;
-    impl_->guard->pending_async = 0;
-    impl_->guard->owner = this;
 
     using namespace chat::ui::compose;
 
@@ -443,66 +297,6 @@ void ChatComposeScreen::clearText()
     refresh_len();
 }
 
-void ChatComposeScreen::beginSend(chat::ChatService* service,
-                                  chat::MessageId msg_id,
-                                  void (*done_cb)(bool ok, bool timeout, void*),
-                                  void* user_data)
-{
-    if (!impl_ || !impl_->guard || !impl_->guard->alive) return;
-    if (impl_->send_state == SendState::Waiting) return;
-
-    impl_->send_service = service;
-    impl_->pending_msg_id = msg_id;
-    impl_->send_start_ms = sys::millis_now();
-    impl_->send_state = SendState::Waiting;
-    impl_->send_done_cb = done_cb;
-    impl_->send_done_user_data = user_data;
-
-    setEnabled(false);
-
-    // Optional lightweight toast hint while sending.
-    ::ui::widgets::Toast::show(toastHost(), ::ui::i18n::tr("Sending..."), ::ui::widgets::Toast::Type::Info);
-
-    if (impl_->send_timer)
-    {
-        clear_timers(impl_);
-    }
-
-    impl_->send_timer = add_timer(impl_, on_send_timer, 150, this);
-    if (!impl_->send_timer)
-    {
-        finishSend(false, false, "Send failed");
-        return;
-    }
-
-    if (impl_->pending_msg_id == 0 || !impl_->send_service)
-    {
-        finishSend(false, false, "Send failed");
-        return;
-    }
-}
-
-void ChatComposeScreen::finishSend(bool ok, bool timeout, const char* message)
-{
-    if (!impl_ || !impl_->guard || !impl_->guard->alive) return;
-
-    showSendToast(ok, timeout, message);
-    setEnabled(true);
-
-    auto* done_cb = impl_->send_done_cb;
-    void* done_user = impl_->send_done_user_data;
-
-    clear_timers(impl_);
-    impl_->send_done_cb = nullptr;
-    impl_->send_done_user_data = nullptr;
-    impl_->send_service = nullptr;
-    impl_->pending_msg_id = 0;
-    impl_->send_state = SendState::Idle;
-
-    if (done_cb)
-        schedule_done_async(impl_->guard, done_cb, done_user, ok, timeout);
-}
-
 void ChatComposeScreen::setActionCallback(void (*cb)(ActionIntent intent, void*), void* user_data)
 {
     action_cb_ = cb;
@@ -636,45 +430,6 @@ void ChatComposeScreen::on_key(lv_event_t* e)
         if (lv_group_get_default())
         {
             lv_group_focus_obj(screen->impl_->w.send_btn);
-        }
-    }
-}
-
-void ChatComposeScreen::on_send_timer(lv_timer_t* timer)
-{
-    auto* screen = static_cast<ChatComposeScreen*>(lv_timer_get_user_data(timer));
-    if (!screen || !screen->impl_ || !screen->impl_->guard || !screen->impl_->guard->alive)
-    {
-        return;
-    }
-    auto* impl = screen->impl_;
-
-    uint32_t now = sys::millis_now();
-    if (impl->send_state == SendState::Waiting)
-    {
-        if (!impl->send_service || impl->pending_msg_id == 0)
-        {
-            screen->finishSend(false, false, "Send failed");
-        }
-        else
-        {
-            const ChatMessage* msg = impl->send_service->getMessage(impl->pending_msg_id);
-            if (msg)
-            {
-                if (msg->status == MessageStatus::Sent)
-                {
-                    screen->finishSend(true, false, "Sent");
-                }
-                else if (msg->status == MessageStatus::Failed)
-                {
-                    screen->finishSend(false, false, "Failed");
-                }
-            }
-        }
-        if (impl->send_state == SendState::Waiting &&
-            (now - impl->send_start_ms >= kSendTimeoutMs))
-        {
-            screen->finishSend(false, true, "No response");
         }
     }
 }

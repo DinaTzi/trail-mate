@@ -127,7 +127,6 @@ class UiController : public IChatUiRefreshSink
     void handleChannelSelected(const chat::ConversationId& conv);
     void handleSendMessage(const std::string& text);
     void handleComposeSendDone(bool ok, bool timeout);
-    static void handleComposeSendDoneCallback(bool ok, bool timeout, void* user_data);
     void refreshUnreadCounts();
     void refreshUnreadCounts(bool force_reload);
     void cleanupComposeIme();

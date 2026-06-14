@@ -25,7 +25,6 @@
 #include "ui/screens/chat/chat_conversation_components.h"
 #include "ui/screens/chat/chat_page_shell.h"
 #include "ui/screens/chat/chat_protocol_support.h"
-#include "ui/screens/chat/chat_send_flow.h"
 #include "ui/screens/contacts/contacts_page_input.h"
 #include "ui/screens/contacts/contacts_page_layout.h"
 #include "ui/screens/contacts/contacts_page_styles.h"
@@ -148,7 +147,6 @@ static void open_chat_compose();
 static void close_chat_compose();
 static void on_compose_action(chat::ui::ChatComposeScreen::ActionIntent intent, void* user_data);
 static void on_compose_back(void* user_data);
-static void on_compose_send_done(bool ok, bool timeout, void* user_data);
 [[maybe_unused]] static void open_team_conversation();
 static void close_team_conversation();
 static void refresh_team_conversation();
@@ -620,6 +618,43 @@ static const char* team_action_failure_message(
         return "Message unavailable";
     }
     return default_message;
+}
+
+static const char* local_text_failure_message(chat::MeshOperationFailure failure)
+{
+    switch (failure)
+    {
+    case chat::MeshOperationFailure::PeerKeyMissing:
+        return "Peer key missing";
+    case chat::MeshOperationFailure::ChannelKeyMissing:
+        return "Channel key missing";
+    case chat::MeshOperationFailure::TxDisabled:
+        return "TX disabled";
+    case chat::MeshOperationFailure::RadioOffline:
+        return "Radio offline";
+    case chat::MeshOperationFailure::DutyCycleLimited:
+        return "TX rate limited";
+    case chat::MeshOperationFailure::RadioTxFailed:
+        return "Radio TX failed";
+    case chat::MeshOperationFailure::LocalIdentityMissing:
+        return "Identity missing";
+    case chat::MeshOperationFailure::Busy:
+        return "Radio busy";
+    case chat::MeshOperationFailure::Unsupported:
+        return "Chat unsupported";
+    case chat::MeshOperationFailure::InvalidInput:
+        return "Invalid message";
+    case chat::MeshOperationFailure::NotReady:
+        return "Mesh not ready";
+    case chat::MeshOperationFailure::EncodeFailed:
+        return "Packet build failed";
+    case chat::MeshOperationFailure::CryptoFailed:
+        return "Signature failed";
+    case chat::MeshOperationFailure::None:
+    case chat::MeshOperationFailure::Unknown:
+        break;
+    }
+    return "Send failed";
 }
 
 static uint32_t current_timestamp_seconds()
@@ -1566,13 +1601,18 @@ static void on_compose_action(chat::ui::ChatComposeScreen::ActionIntent intent, 
         {
             if (g_contacts_state.chat_service)
             {
-                const chat::ConversationId conv(s_compose_channel, s_compose_peer_id, s_compose_protocol);
-                chat::ui::send_flow::begin_local_text_send(g_contacts_state.compose_screen,
-                                                           g_contacts_state.chat_service,
-                                                           conv,
-                                                           text,
-                                                           on_compose_send_done,
-                                                           nullptr);
+                const chat::MeshSendResult result =
+                    g_contacts_state.chat_service->sendTextDetailed(
+                        s_compose_channel,
+                        text,
+                        s_compose_peer_id);
+                if (!result.ok || result.msg_id == 0)
+                {
+                    ::ui::SystemNotification::show(
+                        local_text_failure_message(result.failure),
+                        2000);
+                }
+                close_chat_compose();
                 return;
             }
         }
@@ -1583,16 +1623,6 @@ static void on_compose_action(chat::ui::ChatComposeScreen::ActionIntent intent, 
 static void on_compose_back(void* /*user_data*/)
 {
     close_chat_compose();
-}
-
-static void on_compose_send_done(bool ok, bool /*timeout*/, void* /*user_data*/)
-{
-    (void)ok;
-    close_chat_compose();
-    if (g_contacts_state.conversation_screen)
-    {
-        refresh_team_conversation();
-    }
 }
 
 static void refresh_team_conversation()

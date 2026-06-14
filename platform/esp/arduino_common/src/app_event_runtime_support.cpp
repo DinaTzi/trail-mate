@@ -6,6 +6,7 @@
 #include "app/app_facades.h"
 #include "board/BoardBase.h"
 #include "chat/usecase/contact_service.h"
+#include "chat/usecase/chat_service.h"
 #include "platform/esp/arduino_common/app_runtime_support.h"
 #include "platform/esp/arduino_common/hostlink/hostlink_bridge_radio.h"
 #include "platform/ui/settings_store.h"
@@ -15,6 +16,7 @@
 #include "ui/localization.h"
 #include "ui/screens/team/team_page_shell.h"
 #include "ui/widgets/system_notification.h"
+#include "ui_chat_runtime/chat_delivery_feedback_controller.h"
 
 namespace platform::esp::arduino_common
 {
@@ -42,6 +44,30 @@ bool isTeamRuntimeEvent(sys::EventType type)
            type == sys::EventType::TeamChat ||
            type == sys::EventType::TeamPairing ||
            type == sys::EventType::TeamError;
+}
+
+class SystemNotificationChatDeliveryFeedbackPort final
+    : public ::ui_chat_runtime::IChatDeliveryFeedbackPort
+{
+  public:
+    void showChatDeliverySent(chat::MessageId msg_id) override
+    {
+        (void)msg_id;
+        ::ui::SystemNotification::show(::ui::i18n::tr("Sent"), 1400);
+    }
+
+    void showChatDeliveryFailed(chat::MessageId msg_id) override
+    {
+        (void)msg_id;
+        ::ui::SystemNotification::show(::ui::i18n::tr("Send failed"), 2000);
+    }
+};
+
+::ui_chat_runtime::ChatDeliveryFeedbackController& chatDeliveryFeedback()
+{
+    static SystemNotificationChatDeliveryFeedbackPort port;
+    static ::ui_chat_runtime::ChatDeliveryFeedbackController controller(port);
+    return controller;
 }
 
 void triggerMessageFeedback(app::IAppFacade& app_context)
@@ -138,6 +164,15 @@ void handleTeamChatNotification(app::IAppFacade& app_context, const sys::TeamCha
     ::ui::SystemNotification::show(notice.c_str(), 3000);
 }
 
+void handleChatSendResultFeedback(app::IAppFacade& app_context,
+                                  const sys::ChatSendResultEvent& event)
+{
+    chatDeliveryFeedback().onChatSendResult(
+        event.msg_id,
+        event.success,
+        app_context.getChatService().getMessage(event.msg_id));
+}
+
 void tickUiRuntime(app::IAppFacade& app_context)
 {
     platform::esp::arduino_common::tickRuntime(app_context);
@@ -160,6 +195,11 @@ bool handleUiEvent(app::IAppFacade& app_context, sys::Event* event)
 
     switch (event->type)
     {
+    case sys::EventType::ChatSendResult:
+        handleChatSendResultFeedback(
+            app_context,
+            *static_cast<sys::ChatSendResultEvent*>(event));
+        break;
     case sys::EventType::ChatNewMessage:
     {
         auto* msg_event = static_cast<sys::ChatNewMessageEvent*>(event);

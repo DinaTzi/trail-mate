@@ -93,17 +93,6 @@ void ChatComposeScreen::clearText()
     selected_text_.clear();
 }
 
-void ChatComposeScreen::beginSend(chat::ChatService*,
-                                  chat::MessageId,
-                                  void (*done_cb)(bool ok, bool timeout, void*),
-                                  void* user_data)
-{
-    if (done_cb)
-    {
-        done_cb(true, false, user_data);
-    }
-}
-
 void ChatComposeScreen::setActionCallback(void (*cb)(ActionIntent intent, void*), void* user_data)
 {
     action_cb_ = cb;
