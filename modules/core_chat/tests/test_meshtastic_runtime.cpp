@@ -32,6 +32,7 @@ int main()
     using chat::runtime::SendNodeInfoEffect;
     using chat::runtime::SendPacketEffect;
     using chat::runtime::SendRoutingErrorEffect;
+    using chat::runtime::SharePositionIntent;
     using chat::runtime::TraceRouteIntent;
 
     MeshtasticRuntime runtime;
@@ -83,6 +84,57 @@ int main()
         assert(!packet->want_ack);
         assert(packet->want_response);
         assert(packet->payload.empty());
+    }
+
+    {
+        SharePositionIntent intent{};
+        intent.channel = ChannelId::SECONDARY;
+        intent.peer = 0x44444444UL;
+        intent.valid = true;
+        intent.latitude_deg = 26.67773;
+        intent.longitude_deg = 107.28225;
+        intent.has_altitude = true;
+        intent.altitude_m = 1903.6;
+        intent.timestamp_s = 1710000000U;
+
+        const auto effects = runtime.prepareOutgoing(intent, context);
+        assert(effects.items.size() == 1);
+        const auto* packet = effectAt<SendPacketEffect>(effects, 0);
+        assert(packet);
+        assert(packet->protocol == MeshProtocol::Meshtastic);
+        assert(packet->channel == intent.channel);
+        assert(packet->dest == intent.peer);
+        assert(packet->portnum == meshtastic_PortNum_POSITION_APP);
+        assert(!packet->want_ack);
+        assert(!packet->want_response);
+        assert(!packet->payload.empty());
+
+        meshtastic_Position decoded = meshtastic_Position_init_zero;
+        pb_istream_t stream = pb_istream_from_buffer(packet->payload.data(),
+                                                     packet->payload.size());
+        assert(pb_decode(&stream, meshtastic_Position_fields, &decoded));
+        assert(decoded.has_latitude_i);
+        assert(decoded.latitude_i == static_cast<int32_t>(intent.latitude_deg * 1e7));
+        assert(decoded.has_longitude_i);
+        assert(decoded.longitude_i == static_cast<int32_t>(intent.longitude_deg * 1e7));
+        assert(decoded.has_altitude);
+        assert(decoded.altitude == 1904);
+        assert(decoded.timestamp == intent.timestamp_s);
+    }
+
+    {
+        SharePositionIntent intent{};
+        intent.peer = 0x55555555UL;
+        intent.valid = false;
+
+        const auto effects = runtime.prepareOutgoing(intent, context);
+        assert(effects.items.size() == 1);
+        const auto* failed = effectAt<EmitActionResultEffect>(effects, 0);
+        assert(failed);
+        assert(failed->protocol == MeshProtocol::Meshtastic);
+        assert(failed->action == ProtocolActionKind::SharePosition);
+        assert(failed->state == ProtocolActionState::Failed);
+        assert(failed->peer == intent.peer);
     }
 
     {

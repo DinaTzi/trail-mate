@@ -1,10 +1,12 @@
 #pragma once
 
+#include "chat/runtime/meshtastic_position_core.h"
 #include "chat/runtime/protocol_runtime.h"
 #include "meshtastic/mesh.pb.h"
 #include "meshtastic/portnums.pb.h"
 #include "pb_encode.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -104,6 +106,10 @@ class MeshtasticRuntime final : public IProtocolRuntime
                 else if constexpr (std::is_same_v<Intent, ExchangePositionIntent>)
                 {
                     resolveExchangePosition(item, context, effects);
+                }
+                else if constexpr (std::is_same_v<Intent, SharePositionIntent>)
+                {
+                    resolveSharePosition(item, context, effects);
                 }
             },
             intent);
@@ -237,6 +243,46 @@ class MeshtasticRuntime final : public IProtocolRuntime
         packet.request_id = request_id;
         packet.want_ack = false;
         packet.want_response = true;
+        effects.add(std::move(packet));
+    }
+
+    static void resolveSharePosition(const SharePositionIntent& intent,
+                                     const RuntimeContext& context,
+                                     ProtocolEffects& effects)
+    {
+        (void)context;
+        MeshtasticPositionInput input{};
+        input.valid = intent.valid;
+        input.latitude_deg = intent.latitude_deg;
+        input.longitude_deg = intent.longitude_deg;
+        input.has_altitude = intent.has_altitude;
+        input.altitude_m = intent.altitude_m;
+        input.has_speed = intent.has_speed;
+        input.speed_mps = intent.speed_mps;
+        input.has_course = intent.has_course;
+        input.course_deg = intent.course_deg;
+        input.satellites = intent.satellites;
+        input.timestamp_s = intent.timestamp_s;
+
+        uint8_t payload[meshtastic_Position_size] = {};
+        size_t payload_len = sizeof(payload);
+        if (!MeshtasticPositionCore::buildPositionPayload(input, payload, &payload_len))
+        {
+            effects.add(buildFailedAction(ProtocolActionKind::SharePosition,
+                                          normalizePeer(intent.peer),
+                                          0,
+                                          -2));
+            return;
+        }
+
+        SendPacketEffect packet{};
+        packet.protocol = MeshProtocol::Meshtastic;
+        packet.channel = intent.channel;
+        packet.dest = normalizePeer(intent.peer);
+        packet.portnum = meshtastic_PortNum_POSITION_APP;
+        packet.want_ack = intent.want_ack && packet.dest != 0;
+        packet.want_response = intent.want_response;
+        packet.payload.assign(payload, payload + payload_len);
         effects.add(std::move(packet));
     }
 
