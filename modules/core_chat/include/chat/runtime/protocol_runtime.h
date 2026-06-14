@@ -19,6 +19,7 @@ enum class ProtocolActionKind : uint8_t
     TraceRoute,
     ExchangePosition,
     SharePosition,
+    ShareWaypoint,
     PkiResync,
     Discover,
 };
@@ -90,6 +91,23 @@ struct SharePositionIntent
     bool want_response = false;
 };
 
+struct ShareWaypointIntent
+{
+    ChannelId channel = ChannelId::PRIMARY;
+    NodeId peer = 0;
+    bool valid = false;
+    double latitude_deg = 0.0;
+    double longitude_deg = 0.0;
+    uint32_t id = 0;
+    uint32_t expire = 0;
+    uint32_t locked_to = 0;
+    uint32_t icon = 0;
+    std::string name;
+    std::string description;
+    bool want_ack = false;
+    bool want_response = false;
+};
+
 struct DiscoverIntent
 {
     MeshDiscoveryAction action = MeshDiscoveryAction::ScanLocal;
@@ -110,6 +128,7 @@ using ProtocolIntent = std::variant<SendTextIntent,
                                     TraceRouteIntent,
                                     ExchangePositionIntent,
                                     SharePositionIntent,
+                                    ShareWaypointIntent,
                                     DiscoverIntent,
                                     StartKeyVerificationIntent>;
 

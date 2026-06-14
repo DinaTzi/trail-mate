@@ -5,7 +5,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
 #include <limits>
 #include <string>
 #include <utility>
@@ -17,8 +16,6 @@
 #include "chat/runtime/meshtastic_runtime.h"
 #include "chat/usecase/chat_service.h"
 #include "chat/usecase/contact_service.h"
-#include "meshtastic/mesh.pb.h"
-#include "pb_encode.h"
 #include "platform/ui/gps_runtime.h"
 #include "sys/clock.h"
 
@@ -1408,31 +1405,31 @@ bool UConsoleChatWorkspaceModel::sendCurrentPoi()
         return false;
     }
 
-    meshtastic_Waypoint waypoint = meshtastic_Waypoint_init_zero;
-    waypoint.id = sys::epoch_seconds_now();
-    waypoint.has_latitude_i = true;
-    waypoint.latitude_i = static_cast<std::int32_t>(std::lround(gps.lat * 10000000.0));
-    waypoint.has_longitude_i = true;
-    waypoint.longitude_i = static_cast<std::int32_t>(std::lround(gps.lng * 10000000.0));
-    waypoint.expire = waypoint.id + 86400U;
-    std::strncpy(waypoint.name, "Trail Mate POI", sizeof(waypoint.name) - 1);
-    std::strncpy(waypoint.description,
-                 "Shared from uConsole current GPS fix",
-                 sizeof(waypoint.description) - 1);
+    const std::uint32_t now_s = sys::epoch_seconds_now();
+    ::chat::runtime::ShareWaypointIntent intent{};
+    intent.channel = active_conversation_.channel;
+    intent.peer = active_conversation_.peer;
+    intent.valid = gps.valid;
+    intent.latitude_deg = gps.lat;
+    intent.longitude_deg = gps.lng;
+    intent.id = now_s;
+    intent.expire = now_s + 86400U;
+    intent.name = "Trail Mate POI";
+    intent.description = "Shared from uConsole current GPS fix";
 
-    std::uint8_t payload[meshtastic_Waypoint_size] = {};
-    pb_ostream_t stream = pb_ostream_from_buffer(payload, sizeof(payload));
-    if (!pb_encode(&stream, meshtastic_Waypoint_fields, &waypoint))
+    ::chat::runtime::MeshtasticRuntime runtime{};
+    ::chat::runtime::RuntimeContext context{};
+    context.protocol = ::chat::MeshProtocol::Meshtastic;
+    context.self_node = adapter->getNodeId();
+
+    const auto effects = runtime.prepareOutgoing(intent, context);
+    const auto* packet = firstSendPacketEffect(effects);
+    if (packet == nullptr)
     {
         action_status_ = "POI encoding failed.";
         return false;
     }
-    if (!adapter->sendAppData(active_conversation_.channel,
-                              meshtastic_PortNum_WAYPOINT_APP,
-                              payload,
-                              stream.bytes_written,
-                              active_conversation_.peer,
-                              false))
+    if (!executeSendPacketEffect(*adapter, *packet))
     {
         action_status_ = "POI failed to queue.";
         return false;

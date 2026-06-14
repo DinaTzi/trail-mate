@@ -82,6 +82,7 @@ if(TRAIL_MATE_UCONSOLE_BUILD_REAL_GTK_UI AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
             "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/presentation_sources/runtime_gps_status_source.cpp"
             "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/presentation_sources/runtime_map_workspace_source.cpp"
             "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/runtime/meshtastic_position_core.cpp"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/runtime/meshtastic_waypoint_core.cpp"
             "${TRAIL_MATE_REPO_ROOT}/platform/linux/uconsole/src/uconsole_chat_workspace_model.cpp"
             "${TRAIL_MATE_REPO_ROOT}/platform/linux/uconsole/src/uconsole_dashboard_model.cpp"
             "${TRAIL_MATE_REPO_ROOT}/platform/linux/uconsole/src/uconsole_hardware_probe.cpp"

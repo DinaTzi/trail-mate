@@ -1,6 +1,7 @@
 #pragma once
 
 #include "chat/runtime/meshtastic_position_core.h"
+#include "chat/runtime/meshtastic_waypoint_core.h"
 #include "chat/runtime/protocol_runtime.h"
 #include "meshtastic/mesh.pb.h"
 #include "meshtastic/portnums.pb.h"
@@ -110,6 +111,10 @@ class MeshtasticRuntime final : public IProtocolRuntime
                 else if constexpr (std::is_same_v<Intent, SharePositionIntent>)
                 {
                     resolveSharePosition(item, context, effects);
+                }
+                else if constexpr (std::is_same_v<Intent, ShareWaypointIntent>)
+                {
+                    resolveShareWaypoint(item, context, effects);
                 }
             },
             intent);
@@ -280,6 +285,44 @@ class MeshtasticRuntime final : public IProtocolRuntime
         packet.channel = intent.channel;
         packet.dest = normalizePeer(intent.peer);
         packet.portnum = meshtastic_PortNum_POSITION_APP;
+        packet.want_ack = intent.want_ack && packet.dest != 0;
+        packet.want_response = intent.want_response;
+        packet.payload.assign(payload, payload + payload_len);
+        effects.add(std::move(packet));
+    }
+
+    static void resolveShareWaypoint(const ShareWaypointIntent& intent,
+                                     const RuntimeContext& context,
+                                     ProtocolEffects& effects)
+    {
+        (void)context;
+        MeshtasticWaypointInput input{};
+        input.valid = intent.valid;
+        input.latitude_deg = intent.latitude_deg;
+        input.longitude_deg = intent.longitude_deg;
+        input.id = intent.id;
+        input.expire = intent.expire;
+        input.locked_to = intent.locked_to;
+        input.icon = intent.icon;
+        input.name = intent.name;
+        input.description = intent.description;
+
+        uint8_t payload[meshtastic_Waypoint_size] = {};
+        size_t payload_len = sizeof(payload);
+        if (!MeshtasticWaypointCore::buildWaypointPayload(input, payload, &payload_len))
+        {
+            effects.add(buildFailedAction(ProtocolActionKind::ShareWaypoint,
+                                          normalizePeer(intent.peer),
+                                          0,
+                                          -2));
+            return;
+        }
+
+        SendPacketEffect packet{};
+        packet.protocol = MeshProtocol::Meshtastic;
+        packet.channel = intent.channel;
+        packet.dest = normalizePeer(intent.peer);
+        packet.portnum = meshtastic_PortNum_WAYPOINT_APP;
         packet.want_ack = intent.want_ack && packet.dest != 0;
         packet.want_response = intent.want_response;
         packet.payload.assign(payload, payload + payload_len);

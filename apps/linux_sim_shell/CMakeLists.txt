@@ -135,6 +135,7 @@ if(BUILD_TESTING)
     add_executable(trailmate_protocol_effect_executor_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/tests/test_protocol_effect_executor.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/runtime/meshtastic_position_core.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/runtime/meshtastic_waypoint_core.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_common.c"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_encode.c"
         ${TRAIL_MATE_MESHTASTIC_GENERATED_SOURCES})
@@ -151,6 +152,7 @@ if(BUILD_TESTING)
     add_executable(trailmate_meshtastic_runtime_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/tests/test_meshtastic_runtime.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/runtime/meshtastic_position_core.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/runtime/meshtastic_waypoint_core.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_common.c"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_decode.c"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_encode.c"
@@ -164,6 +166,23 @@ if(BUILD_TESTING)
         PRIVATE cxx_std_17)
     add_test(NAME trailmate_meshtastic_runtime_smoke
              COMMAND trailmate_meshtastic_runtime_smoke)
+
+    add_executable(trailmate_meshtastic_waypoint_core_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/tests/test_meshtastic_waypoint_core.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/runtime/meshtastic_waypoint_core.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_common.c"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_decode.c"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_encode.c"
+        ${TRAIL_MATE_MESHTASTIC_GENERATED_SOURCES})
+    target_include_directories(trailmate_meshtastic_waypoint_core_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/generated"
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb")
+    target_compile_features(trailmate_meshtastic_waypoint_core_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_meshtastic_waypoint_core_smoke
+             COMMAND trailmate_meshtastic_waypoint_core_smoke)
 
     add_executable(trailmate_meshcore_protocol_strategy_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/core_mesh/tests/test_meshcore_protocol_strategy.cpp"

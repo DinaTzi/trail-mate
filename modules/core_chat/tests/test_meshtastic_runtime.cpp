@@ -3,6 +3,7 @@
 #include "pb_decode.h"
 
 #include <cassert>
+#include <string>
 
 namespace
 {
@@ -33,6 +34,7 @@ int main()
     using chat::runtime::SendPacketEffect;
     using chat::runtime::SendRoutingErrorEffect;
     using chat::runtime::SharePositionIntent;
+    using chat::runtime::ShareWaypointIntent;
     using chat::runtime::TraceRouteIntent;
 
     MeshtasticRuntime runtime;
@@ -133,6 +135,59 @@ int main()
         assert(failed);
         assert(failed->protocol == MeshProtocol::Meshtastic);
         assert(failed->action == ProtocolActionKind::SharePosition);
+        assert(failed->state == ProtocolActionState::Failed);
+        assert(failed->peer == intent.peer);
+    }
+
+    {
+        ShareWaypointIntent intent{};
+        intent.channel = ChannelId::PRIMARY;
+        intent.peer = 0x66666666UL;
+        intent.valid = true;
+        intent.latitude_deg = 26.67773;
+        intent.longitude_deg = 107.28225;
+        intent.id = 1710000000U;
+        intent.expire = intent.id + 86400U;
+        intent.name = "Trail Mate POI";
+        intent.description = "Shared from uConsole current GPS fix";
+
+        const auto effects = runtime.prepareOutgoing(intent, context);
+        assert(effects.items.size() == 1);
+        const auto* packet = effectAt<SendPacketEffect>(effects, 0);
+        assert(packet);
+        assert(packet->protocol == MeshProtocol::Meshtastic);
+        assert(packet->channel == intent.channel);
+        assert(packet->dest == intent.peer);
+        assert(packet->portnum == meshtastic_PortNum_WAYPOINT_APP);
+        assert(!packet->want_ack);
+        assert(!packet->want_response);
+        assert(!packet->payload.empty());
+
+        meshtastic_Waypoint decoded = meshtastic_Waypoint_init_zero;
+        pb_istream_t stream = pb_istream_from_buffer(packet->payload.data(),
+                                                     packet->payload.size());
+        assert(pb_decode(&stream, meshtastic_Waypoint_fields, &decoded));
+        assert(decoded.id == intent.id);
+        assert(decoded.has_latitude_i);
+        assert(decoded.latitude_i == static_cast<int32_t>(intent.latitude_deg * 1e7));
+        assert(decoded.has_longitude_i);
+        assert(decoded.longitude_i == static_cast<int32_t>(intent.longitude_deg * 1e7));
+        assert(decoded.expire == intent.expire);
+        assert(std::string(decoded.name) == intent.name);
+        assert(std::string(decoded.description) == intent.description);
+    }
+
+    {
+        ShareWaypointIntent intent{};
+        intent.peer = 0x77777777UL;
+        intent.valid = false;
+
+        const auto effects = runtime.prepareOutgoing(intent, context);
+        assert(effects.items.size() == 1);
+        const auto* failed = effectAt<EmitActionResultEffect>(effects, 0);
+        assert(failed);
+        assert(failed->protocol == MeshProtocol::Meshtastic);
+        assert(failed->action == ProtocolActionKind::ShareWaypoint);
         assert(failed->state == ProtocolActionState::Failed);
         assert(failed->peer == intent.peer);
     }
