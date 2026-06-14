@@ -23,7 +23,7 @@ using Projection = gps::ui::shell::Projection;
 #include "ui/team_presentation/team_member_label.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/map/map_viewport.h"
-#include "ui/widgets/system_notification.h"
+#include "ui/runtime/ui_feedback.h"
 #include "ui/widgets/top_bar.h"
 #include "ui_gps_runtime/gps_page_runtime_pump.h"
 #include "ui_map_runtime/map_overlay_snapshot_source.h"
@@ -57,12 +57,12 @@ bool isGPSLoadingTiles()
 
 void show_toast(const char* message, uint32_t duration_ms)
 {
-    ::ui::SystemNotification::show(message ? message : "", duration_ms);
+    ::ui::feedback::show_notice(message ? message : "", duration_ms);
 }
 
 void hide_toast()
 {
-    ::ui::SystemNotification::hide();
+    ::ui::feedback::hide_notice();
 }
 
 namespace

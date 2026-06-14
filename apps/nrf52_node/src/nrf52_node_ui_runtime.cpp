@@ -280,6 +280,24 @@ void drawProbePattern(::ui::mono::MonoDisplay& display, const ::ui::mono::MonoFo
     display.present();
 }
 
+void showPendingRuntimeFeedback()
+{
+    if (!s_runtime)
+    {
+        return;
+    }
+
+    chat::MessageId msg_id = 0;
+    bool success = false;
+    while (AppFacadeRuntime::instance().takeChatSendResultFeedback(&msg_id, &success))
+    {
+        (void)msg_id;
+        s_runtime->showNotice("MESSAGE",
+                              success ? "SENT" : "SEND FAILED",
+                              success ? 1500U : 2000U);
+    }
+}
+
 } // namespace
 
 bool initialize()
@@ -357,6 +375,7 @@ void tick(const BoardInputEvent* event)
 {
     if (initialize() && s_runtime)
     {
+        showPendingRuntimeFeedback();
         const auto action = to_input_action(event);
 #if defined(TRAILMATE_TARGET_T_ECHO_LITE)
         const bool has_pressed_input = event && event->pressed &&

@@ -38,7 +38,7 @@
 #include "ui/screens/team/team_page_transfer_leader_action.h"
 #include "ui/team_presentation/team_member_label.h"
 #include "ui/ui_common.h"
-#include "ui/widgets/system_notification.h"
+#include "ui/runtime/ui_feedback.h"
 #include "ui/widgets/top_bar.h"
 
 #include <array>
@@ -253,10 +253,10 @@ void notify_send_failed(const char* action, bool needs_keys)
     if (action && action[0])
     {
         const std::string notice = std::string(::ui::i18n::tr(action)) + ": " + ::ui::i18n::tr(msg);
-        ::ui::SystemNotification::show(notice.c_str(), 2000);
+        ::ui::feedback::show_notice(notice.c_str(), 2000);
         return;
     }
-    ::ui::SystemNotification::show(msg, 2000);
+    ::ui::feedback::show_notice(msg, 2000);
 }
 
 void notify_send_failed_detail(const char* action, team::TeamService::SendError err)
@@ -284,7 +284,7 @@ void notify_send_failed_detail(const char* action, team::TeamService::SendError 
     }
     const char* action_text = (action && action[0]) ? action : "Send";
     const std::string notice = std::string(::ui::i18n::tr(action_text)) + ": " + ::ui::i18n::tr(reason);
-    ::ui::SystemNotification::show(notice.c_str(), 2000);
+    ::ui::feedback::show_notice(notice.c_str(), 2000);
 }
 
 const char* kick_confirm_failure_action_text(
@@ -345,12 +345,12 @@ void apply_create_team_failures(const TeamPageCreateTeamEffects& effects)
         }
         if (failure.kind == TeamPageCreateTeamFailureKind::PairingNotReady)
         {
-            ::ui::SystemNotification::show("Pairing not ready", 2000);
+            ::ui::feedback::show_notice("Pairing not ready", 2000);
         }
         else if (failure.kind ==
                  TeamPageCreateTeamFailureKind::PairingInitFailed)
         {
-            ::ui::SystemNotification::show("Pairing init failed", 2000);
+            ::ui::feedback::show_notice("Pairing init failed", 2000);
         }
     }
 }
@@ -363,17 +363,17 @@ void apply_pairing_command_failures(
         switch (failure.kind)
         {
         case TeamPagePairingCommandFailureKind::LeaderRequired:
-            ::ui::SystemNotification::show("Only leader can pair", 2000);
+            ::ui::feedback::show_notice("Only leader can pair", 2000);
             break;
         case TeamPagePairingCommandFailureKind::PairingNotReady:
-            ::ui::SystemNotification::show("Pairing not ready", 2000);
+            ::ui::feedback::show_notice("Pairing not ready", 2000);
             break;
         case TeamPagePairingCommandFailureKind::PairingNotAvailable:
-            ::ui::SystemNotification::show("Pairing not available", 2000);
+            ::ui::feedback::show_notice("Pairing not available", 2000);
             break;
         case TeamPagePairingCommandFailureKind::PairingInitFailed:
         default:
-            ::ui::SystemNotification::show("Pairing init failed", 2000);
+            ::ui::feedback::show_notice("Pairing init failed", 2000);
             break;
         }
     }
@@ -541,7 +541,7 @@ class TeamPageEventNotifierAdapter final : public ITeamPageEventNotifier
   public:
     void showMessage(const char* message) override
     {
-        ::ui::SystemNotification::show(message, 2000);
+        ::ui::feedback::show_notice(message, 2000);
     }
 
     void notifySendFailed(const char* action, bool needs_keys) override
@@ -1160,7 +1160,7 @@ void handle_team_error(const team::TeamErrorEvent& ev)
         });
     if (effects.show_key_mismatch)
     {
-        ::ui::SystemNotification::show("Team keys mismatch", 2000);
+        ::ui::feedback::show_notice("Team keys mismatch", 2000);
     }
 }
 
@@ -1341,7 +1341,7 @@ void handle_team_key_request(const team::TeamKeyRequestEvent& ev)
         add_keydist_pending(ev.msg.requester_id != 0 ? ev.msg.requester_id
                                                      : ev.ctx.from,
                             team_page_state().security_round);
-        ::ui::SystemNotification::show("Sent team keys", 2000);
+        ::ui::feedback::show_notice("Sent team keys", 2000);
         return;
     }
 
@@ -1557,7 +1557,7 @@ void handle_manage(lv_event_t*)
 {
     if (!team_page_state().self_is_leader)
     {
-        ::ui::SystemNotification::show("Only leader can manage", 2000);
+        ::ui::feedback::show_notice("Only leader can manage", 2000);
         return;
     }
     nav_to(TeamPage::Members);
@@ -1627,7 +1627,7 @@ void handle_request_keydist(lv_event_t*)
             app::messagingFacade().getSelfNodeId());
     if (effects.sent_request)
     {
-        ::ui::SystemNotification::show("Requested team keys", 2000);
+        ::ui::feedback::show_notice("Requested team keys", 2000);
     }
     else if (effects.send_failed)
     {

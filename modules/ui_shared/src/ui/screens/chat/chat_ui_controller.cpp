@@ -19,7 +19,7 @@
 #include "ui/screens/chat/chat_team_workflow.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/ime/ime_widget.h"
-#include "ui/widgets/system_notification.h"
+#include "ui/runtime/ui_feedback.h"
 #include "ui_chat_runtime/chat_delivery_action_port_adapter.h"
 #include "ui_lvgl_ux_packs/common/key_verification_modal_renderer.h"
 #include "ui_lvgl_ux_packs/common/team_position_picker_renderer.h"
@@ -675,17 +675,17 @@ void UiController::switchToCompose(chat::ConversationId conv)
     const bool is_team_conv = isTeamConversation(conv);
     if (!is_team_conv && conv.protocol != chat_support::active_mesh_protocol())
     {
-        ::ui::SystemNotification::show("Conversation protocol mismatch", 2000);
+        ::ui::feedback::show_notice("Conversation protocol mismatch", 2000);
         return;
     }
     if (!is_team_conv && !chat_support::supports_local_text_chat())
     {
-        ::ui::SystemNotification::show(chat_support::local_text_chat_unavailable_message(), 2200);
+        ::ui::feedback::show_notice(chat_support::local_text_chat_unavailable_message(), 2200);
         return;
     }
     if (is_team_conv && !chat_support::supports_team_chat())
     {
-        ::ui::SystemNotification::show(chat_support::team_chat_unavailable_message(), 2200);
+        ::ui::feedback::show_notice(chat_support::team_chat_unavailable_message(), 2200);
         return;
     }
 
@@ -810,7 +810,7 @@ void UiController::handleSendMessage(const std::string& text)
     {
         const ::ui::UiActionResult result =
             team_workflow_.sendText(text.c_str());
-        ::ui::SystemNotification::show(
+        ::ui::feedback::show_notice(
             result.ok ? "Sent" : team_workflow_.textSendFailureMessage(result),
             result.ok ? 1400 : 2000);
         handleComposeSendDone(result.ok, false);
@@ -818,14 +818,14 @@ void UiController::handleSendMessage(const std::string& text)
     }
     if (!chat_support::supports_local_text_chat())
     {
-        ::ui::SystemNotification::show(chat_support::local_text_chat_unavailable_message(), 2200);
+        ::ui::feedback::show_notice(chat_support::local_text_chat_unavailable_message(), 2200);
         return;
     }
 
     const ::ui::UiActionResult result = chat_model_.sendMessage(text.c_str());
     if (!result.ok)
     {
-        ::ui::SystemNotification::show(local_text_send_failure_message(result),
+        ::ui::feedback::show_notice(local_text_send_failure_message(result),
                                       2000);
     }
     handleComposeSendDone(result.ok, false);
@@ -1270,7 +1270,7 @@ void UiController::submitKeyVerificationInput()
         return;
     }
 
-    ::ui::SystemNotification::show("Verification number sent", 2000);
+    ::ui::feedback::show_notice("Verification number sent", 2000);
     closeKeyVerificationModal(true);
 }
 
@@ -1283,7 +1283,7 @@ void UiController::trustKeyFromVerificationModal()
     }
 
     const auto result = key_verification_model_->accept();
-    ::ui::SystemNotification::show(
+    ::ui::feedback::show_notice(
         result.ok ? "Key marked trusted"
                   : key_verification_action_failure_message(result),
         2000);
@@ -1301,7 +1301,7 @@ void UiController::onTeamPositionIconSelected(uint8_t icon_id)
     const auto result = team_workflow_.sendCurrentLocationMarker(icon_id);
     if (!result.ok)
     {
-        ::ui::SystemNotification::show(
+        ::ui::feedback::show_notice(
             team_workflow_.locationSendFailureMessage(result),
             2000);
     }
@@ -1314,17 +1314,17 @@ void UiController::handleConversationAction(ChatConversationScreen::ActionIntent
     {
         if (!team_conv_active_ && current_conv_.protocol != chat_support::active_mesh_protocol())
         {
-            ::ui::SystemNotification::show("Reply disabled for this protocol", 2000);
+            ::ui::feedback::show_notice("Reply disabled for this protocol", 2000);
             return;
         }
         if (!team_conv_active_ && !chat_support::supports_local_text_chat())
         {
-            ::ui::SystemNotification::show(chat_support::local_text_chat_unavailable_message(), 2200);
+            ::ui::feedback::show_notice(chat_support::local_text_chat_unavailable_message(), 2200);
             return;
         }
         if (team_conv_active_ && !chat_support::supports_team_chat())
         {
-            ::ui::SystemNotification::show(chat_support::team_chat_unavailable_message(), 2200);
+            ::ui::feedback::show_notice(chat_support::team_chat_unavailable_message(), 2200);
             return;
         }
         switchToCompose(current_conv_);
@@ -1341,25 +1341,25 @@ void UiController::handleConversationMessageAction(
     }
     if (team_conv_active_ || delivery_action_adapter_ == nullptr)
     {
-        ::ui::SystemNotification::show("Retry unavailable", 1800);
+        ::ui::feedback::show_notice("Retry unavailable", 1800);
         return;
     }
     if (current_conv_.protocol != chat_support::active_mesh_protocol())
     {
-        ::ui::SystemNotification::show("Retry disabled for this protocol", 2000);
+        ::ui::feedback::show_notice("Retry disabled for this protocol", 2000);
         return;
     }
 
     const auto result = delivery_action_adapter_->retryMessage(ref);
     if (!result.ok)
     {
-        ::ui::SystemNotification::show(
+        ::ui::feedback::show_notice(
             delivery_retry_failure_message(result.failure),
             1800);
         return;
     }
 
-    ::ui::SystemNotification::show("Retry queued", 1400);
+    ::ui::feedback::show_notice("Retry queued", 1400);
     conversation_list_dirty_ = true;
     reloadConversationView();
 }
@@ -1400,7 +1400,7 @@ void UiController::handleComposeAction(ChatComposeScreen::ActionIntent intent)
         }
         const ::ui::UiActionResult result =
             team_workflow_.sendText(text.c_str());
-        ::ui::SystemNotification::show(
+        ::ui::feedback::show_notice(
             result.ok ? "Sent" : team_workflow_.textSendFailureMessage(result),
             result.ok ? 1400 : 2000);
         handleComposeSendDone(result.ok, false);

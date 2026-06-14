@@ -9,6 +9,7 @@
 #include "chat/time_utils.h"
 #include "platform/nrf52/arduino_common/chat/infra/radio_packet_io.h"
 #include "platform/nrf52/arduino_common/device_identity.h"
+#include "platform/nrf52/arduino_common/sys/event_bus.h"
 
 #include <Arduino.h>
 
@@ -109,14 +110,16 @@ bool MeshCoreRadioAdapter::sendText(::chat::ChannelId channel, const std::string
         out_msg_id = &sink;
     }
     *out_msg_id = millis();
-    return sendAppData(channel,
-                       0x1001,
-                       reinterpret_cast<const uint8_t*>(text.data()),
-                       text.size(),
-                       peer,
-                       false,
-                       *out_msg_id,
-                       false);
+    const bool ok = sendAppData(channel,
+                                0x1001,
+                                reinterpret_cast<const uint8_t*>(text.data()),
+                                text.size(),
+                                peer,
+                                false,
+                                *out_msg_id,
+                                false);
+    sys::EventBus::publish(new sys::ChatSendResultEvent(*out_msg_id, ok), 0);
+    return ok;
 }
 
 bool MeshCoreRadioAdapter::pollIncomingText(::chat::MeshIncomingText* out)

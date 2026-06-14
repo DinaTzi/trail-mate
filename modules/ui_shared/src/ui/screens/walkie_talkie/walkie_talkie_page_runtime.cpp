@@ -8,7 +8,7 @@
 #include "ui/app_runtime.h"
 #include "ui/localization.h"
 #include "ui/ui_common.h"
-#include "ui/widgets/system_notification.h"
+#include "ui/runtime/ui_feedback.h"
 #include "ui/widgets/top_bar.h"
 
 #include <cstdio>
@@ -169,7 +169,7 @@ void enter(const shell::Host* host, lv_obj_t* parent)
 
     if (platform::ui::device::power_tier() >= 1)
     {
-        ::ui::SystemNotification::show("Low battery - audio disabled", 3000);
+        ::ui::feedback::show_notice("Low battery - audio disabled", 3000);
     }
 
     s_started = false;

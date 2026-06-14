@@ -17,7 +17,7 @@
 #include "ui/page/page_profile.h"
 #include "ui/ui_theme.h"
 #include "ui/widgets/busy_overlay.h"
-#include "ui/widgets/system_notification.h"
+#include "ui/runtime/ui_feedback.h"
 #include "ui/widgets/top_bar.h"
 
 #if !defined(LV_FONT_MONTSERRAT_16) || !LV_FONT_MONTSERRAT_16
@@ -550,11 +550,11 @@ void on_primary_action_clicked(lv_event_t* event)
     if (!packs::install_package(package, error))
     {
         set_status_text(error);
-        ::ui::SystemNotification::show(error.c_str(), 3000);
+        ::ui::feedback::show_notice(error.c_str(), 3000);
         return;
     }
 
-    ::ui::SystemNotification::show(::ui::i18n::tr("Package installed"), 2000);
+    ::ui::feedback::show_notice(::ui::i18n::tr("Package installed"), 2000);
     s_runtime.selected_package_id = package_id;
     s_runtime.view = MainView::Detail;
     refresh_catalog_and_render();
@@ -581,11 +581,11 @@ void on_uninstall_clicked(lv_event_t* event)
     if (!packs::uninstall_package(package, error))
     {
         set_status_text(error);
-        ::ui::SystemNotification::show(error.c_str(), 3000);
+        ::ui::feedback::show_notice(error.c_str(), 3000);
         return;
     }
 
-    ::ui::SystemNotification::show(::ui::i18n::tr("Package uninstalled"), 2000);
+    ::ui::feedback::show_notice(::ui::i18n::tr("Package uninstalled"), 2000);
     s_runtime.selected_package_id = package.id;
     s_runtime.view = MainView::Detail;
     refresh_catalog_and_render();

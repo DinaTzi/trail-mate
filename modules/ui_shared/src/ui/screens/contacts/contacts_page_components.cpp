@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file contacts_page_components.cpp
  * @brief Contacts page behavior implementation on top of shared layout/styles
  */
@@ -35,7 +35,7 @@
 #include "ui/team_actions/team_runtime_adapters.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/ime/ime_widget.h"
-#include "ui/widgets/system_notification.h"
+#include "ui/runtime/ui_feedback.h"
 
 #include <cmath>
 #include <cstdint>
@@ -794,7 +794,7 @@ static void on_list_item_clicked(lv_event_t* e)
         BroadcastTargetSpec spec{};
         if (get_selected_broadcast_target(&spec, nullptr) && !spec.chat_supported)
         {
-            ::ui::SystemNotification::show(broadcast_chat_unavailable_message(spec), 2200);
+            ::ui::feedback::show_notice(broadcast_chat_unavailable_message(spec), 2200);
             return;
         }
     }
@@ -1346,7 +1346,7 @@ static void open_chat_compose()
         }
         if (!target_spec.chat_supported)
         {
-            ::ui::SystemNotification::show(broadcast_chat_unavailable_message(target_spec), 2200);
+            ::ui::feedback::show_notice(broadcast_chat_unavailable_message(target_spec), 2200);
             return;
         }
         protocol = target_spec.protocol;
@@ -1358,7 +1358,7 @@ static void open_chat_compose()
     {
         if (!chat_support::supports_team_chat())
         {
-            ::ui::SystemNotification::show(chat_support::team_chat_unavailable_message(), 2200);
+            ::ui::feedback::show_notice(chat_support::team_chat_unavailable_message(), 2200);
             return;
         }
         channel = chat::ChannelId::PRIMARY;
@@ -1369,7 +1369,7 @@ static void open_chat_compose()
     {
         if (!chat_support::supports_local_text_chat())
         {
-            ::ui::SystemNotification::show(chat_support::local_text_chat_unavailable_message(), 2200);
+            ::ui::feedback::show_notice(chat_support::local_text_chat_unavailable_message(), 2200);
             return;
         }
         channel = chat::ChannelId::PRIMARY;
@@ -1381,7 +1381,7 @@ static void open_chat_compose()
             const std::string msg =
                 ::ui::i18n::format("Switch to %s to chat",
                                    chat::infra::meshProtocolName(node_protocol));
-            ::ui::SystemNotification::show(msg.c_str(), 2200);
+            ::ui::feedback::show_notice(msg.c_str(), 2200);
             return;
         }
         if (g_contacts_state.contact_service)
@@ -1529,7 +1529,7 @@ static void on_compose_action(chat::ui::ChatComposeScreen::ActionIntent intent, 
             auto* action_sink = contacts_team_action_sink();
             if (!action_sink || !is_team_available())
             {
-                ::ui::SystemNotification::show("Team chat send failed", 2000);
+                ::ui::feedback::show_notice("Team chat send failed", 2000);
                 close_chat_compose();
                 return;
             }
@@ -1563,7 +1563,7 @@ static void on_compose_action(chat::ui::ChatComposeScreen::ActionIntent intent, 
                         : "Team chat send failed";
                 const bool location_action =
                     intent == chat::ui::ChatComposeScreen::ActionIntent::Position;
-                ::ui::SystemNotification::show(
+                ::ui::feedback::show_notice(
                     team_action_failure_message(result,
                                                 default_message,
                                                 location_action),
@@ -1584,14 +1584,14 @@ static void on_compose_action(chat::ui::ChatComposeScreen::ActionIntent intent, 
 
         if (s_compose_protocol != chat_support::active_mesh_protocol())
         {
-            ::ui::SystemNotification::show("Conversation protocol mismatch", 2000);
+            ::ui::feedback::show_notice("Conversation protocol mismatch", 2000);
             close_chat_compose();
             return;
         }
 
         if (!chat_support::supports_local_text_chat())
         {
-            ::ui::SystemNotification::show(chat_support::local_text_chat_unavailable_message(), 2200);
+            ::ui::feedback::show_notice(chat_support::local_text_chat_unavailable_message(), 2200);
             close_chat_compose();
             return;
         }
@@ -1608,7 +1608,7 @@ static void on_compose_action(chat::ui::ChatComposeScreen::ActionIntent intent, 
                         s_compose_peer_id);
                 if (!result.ok || result.msg_id == 0)
                 {
-                    ::ui::SystemNotification::show(
+                    ::ui::feedback::show_notice(
                         local_text_failure_message(result.failure),
                         2000);
                 }
@@ -2028,7 +2028,7 @@ static void execute_discovery_command(uint8_t command_index)
 
     if (chat_support::active_mesh_protocol() != chat::MeshProtocol::MeshCore || !g_contacts_state.chat_service)
     {
-        ::ui::SystemNotification::show("MeshCore only", 2000);
+        ::ui::feedback::show_notice("MeshCore only", 2000);
         return;
     }
 
@@ -2046,12 +2046,12 @@ static void execute_discovery_command(uint8_t command_index)
                 chat::MeshDiscoveryAction::ScanLocal);
         if (!result.ok)
         {
-            ::ui::SystemNotification::show(
+            ::ui::feedback::show_notice(
                 discovery_failure_message(result.failure, "Scan failed"),
                 2000);
             return;
         }
-        ::ui::SystemNotification::show("Scanning 5s...", 1800);
+        ::ui::feedback::show_notice("Scanning 5s...", 1800);
         g_contacts_state.discover_scan_timer = lv_timer_create(on_discovery_scan_done, 5000, nullptr);
         lv_timer_set_repeat_count(g_contacts_state.discover_scan_timer, 1);
         return;
@@ -2065,13 +2065,13 @@ static void execute_discovery_command(uint8_t command_index)
         g_contacts_state.chat_service->triggerDiscoveryActionDetailed(action);
     if (result.ok)
     {
-        ::ui::SystemNotification::show(
+        ::ui::feedback::show_notice(
             (spec.command == DiscoveryActionCommand::SendIdLocal) ? "ID local sent" : "ID bcast sent",
             2000);
     }
     else
     {
-        ::ui::SystemNotification::show(
+        ::ui::feedback::show_notice(
             discovery_failure_message(
                 result.failure,
                 (spec.command == DiscoveryActionCommand::SendIdLocal) ? "ID local fail" : "ID bcast fail"),
@@ -2091,7 +2091,7 @@ static void on_discovery_scan_done(lv_timer_t* timer)
         ::ui::i18n::format("Scan +%u/%u",
                            static_cast<unsigned>(gained),
                            static_cast<unsigned>(total));
-    ::ui::SystemNotification::show(msg.c_str(), 2200);
+    ::ui::feedback::show_notice(msg.c_str(), 2200);
 
     if (timer)
     {
@@ -2120,7 +2120,7 @@ static void toggle_selected_node_ignore()
     const auto* node = get_selected_node();
     if (!node || !g_contacts_state.contact_service)
     {
-        ::ui::SystemNotification::show("Ignore unavailable", 1800);
+        ::ui::feedback::show_notice("Ignore unavailable", 1800);
         contacts_focus_to_list();
         return;
     }
@@ -2129,7 +2129,7 @@ static void toggle_selected_node_ignore()
     const bool node_is_contact = node->is_contact;
     if (!g_contacts_state.contact_service->setNodeIgnored(node->node_id, ignored))
     {
-        ::ui::SystemNotification::show("Ignore update failed", 1800);
+        ::ui::feedback::show_notice("Ignore update failed", 1800);
         contacts_focus_to_list();
         return;
     }
@@ -2138,11 +2138,11 @@ static void toggle_selected_node_ignore()
     refresh_ui();
     if (ignored && g_contacts_state.current_mode == ContactsMode::Nearby && !node_is_contact)
     {
-        ::ui::SystemNotification::show("Node ignored and hidden", 2000);
+        ::ui::feedback::show_notice("Node ignored and hidden", 2000);
     }
     else
     {
-        ::ui::SystemNotification::show(ignored ? "Node ignored" : "Node unignored", 1800);
+        ::ui::feedback::show_notice(ignored ? "Node ignored" : "Node unignored", 1800);
     }
     contacts_focus_to_list();
 }

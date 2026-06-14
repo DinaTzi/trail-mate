@@ -214,6 +214,7 @@ set(TRAILMATE_ESP_IDF_UI_SHARED_SOURCES
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/presentation_sources/team_chat_presentation_source.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/presentation_sources/team_map_overlay_source.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/runtime/memory_profile.cpp"
+    "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/runtime/ui_feedback.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/screens/chat/chat_compose_components.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/screens/chat/chat_compose_input.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/screens/chat/chat_compose_layout.cpp"

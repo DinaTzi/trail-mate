@@ -9,7 +9,7 @@
 #include "ui/menu/menu_layout.h"
 #include "ui/menu/menu_runtime.h"
 #include "ui/ui_boot.h"
-#include "ui/widgets/system_notification.h"
+#include "ui/runtime/ui_feedback.h"
 #include "ui_lvgl_ux_packs/ux/ux_menu_provider.h"
 
 namespace ui::startup_ui_shell
@@ -112,7 +112,7 @@ bool prepareBootUi(const Hooks& hooks, bool waking_from_sleep)
     present_boot_overlay_now();
     unlock_ui(hooks);
     ::ui::i18n::reload_language();
-    ui::SystemNotification::init();
+    ui::feedback::init();
     return true;
 }
 

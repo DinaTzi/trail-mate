@@ -42,8 +42,8 @@ void SystemNotification::init()
     const auto& profile = ::ui::page_profile::current();
     lv_coord_t margin = profile.large_touch_hitbox ? 40 : 30;
     lv_coord_t container_width = screen_width - (margin * 2);
-    lv_obj_set_size(container_, container_width, profile.large_touch_hitbox ? 72 : 50);
-    lv_obj_set_pos(container_, margin, profile.large_touch_hitbox ? -84 : -60);
+    lv_obj_set_size(container_, container_width, profile.large_touch_hitbox ? 66 : 44);
+    lv_obj_set_pos(container_, margin, profile.large_touch_hitbox ? -78 : -54);
     lv_obj_set_style_bg_color(container_, lv_color_hex(0xFFF0D3), 0);
     lv_obj_set_style_bg_opa(container_, LV_OPA_COVER, 0);
     // Set radius for bottom corners only
@@ -121,7 +121,7 @@ void SystemNotification::show(const char* text, uint32_t duration_ms)
     }
 
     // Set initial position (above screen)
-    lv_obj_set_y(container_, ::ui::page_profile::current().large_touch_hitbox ? -84 : -60);
+    lv_obj_set_y(container_, ::ui::page_profile::current().large_touch_hitbox ? -78 : -54);
 
     // Show container
     lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
@@ -131,7 +131,7 @@ void SystemNotification::show(const char* text, uint32_t duration_ms)
     lv_anim_t anim;
     lv_anim_init(&anim);
     lv_anim_set_var(&anim, container_);
-    lv_anim_set_values(&anim, ::ui::page_profile::current().large_touch_hitbox ? -84 : -60, 0);
+    lv_anim_set_values(&anim, ::ui::page_profile::current().large_touch_hitbox ? -78 : -54, 0);
     lv_anim_set_time(&anim, 300);
     lv_anim_set_exec_cb(&anim, (lv_anim_exec_xcb_t)lv_obj_set_y);
     lv_anim_set_ready_cb(&anim, animReadyCallback);
@@ -160,7 +160,7 @@ void SystemNotification::hide()
     lv_anim_t anim;
     lv_anim_init(&anim);
     lv_anim_set_var(&anim, container_);
-    lv_anim_set_values(&anim, lv_obj_get_y(container_), ::ui::page_profile::current().large_touch_hitbox ? -84 : -60);
+    lv_anim_set_values(&anim, lv_obj_get_y(container_), ::ui::page_profile::current().large_touch_hitbox ? -78 : -54);
     lv_anim_set_time(&anim, 300);
     lv_anim_set_exec_cb(&anim, (lv_anim_exec_xcb_t)lv_obj_set_y);
     lv_anim_set_ready_cb(&anim, [](lv_anim_t* a)

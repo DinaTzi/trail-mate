@@ -13,7 +13,7 @@
 #include "ui/ui_common.h"
 #include "ui/ui_status.h"
 #include "ui/watch_face.h"
-#include "ui/widgets/system_notification.h"
+#include "ui/runtime/ui_feedback.h"
 #include "ui_lvgl_ux_packs/ux/ux_menu_provider.h"
 
 namespace ui::startup_shell
@@ -144,7 +144,7 @@ void prepareBootUi(bool waking_from_sleep)
         present_boot_overlay_now();
     }
     ::ui::i18n::reload_language();
-    ui::SystemNotification::init();
+    ui::feedback::init();
 }
 
 void initializeShell(const Hooks& hooks)

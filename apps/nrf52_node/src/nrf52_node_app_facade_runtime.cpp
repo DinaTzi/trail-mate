@@ -15,6 +15,7 @@
 #include "platform/nrf52/arduino_common/chat/infra/store/internal_fs_store.h"
 #include "platform/nrf52/arduino_common/device_identity.h"
 #include "platform/nrf52/arduino_common/self_identity_bridge.h"
+#include "platform/nrf52/arduino_common/sys/event_bus.h"
 #include "platform/nrf52/debug/nrf52_debug_console.h"
 #include "platform/nrf52/protocol/nrf52_protocol_factory.h"
 #include "platform/nrf52/runtime/nrf52_runtime_apply_service.h"
@@ -832,7 +833,63 @@ void AppFacadeRuntime::tickEventRuntime()
 
 void AppFacadeRuntime::dispatchPendingEvents(std::size_t max_events)
 {
-    (void)max_events;
+    std::size_t handled = 0;
+    sys::Event* event = nullptr;
+    while (handled < max_events && sys::EventBus::subscribe(&event, 0))
+    {
+        ++handled;
+        if (!event)
+        {
+            continue;
+        }
+
+        switch (event->type)
+        {
+        case sys::EventType::ChatSendResult:
+        {
+            auto* result = static_cast<sys::ChatSendResultEvent*>(event);
+            const chat::ChatMessage* message =
+                chat_service_ ? chat_service_->getMessage(result->msg_id) : nullptr;
+            if (chat_service_ && message)
+            {
+                const bool local_outgoing = message->from == 0;
+                chat_service_->handleSendResult(result->msg_id, result->success);
+                if (local_outgoing)
+                {
+                    pending_chat_send_result_feedback_ = true;
+                    pending_chat_send_result_msg_id_ = result->msg_id;
+                    pending_chat_send_result_success_ = result->success;
+                }
+            }
+            break;
+        }
+        default:
+            break;
+        }
+
+        delete event;
+        event = nullptr;
+    }
+}
+
+bool AppFacadeRuntime::takeChatSendResultFeedback(chat::MessageId* out_msg_id, bool* out_success)
+{
+    if (!pending_chat_send_result_feedback_)
+    {
+        return false;
+    }
+    if (out_msg_id)
+    {
+        *out_msg_id = pending_chat_send_result_msg_id_;
+    }
+    if (out_success)
+    {
+        *out_success = pending_chat_send_result_success_;
+    }
+    pending_chat_send_result_feedback_ = false;
+    pending_chat_send_result_msg_id_ = 0;
+    pending_chat_send_result_success_ = false;
+    return true;
 }
 
 #if !TRAILMATE_NRF52_BLE_DISABLED

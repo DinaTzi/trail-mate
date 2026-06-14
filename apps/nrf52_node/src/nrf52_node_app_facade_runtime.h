@@ -104,6 +104,7 @@ class AppFacadeRuntime final : public app::IAppBleFacade
     void updateCoreServices() override;
     void tickEventRuntime() override;
     void dispatchPendingEvents(std::size_t max_events = 32) override;
+    bool takeChatSendResultFeedback(chat::MessageId* out_msg_id, bool* out_success);
 
 #if !TRAILMATE_NRF52_BLE_DISABLED
     const app::AppConfig& bleConfig() const override;
@@ -150,6 +151,9 @@ class AppFacadeRuntime final : public app::IAppBleFacade
     bool config_save_pending_ = false;
     uint8_t post_save_apply_skip_mask_ = 0;
     uint32_t last_chat_store_flush_ms_ = 0;
+    bool pending_chat_send_result_feedback_ = false;
+    chat::MessageId pending_chat_send_result_msg_id_ = 0;
+    bool pending_chat_send_result_success_ = false;
 };
 
 } // namespace trailmate::apps::nrf52_node

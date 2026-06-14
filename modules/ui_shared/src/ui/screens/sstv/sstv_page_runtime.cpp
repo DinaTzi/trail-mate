@@ -9,7 +9,7 @@
 #include "ui/localization.h"
 #include "ui/page/page_profile.h"
 #include "ui/ui_common.h"
-#include "ui/widgets/system_notification.h"
+#include "ui/runtime/ui_feedback.h"
 #include "ui/widgets/top_bar.h"
 #include <algorithm>
 #include <cmath>
@@ -641,7 +641,7 @@ void ui_sstv_enter(lv_obj_t* parent)
 {
     if (platform::ui::device::power_tier() >= 1)
     {
-        ui::SystemNotification::show(::ui::i18n::tr("Low battery - audio disabled"), 3000);
+        ui::feedback::show_notice(::ui::i18n::tr("Low battery - audio disabled"), 3000);
     }
 
     lv_group_t* prev_group = lv_group_get_default();

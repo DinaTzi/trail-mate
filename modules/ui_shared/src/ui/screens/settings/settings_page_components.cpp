@@ -43,7 +43,7 @@
 #include "ui/screens/settings/settings_state.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/busy_overlay.h"
-#include "ui/widgets/system_notification.h"
+#include "ui/runtime/ui_feedback.h"
 #include "ui/widgets/top_bar.h"
 #include "ui_presentation/settings/settings_model.h"
 
@@ -463,16 +463,16 @@ static void sync_firmware_update_ui(bool notify_completion)
         switch (status.phase)
         {
         case firmware_update_runtime::Phase::UpToDate:
-            ::ui::SystemNotification::show(status.message, 2200);
+            ::ui::feedback::show_notice(status.message, 2200);
             break;
         case firmware_update_runtime::Phase::UpdateAvailable:
-            ::ui::SystemNotification::show(status.message, 2600);
+            ::ui::feedback::show_notice(status.message, 2600);
             break;
         case firmware_update_runtime::Phase::Error:
         {
             char summary[160];
             firmware_status_summary(status, summary, sizeof(summary));
-            ::ui::SystemNotification::show(summary, 3800);
+            ::ui::feedback::show_notice(summary, 3800);
             break;
         }
         default:
@@ -942,7 +942,7 @@ static void reset_mesh_settings()
     prefs_remove_keys(kPrefsNs, kResetKeys, sizeof(kResetKeys) / sizeof(kResetKeys[0]));
 
     build_item_list();
-    ::ui::SystemNotification::show(::ui::i18n::tr("Resetting..."), 1500);
+    ::ui::feedback::show_notice(::ui::i18n::tr("Resetting..."), 1500);
     platform_delay_ms(300);
     platform_restart();
 }
@@ -952,14 +952,14 @@ static void reset_node_db()
     app::IAppFacade& app_ctx = app::appFacade();
     app_ctx.clearNodeDb();
     prefs_clear_ns("chat_pki");
-    ::ui::SystemNotification::show(::ui::i18n::tr("Node DB reset"), 3000);
+    ::ui::feedback::show_notice(::ui::i18n::tr("Node DB reset"), 3000);
 }
 
 static void clear_message_db()
 {
     app::IAppFacade& app_ctx = app::appFacade();
     app_ctx.clearMessageDb();
-    ::ui::SystemNotification::show(::ui::i18n::tr("Message DB cleared"), 3000);
+    ::ui::feedback::show_notice(::ui::i18n::tr("Message DB cleared"), 3000);
 }
 
 static void perform_factory_reset()
@@ -980,7 +980,7 @@ static void perform_factory_reset()
 
     team::ui::team_ui_snapshot_store().clear();
 
-    ::ui::SystemNotification::show(::ui::i18n::tr("Resetting..."), 1500);
+    ::ui::feedback::show_notice(::ui::i18n::tr("Resetting..."), 1500);
     platform_delay_ms(300);
     platform_restart();
 }
@@ -1484,7 +1484,7 @@ static void on_text_save_clicked(lv_event_t* e)
                     : chat::kMeshtasticChannelKeyMaxLen;
             if (!parse_psk(g_state.editing_item->text_value, key, key_capacity, &parsed_key_len))
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("PSK must be 32/64 hex or 16/32 chars"), 4000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("PSK must be 32/64 hex or 16/32 chars"), 4000);
                 modal_close();
                 return;
             }
@@ -1513,7 +1513,7 @@ static void on_text_save_clicked(lv_event_t* e)
             float value = 0.0f;
             if (!parse_float_text(g_state.editing_item->text_value, &value))
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("Invalid frequency offset"), 3000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("Invalid frequency offset"), 3000);
                 modal_close();
                 return;
             }
@@ -1527,7 +1527,7 @@ static void on_text_save_clicked(lv_event_t* e)
             float value = 0.0f;
             if (!parse_float_text(g_state.editing_item->text_value, &value))
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("Invalid frequency value"), 3000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("Invalid frequency value"), 3000);
                 modal_close();
                 return;
             }
@@ -1549,7 +1549,7 @@ static void on_text_save_clicked(lv_event_t* e)
             float value = 0.0f;
             if (!parse_float_text(g_state.editing_item->text_value, &value))
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("Invalid MeshCore frequency"), 3000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("Invalid MeshCore frequency"), 3000);
                 modal_close();
                 return;
             }
@@ -1565,7 +1565,7 @@ static void on_text_save_clicked(lv_event_t* e)
             float value = 0.0f;
             if (!parse_float_text(g_state.editing_item->text_value, &value))
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("Invalid MeshCore bandwidth"), 3000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("Invalid MeshCore bandwidth"), 3000);
                 modal_close();
                 return;
             }
@@ -1581,7 +1581,7 @@ static void on_text_save_clicked(lv_event_t* e)
             float value = 0.0f;
             if (!parse_float_text(g_state.editing_item->text_value, &value))
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("Invalid RX delay"), 3000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("Invalid RX delay"), 3000);
                 modal_close();
                 return;
             }
@@ -1595,7 +1595,7 @@ static void on_text_save_clicked(lv_event_t* e)
             float value = 0.0f;
             if (!parse_float_text(g_state.editing_item->text_value, &value))
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("Invalid airtime factor"), 3000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("Invalid airtime factor"), 3000);
                 modal_close();
                 return;
             }
@@ -1619,7 +1619,7 @@ static void on_text_save_clicked(lv_event_t* e)
             uint8_t key[16] = {};
             if (!parse_psk(g_state.editing_item->text_value, key, sizeof(key)))
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("Key must be 32 hex or 16 chars"), 3000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("Key must be 32 hex or 16 chars"), 3000);
                 modal_close();
                 return;
             }
@@ -1634,7 +1634,7 @@ static void on_text_save_clicked(lv_event_t* e)
             long value = strtol(g_state.editing_item->text_value, &end, 10);
             if (end == g_state.editing_item->text_value || (end && *end != '\0') || value <= 0 || value > 10000)
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("Invalid design capacity (mAh)"), 3000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("Invalid design capacity (mAh)"), 3000);
                 modal_close();
                 return;
             }
@@ -1648,7 +1648,7 @@ static void on_text_save_clicked(lv_event_t* e)
             long value = strtol(g_state.editing_item->text_value, &end, 10);
             if (end == g_state.editing_item->text_value || (end && *end != '\0') || value <= 0 || value > 10000)
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("Invalid full capacity (mAh)"), 3000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("Invalid full capacity (mAh)"), 3000);
                 modal_close();
                 return;
             }
@@ -1797,12 +1797,12 @@ static void on_option_clicked(lv_event_t* e)
         {
             *payload->item->enum_value = previous_value;
             update_item_value(*payload->widget);
-            ::ui::SystemNotification::show(::ui::i18n::tr("Protocol switch failed"), 3000);
+            ::ui::feedback::show_notice(::ui::i18n::tr("Protocol switch failed"), 3000);
         }
         else
         {
             rebuild_list = true;
-            ::ui::SystemNotification::show(::ui::i18n::tr("Protocol switched"), 2000);
+            ::ui::feedback::show_notice(::ui::i18n::tr("Protocol switched"), 2000);
             restart_now = true;
         }
     }
@@ -2211,7 +2211,7 @@ static void on_option_clicked(lv_event_t* e)
     }
     if (restart_now)
     {
-        ::ui::SystemNotification::show(::ui::i18n::tr("Restarting..."), 1500);
+        ::ui::feedback::show_notice(::ui::i18n::tr("Restarting..."), 1500);
         platform_delay_ms(300);
         platform_restart();
     }
@@ -2243,11 +2243,11 @@ static void on_settings_restore_confirm_clicked(lv_event_t* e)
     if (!settings_backup_runtime::restore())
     {
         refresh_settings_backup_state_from_runtime();
-        ::ui::SystemNotification::show(::ui::i18n::tr("Restore failed"), 3500);
+        ::ui::feedback::show_notice(::ui::i18n::tr("Restore failed"), 3500);
         refresh_visible_item_values();
         return;
     }
-    ::ui::SystemNotification::show(::ui::i18n::tr("Settings restored. Restarting..."), 1500);
+    ::ui::feedback::show_notice(::ui::i18n::tr("Settings restored. Restarting..."), 1500);
     platform_delay_ms(300);
     platform_restart();
 }
@@ -2544,7 +2544,7 @@ static void on_ime_toggle_clicked(lv_event_t* e)
     const bool next_enabled = !currently_enabled;
     if (!::ui::i18n::set_ime_enabled(payload->ime_id, next_enabled, true))
     {
-        ::ui::SystemNotification::show(::ui::i18n::tr("IME setting update failed"), 3000);
+        ::ui::feedback::show_notice(::ui::i18n::tr("IME setting update failed"), 3000);
         return;
     }
 
@@ -2578,7 +2578,7 @@ static void open_enabled_imes_modal(settings::ui::ItemWidget& widget)
     const std::size_t ime_total = ::ui::i18n::ime_count();
     if (ime_total == 0)
     {
-        ::ui::SystemNotification::show(::ui::i18n::tr("No IME packs installed"), 3000);
+        ::ui::feedback::show_notice(::ui::i18n::tr("No IME packs installed"), 3000);
         return;
     }
 
@@ -3630,7 +3630,7 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
             {
                 if (!apply_settings_bool_patch("gps_enabled", *item.bool_value))
                 {
-                    ::ui::SystemNotification::show(::ui::i18n::tr("Unable to apply GPS setting"), 3000);
+                    ::ui::feedback::show_notice(::ui::i18n::tr("Unable to apply GPS setting"), 3000);
                 }
             }
             if (item.pref_key && strcmp(item.pref_key, "net_duty_cycle") == 0)
@@ -3697,7 +3697,7 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
                 (void)wifi_runtime::save_config(config);
                 if (!wifi_runtime::apply_enabled(config.enabled) && config.enabled)
                 {
-                    ::ui::SystemNotification::show(::ui::i18n::tr("Wi-Fi start failed"), 3000);
+                    ::ui::feedback::show_notice(::ui::i18n::tr("Wi-Fi start failed"), 3000);
                 }
                 if (!config.enabled)
                 {
@@ -3821,7 +3821,7 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
                 {
                     copy_bounded(message, sizeof(message), "Unable to start update check");
                 }
-                ::ui::SystemNotification::show(message, 3000);
+                ::ui::feedback::show_notice(message, 3000);
             }
             else
             {
@@ -3847,7 +3847,7 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
                 {
                     copy_bounded(message, sizeof(message), "Unable to start OTA install");
                 }
-                ::ui::SystemNotification::show(message, 3000);
+                ::ui::feedback::show_notice(message, 3000);
             }
             else
             {
@@ -3859,17 +3859,17 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
             const settings_backup_runtime::Status before = settings_backup_runtime::status();
             if (!before.sd_present)
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("Insert SD card to backup settings"), 3000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("Insert SD card to backup settings"), 3000);
             }
             else if (!settings_backup_runtime::backup())
             {
                 refresh_settings_backup_state_from_runtime();
-                ::ui::SystemNotification::show(::ui::i18n::tr("Backup failed"), 3000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("Backup failed"), 3000);
             }
             else
             {
                 refresh_settings_backup_state_from_runtime();
-                ::ui::SystemNotification::show(::ui::i18n::tr("Settings backup saved to SD"), 2500);
+                ::ui::feedback::show_notice(::ui::i18n::tr("Settings backup saved to SD"), 2500);
             }
             refresh_visible_item_values();
         }
@@ -3878,11 +3878,11 @@ static bool activate_item_widget(settings::ui::ItemWidget& widget)
             const settings_backup_runtime::Status status = settings_backup_runtime::status();
             if (!status.sd_present)
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("Insert SD card to restore settings"), 3000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("Insert SD card to restore settings"), 3000);
             }
             else if (!status.has_backup)
             {
-                ::ui::SystemNotification::show(::ui::i18n::tr("No settings backup found"), 3000);
+                ::ui::feedback::show_notice(::ui::i18n::tr("No settings backup found"), 3000);
             }
             else
             {

@@ -18,7 +18,7 @@
 #include "pins_arduino.h"
 #include "platform/esp/arduino_common/storage/sd_card_runtime.h"
 #include "platform/ui/settings_store.h"
-#include "ui/widgets/system_notification.h"
+#include "ui/runtime/ui_feedback.h"
 #include <Preferences.h>
 
 namespace boards::tlora_pager
@@ -2166,12 +2166,12 @@ int TLoRaPagerBoard::getBatteryLevel()
         const uint32_t now_ms = millis();
         if (s_temp_hot && (now_ms - s_last_temp_notice_hot_ms) > 60000)
         {
-            ::ui::SystemNotification::show("Device hot - limiting brightness", 3000);
+            ::ui::feedback::show_notice("Device hot - limiting brightness", 3000);
             s_last_temp_notice_hot_ms = now_ms;
         }
         if (s_temp_cold && (now_ms - s_last_temp_notice_cold_ms) > 600000)
         {
-            ::ui::SystemNotification::show("Low temp - battery may read wrong", 3000);
+            ::ui::feedback::show_notice("Low temp - battery may read wrong", 3000);
             s_last_temp_notice_cold_ms = now_ms;
         }
     }
@@ -2670,7 +2670,7 @@ void TLoRaPagerBoard::softwareShutdown()
     if (isUsbPresent_bestEffort())
     {
         log_w("Cannot shutdown: USB is connected (PMIC will maintain power)");
-        ui::SystemNotification::show("Unplug USB to power off", 3500);
+        ui::feedback::show_notice("Unplug USB to power off", 3500);
         return;
     }
 

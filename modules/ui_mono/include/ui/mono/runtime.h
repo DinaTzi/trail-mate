@@ -111,6 +111,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
     void tick(InputAction action);
     void typeText(char ch);
     void bindChatObservers();
+    void showNotice(const char* title, const char* message, uint32_t duration_ms = 2000U);
     void onIncomingText(const chat::MeshIncomingText& msg) override;
     void onIncomingData(const chat::MeshIncomingData& msg) override;
 

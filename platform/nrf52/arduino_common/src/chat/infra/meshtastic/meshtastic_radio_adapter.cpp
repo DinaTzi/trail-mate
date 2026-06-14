@@ -2016,6 +2016,10 @@ void MeshtasticRadioAdapter::emitRoutingResult(uint32_t request_id, meshtastic_R
         return;
     }
 
+    sys::EventBus::publish(
+        new sys::ChatSendResultEvent(request_id, reason == meshtastic_Routing_Error_NONE),
+        0);
+
     meshtastic_Routing routing = meshtastic_Routing_init_default;
     routing.which_variant = meshtastic_Routing_error_reason_tag;
     routing.error_reason = reason;

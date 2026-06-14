@@ -27,7 +27,8 @@ Protocol/runtime delivery result event
   -> ChatService message status update
   -> ChatDeliveryFeedbackController
   -> IChatDeliveryFeedbackPort
-  -> platform notification surface
+  -> UI feedback runtime
+  -> platform feedback presenter
 ```
 
 The final `Sent` / `Send failed` prompt must be driven by delivery result
@@ -104,14 +105,16 @@ It must not:
 ### IChatDeliveryFeedbackPort
 
 `IChatDeliveryFeedbackPort` is the Bridge from product feedback semantics to a
-platform notification surface.
+UI feedback intent.
 
-Platform implementations may use:
+Platform implementations post to the UI feedback runtime described in
+`UI_FEEDBACK_RUNTIME_SPEC.md`. Active LVGL implementations use:
 
-- ESP32 LVGL: `SystemNotification`
-- nRF/mono: transient popup
-- Linux GTK: GTK toast/status banner
-- headless: no-op or log-only
+- ESP32/LVGL shell: `ui::feedback::NoticeIntent`
+- Linux LVGL simulator shell: `ui::feedback::NoticeIntent`
+- nRF52 mono shell: `ChatSendResultEvent` -> `AppFacadeRuntime` feedback
+  intent -> mono transient popup
+- headless tests: capture/no-op presenter
 
 The port receives stable product-level feedback:
 
@@ -122,6 +125,18 @@ showChatDeliveryFailed(message_id)
 
 It must not decide whether a message is outgoing, whether a duplicate should be
 suppressed, or whether `ChatService` should update status.
+
+It also must not call a concrete notification widget directly. On LVGL targets,
+the port posts a feedback intent and lets the UI feedback runtime schedule the
+renderer asynchronously.
+
+Non-LVGL targets must install an equivalent feedback sink before exposing
+delivery feedback in an active UI. The sink may be app-local when that target
+does not link the LVGL chat runtime, but it must preserve the same boundary:
+runtime delivery fact first, core state update second, UI notice from the UI
+tick last. A target without an active notification surface must be explicit
+about using a no-op sink instead of directly calling display or buzzer code
+from protocol/runtime producers.
 
 ## Event Flow
 
@@ -157,12 +172,18 @@ Protocol runtime / mesh adapter
     -> ChatService::handleSendResult(...)
       -> ChatDeliveryFeedbackController::onChatSendResult(...)
         -> IChatDeliveryFeedbackPort
+          -> UI feedback runtime
           -> user-visible Sent / Send failed notification
     -> Chat UI runtime refresh, if active
 ```
 
 Chat UI refresh is optional. Global feedback is not optional when a platform
 feedback port is available.
+
+On nRF52 mono, the active build does not link the LVGL chat runtime. The same
+`ChatSendResultEvent` still drives the flow: `AppFacadeRuntime` updates
+`ChatService`, records a pending feedback intent, and `ui::mono::Runtime`
+renders `Sent` / `Send failed` during the next UI tick.
 
 ## Blocking Prohibition
 

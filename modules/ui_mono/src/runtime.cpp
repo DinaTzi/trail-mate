@@ -2302,6 +2302,16 @@ void Runtime::bindChatObservers()
     chat_observers_bound_ = true;
 }
 
+void Runtime::showNotice(const char* title, const char* message, uint32_t duration_ms)
+{
+    if (!begin())
+    {
+        return;
+    }
+    showTransientPopup(title, message, duration_ms);
+    render();
+}
+
 void Runtime::onIncomingText(const chat::MeshIncomingText& msg)
 {
     MessageMetaEntry& entry = message_meta_[message_meta_cursor_ % kMessageMetaCapacity];
@@ -5525,9 +5535,10 @@ void Runtime::sendComposeMessage()
         app()->getChatService().sendText(active_conversation_.channel,
                                          compose_buffer_,
                                          active_conversation_.peer);
-    showTransientPopup("MESSAGE",
-                       msg_id != 0 ? "SENT" : "SEND FAILED",
-                       msg_id != 0 ? 1500U : 2000U);
+    if (msg_id == 0)
+    {
+        showTransientPopup("MESSAGE", "SEND FAILED", 2000U);
+    }
     finishTextEdit(false);
     enterPage(Page::Conversation);
 }
