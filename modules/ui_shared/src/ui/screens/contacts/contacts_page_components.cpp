@@ -295,6 +295,44 @@ static std::string format_time_status(uint32_t last_seen)
     return ::ui::i18n::tr("Offline");
 }
 
+static std::string format_nearby_seen_age(uint32_t last_seen)
+{
+    if (last_seen == 0)
+    {
+        return ::ui::i18n::tr("Unknown");
+    }
+
+    const uint32_t now_secs = sys::epoch_seconds_now();
+    const uint32_t age_secs = now_secs >= last_seen ? now_secs - last_seen : 0;
+
+    if (age_secs < 3600)
+    {
+        const uint32_t minutes = age_secs / 60;
+        if (minutes == 1)
+        {
+            return ::ui::i18n::tr("1 min ago");
+        }
+        return ::ui::i18n::format("%u mins ago", static_cast<unsigned>(minutes));
+    }
+
+    if (age_secs < 86400)
+    {
+        const uint32_t hours = age_secs / 3600;
+        if (hours == 1)
+        {
+            return ::ui::i18n::tr("1 hour ago");
+        }
+        return ::ui::i18n::format("%u hours ago", static_cast<unsigned>(hours));
+    }
+
+    const uint32_t days = age_secs / 86400;
+    if (days == 1)
+    {
+        return ::ui::i18n::tr("1 day ago");
+    }
+    return ::ui::i18n::format("%u days ago", static_cast<unsigned>(days));
+}
+
 [[maybe_unused]] static std::string format_snr(float snr)
 {
     if (snr == 0.0f)
@@ -2608,7 +2646,7 @@ void refresh_ui()
         }
         else if (g_contacts_state.current_mode == ContactsMode::Nearby)
         {
-            status_text = format_time_status(node.last_seen);
+            status_text = format_nearby_seen_age(node.last_seen);
         }
         else if (g_contacts_state.current_mode == ContactsMode::Ignored)
         {
