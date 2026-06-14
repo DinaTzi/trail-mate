@@ -21,6 +21,10 @@ send result / ACK / failure event
           -> Renderer
 ```
 
+Final user-visible send feedback is also runtime feedback. It must flow
+through the delivery feedback mechanism defined in
+`CHAT_DELIVERY_FEEDBACK_SPEC.md`, not through a page-local compose widget.
+
 ## Types
 
 Phase 7.1 introduces:
@@ -60,6 +64,9 @@ into delivery records.
 
 `ChatDeliverySendResultProjection` maps send-result success/failure facts into
 `ChatDeliveryEvent`.
+
+`ChatDeliveryFeedbackController` observes delivery result facts and emits
+platform feedback through `IChatDeliveryFeedbackPort`.
 
 `ChatPresentationSource` reads the delivery read model and projects state
 into `MessageRow`.
@@ -108,6 +115,7 @@ into `MessageRow`.
 - build UI snapshots
 - include LVGL/GTK
 - mutate renderer state
+- show final send success/failure prompts
 
 `ChatPresentationSource` may:
 

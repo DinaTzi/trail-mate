@@ -86,6 +86,21 @@ or paging behavior.
 Renderers must not assume `message_offset` is already honored by the chat read
 projection.
 
+## Send Feedback
+
+`ChatWorkspaceModel::sendMessage(...)` submits a command and returns only local
+command acceptance/rejection.
+
+It must not:
+
+- wait for ACK
+- infer final send success
+- show send success/failure feedback
+- depend on the active page after the command is accepted
+
+Final outgoing send feedback is produced from runtime delivery result events as
+specified by `CHAT_DELIVERY_FEEDBACK_SPEC.md`.
+
 ## Source/Sink Adapter Contract
 
 `ChatPresentationSource` is the product chat read projection adapter. It may

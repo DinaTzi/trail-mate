@@ -84,6 +84,11 @@ for EventBus events.
 1. `ChatPageRuntimeEventPump` calls `ChatDeliveryEventProjectionAdapter::onChatSendResult(...)`.
 2. `ChatPageRuntimeEventPump` calls `IChatUiRefreshSink::onRuntimeSendResult(...)`.
 
+The page runtime may refresh visible message state, but it must not own final
+send result feedback. Global `Sent` / `Send failed` feedback belongs to the
+event-driven delivery feedback mechanism in
+`CHAT_DELIVERY_FEEDBACK_SPEC.md`.
+
 ### `ChatNewMessageEvent`
 
 1. Chat service already owns message storage.
