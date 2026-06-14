@@ -184,6 +184,8 @@ if(BUILD_TESTING)
 
     add_executable(trailmate_meshtastic_runtime_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/tests/test_meshtastic_runtime.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshtastic/mt_packet_wire.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/infra/meshtastic/mt_protocol_helpers.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/runtime/meshtastic_position_core.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/runtime/meshtastic_waypoint_core.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/third_party/nanopb/pb_common.c"

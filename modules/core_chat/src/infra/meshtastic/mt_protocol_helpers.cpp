@@ -299,16 +299,19 @@ bool updateTraceRoutePayload(meshtastic_Data* decoded,
                              bool to_us,
                              meshtastic_RouteDiscovery* out_route)
 {
-    if (!decoded || decoded->portnum != meshtastic_PortNum_TRACEROUTE_APP || decoded->payload.size == 0)
+    if (!decoded || decoded->portnum != meshtastic_PortNum_TRACEROUTE_APP)
     {
         return false;
     }
 
     meshtastic_RouteDiscovery route = meshtastic_RouteDiscovery_init_zero;
-    pb_istream_t istream = pb_istream_from_buffer(decoded->payload.bytes, decoded->payload.size);
-    if (!pb_decode(&istream, meshtastic_RouteDiscovery_fields, &route))
+    if (decoded->payload.size > 0)
     {
-        return false;
+        pb_istream_t istream = pb_istream_from_buffer(decoded->payload.bytes, decoded->payload.size);
+        if (!pb_decode(&istream, meshtastic_RouteDiscovery_fields, &route))
+        {
+            return false;
+        }
     }
 
     insertTraceRouteUnknownHops(flags, &route, !is_response);

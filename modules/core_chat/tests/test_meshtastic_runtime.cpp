@@ -1,4 +1,5 @@
 #include "chat/runtime/meshtastic_runtime.h"
+#include "chat/infra/meshtastic/mt_protocol_helpers.h"
 
 #include "pb_decode.h"
 #include "pb_encode.h"
@@ -122,6 +123,31 @@ int main()
         pb_istream_t stream = pb_istream_from_buffer(packet->payload.data(),
                                                      packet->payload.size());
         assert(pb_decode(&stream, meshtastic_RouteDiscovery_fields, &decoded));
+    }
+
+    {
+        meshtastic_Data decoded = meshtastic_Data_init_zero;
+        decoded.portnum = meshtastic_PortNum_TRACEROUTE_APP;
+        decoded.want_response = true;
+        decoded.has_bitfield = true;
+        decoded.bitfield = 0;
+        decoded.payload.size = 0;
+
+        chat::RxMeta rx_meta{};
+        rx_meta.snr_db_x10 = 58;
+
+        meshtastic_RouteDiscovery route = meshtastic_RouteDiscovery_init_zero;
+        assert(chat::meshtastic::updateTraceRoutePayload(&decoded,
+                                                         0x4A,
+                                                         0xA1B3B57CUL,
+                                                         &rx_meta,
+                                                         false,
+                                                         true,
+                                                         &route));
+        assert(decoded.payload.size > 0);
+        assert(route.route_count == 0);
+        assert(route.snr_towards_count == 1);
+        assert(route.snr_towards[0] == 23);
     }
 
     {

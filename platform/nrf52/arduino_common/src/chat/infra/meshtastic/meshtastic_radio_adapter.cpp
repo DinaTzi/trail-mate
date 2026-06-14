@@ -1976,7 +1976,7 @@ bool MeshtasticRadioAdapter::handleTraceRoutePacket(const ::chat::meshtastic::Pa
                                                     bool want_ack_flag,
                                                     bool want_response)
 {
-    if (!decoded || decoded->portnum != meshtastic_PortNum_TRACEROUTE_APP || decoded->payload.size == 0)
+    if (!decoded || decoded->portnum != meshtastic_PortNum_TRACEROUTE_APP)
     {
         return false;
     }
