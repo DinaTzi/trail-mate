@@ -45,6 +45,7 @@ int main()
     using chat::runtime::MeshtasticPkiResyncCause;
     using chat::runtime::MeshtasticPkiResyncInput;
     using chat::runtime::MeshtasticRuntime;
+    using chat::runtime::PacketHandling;
     using chat::runtime::ProtocolActionKind;
     using chat::runtime::ProtocolActionState;
     using chat::runtime::RuntimeContext;
@@ -281,7 +282,9 @@ int main()
         routing.payload = encodeRouting(meshtastic_Routing_Error_NONE);
         action_context.now_ms = 1200;
 
-        const auto delivered_effects = action_runtime.handleIncoming(routing, action_context);
+        const auto delivered_result = action_runtime.handleIncomingPacket(routing, action_context);
+        assert(delivered_result.handling == PacketHandling::HandledStop);
+        const auto& delivered_effects = delivered_result.effects;
         assert(delivered_effects.items.size() == 1);
         const auto* delivered = effectAt<EmitActionResultEffect>(delivered_effects, 0);
         assert(delivered);
@@ -296,7 +299,9 @@ int main()
         response.payload.push_back(0);
         action_context.now_ms = 1500;
 
-        const auto completed_effects = action_runtime.handleIncoming(response, action_context);
+        const auto completed_result = action_runtime.handleIncomingPacket(response, action_context);
+        assert(completed_result.handling == PacketHandling::HandledStop);
+        const auto& completed_effects = completed_result.effects;
         assert(completed_effects.items.size() == 1);
         const auto* completed = effectAt<EmitActionResultEffect>(completed_effects, 0);
         assert(completed);
@@ -350,6 +355,16 @@ int main()
         assert(timed_out);
         assert(timed_out->action == ProtocolActionKind::ExchangePosition);
         assert(timed_out->state == ProtocolActionState::TimedOut);
+    }
+
+    {
+        IncomingPacket packet{};
+        packet.protocol = MeshProtocol::Meshtastic;
+        packet.portnum = 0xFEEDUL;
+
+        const auto result = runtime.handleIncomingPacket(packet, context);
+        assert(result.handling == PacketHandling::NotHandled);
+        assert(result.effects.empty());
     }
 
     {

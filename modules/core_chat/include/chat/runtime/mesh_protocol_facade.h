@@ -120,7 +120,9 @@ class MeshProtocolFacade
     MeshProtocolFacadeResult handleIncoming(const IncomingPacket& packet)
     {
         const RuntimeContext context = context_provider_.runtimeContext();
-        return executeEffects(runtime_.handleIncoming(packet, context), context, true);
+        return executeEffects(runtime_.handleIncomingPacket(packet, context).effects,
+                              context,
+                              true);
     }
 
     MeshProtocolFacadeResult handleTxResult(const TxResult& result)

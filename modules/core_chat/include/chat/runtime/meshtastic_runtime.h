@@ -134,20 +134,41 @@ class MeshtasticRuntime final : public IProtocolRuntime
     ProtocolEffects handleIncoming(const IncomingPacket& packet,
                                    const RuntimeContext& context) override
     {
-        ProtocolEffects effects{};
+        return handleIncomingPacket(packet, context).effects;
+    }
+
+    IncomingPacketHandlingResult handleIncomingPacket(
+        const IncomingPacket& packet,
+        const RuntimeContext& context) override
+    {
+        IncomingPacketHandlingResult result{};
         if (packet.protocol != MeshProtocol::Meshtastic)
         {
-            return effects;
+            return result;
         }
 
-        MeshtasticAppActionSnapshot snapshot{};
-        if (app_actions_.consumeIncomingData(toMeshIncomingData(packet),
-                                             context.now_ms,
-                                             &snapshot))
+        if (absorbIncomingHandlingResult(result, handleIncomingRoutingApp(packet, context)))
         {
-            effects.add(actionResultFromSnapshot(snapshot));
+            return result;
         }
-        return effects;
+        if (absorbIncomingHandlingResult(result, handleIncomingNodeInfo(packet, context)))
+        {
+            return result;
+        }
+        if (absorbIncomingHandlingResult(result, handleIncomingPosition(packet, context)))
+        {
+            return result;
+        }
+        if (absorbIncomingHandlingResult(result, handleIncomingTraceRoute(packet, context)))
+        {
+            return result;
+        }
+        if (absorbIncomingHandlingResult(result, handleIncomingKeyVerification(packet, context)))
+        {
+            return result;
+        }
+        absorbIncomingHandlingResult(result, handleIncomingTextOrAppData(packet, context));
+        return result;
     }
 
     ProtocolEffects handleTxResult(const TxResult& result,
@@ -428,6 +449,82 @@ class MeshtasticRuntime final : public IProtocolRuntime
         data.payload = packet.payload;
         data.rx_meta = packet.rx_meta;
         return data;
+    }
+
+    IncomingPacketHandlingResult handleIncomingRoutingApp(
+        const IncomingPacket& packet,
+        const RuntimeContext& context)
+    {
+        if (packet.portnum != meshtastic_PortNum_ROUTING_APP)
+        {
+            return {};
+        }
+        return consumeIncomingAppAction(packet, context);
+    }
+
+    static IncomingPacketHandlingResult handleIncomingNodeInfo(
+        const IncomingPacket& packet,
+        const RuntimeContext& context)
+    {
+        (void)packet;
+        (void)context;
+        return {};
+    }
+
+    IncomingPacketHandlingResult handleIncomingPosition(
+        const IncomingPacket& packet,
+        const RuntimeContext& context)
+    {
+        if (packet.portnum != meshtastic_PortNum_POSITION_APP)
+        {
+            return {};
+        }
+        return consumeIncomingAppAction(packet, context);
+    }
+
+    IncomingPacketHandlingResult handleIncomingTraceRoute(
+        const IncomingPacket& packet,
+        const RuntimeContext& context)
+    {
+        if (packet.portnum != meshtastic_PortNum_TRACEROUTE_APP)
+        {
+            return {};
+        }
+        return consumeIncomingAppAction(packet, context);
+    }
+
+    static IncomingPacketHandlingResult handleIncomingKeyVerification(
+        const IncomingPacket& packet,
+        const RuntimeContext& context)
+    {
+        (void)packet;
+        (void)context;
+        return {};
+    }
+
+    static IncomingPacketHandlingResult handleIncomingTextOrAppData(
+        const IncomingPacket& packet,
+        const RuntimeContext& context)
+    {
+        (void)packet;
+        (void)context;
+        return {};
+    }
+
+    IncomingPacketHandlingResult consumeIncomingAppAction(
+        const IncomingPacket& packet,
+        const RuntimeContext& context)
+    {
+        IncomingPacketHandlingResult result{};
+        MeshtasticAppActionSnapshot snapshot{};
+        if (app_actions_.consumeIncomingData(toMeshIncomingData(packet),
+                                             context.now_ms,
+                                             &snapshot))
+        {
+            result.handling = PacketHandling::HandledStop;
+            result.effects.add(actionResultFromSnapshot(snapshot));
+        }
+        return result;
     }
 
     static ProtocolActionKind actionKindFromSnapshot(

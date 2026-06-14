@@ -150,6 +150,14 @@ struct IncomingPacket
     RxMeta rx_meta{};
 };
 
+enum class PacketHandling : uint8_t
+{
+    NotHandled = 0,
+    HandledContinue,
+    HandledStop,
+    DropWithEffects,
+};
+
 struct TxResult
 {
     MeshProtocol protocol = MeshProtocol::Meshtastic;
@@ -329,6 +337,44 @@ struct ProtocolEffects
     }
 };
 
+struct IncomingPacketHandlingResult
+{
+    PacketHandling handling = PacketHandling::NotHandled;
+    ProtocolEffects effects{};
+
+    bool handled() const
+    {
+        return handling != PacketHandling::NotHandled;
+    }
+
+    bool shouldStop() const
+    {
+        return handling == PacketHandling::HandledStop ||
+               handling == PacketHandling::DropWithEffects;
+    }
+};
+
+inline void appendProtocolEffects(ProtocolEffects& target, ProtocolEffects source)
+{
+    for (auto& effect : source.items)
+    {
+        target.items.emplace_back(std::move(effect));
+    }
+}
+
+inline bool absorbIncomingHandlingResult(IncomingPacketHandlingResult& target,
+                                         IncomingPacketHandlingResult source)
+{
+    const PacketHandling handling = source.handling;
+    appendProtocolEffects(target.effects, std::move(source.effects));
+    if (handling == PacketHandling::NotHandled)
+    {
+        return false;
+    }
+    target.handling = handling;
+    return target.shouldStop();
+}
+
 template <typename Visitor>
 decltype(auto) visitProtocolEffect(ProtocolEffect& effect, Visitor&& visitor)
 {
@@ -351,6 +397,17 @@ class IProtocolRuntime
                                             const RuntimeContext& context) = 0;
     virtual ProtocolEffects handleIncoming(const IncomingPacket& packet,
                                            const RuntimeContext& context) = 0;
+    virtual IncomingPacketHandlingResult handleIncomingPacket(
+        const IncomingPacket& packet,
+        const RuntimeContext& context)
+    {
+        IncomingPacketHandlingResult result{};
+        result.effects = handleIncoming(packet, context);
+        result.handling = result.effects.empty()
+                              ? PacketHandling::NotHandled
+                              : PacketHandling::HandledStop;
+        return result;
+    }
     virtual ProtocolEffects handleTxResult(const TxResult& result,
                                            const RuntimeContext& context) = 0;
     virtual ProtocolEffects tick(const RuntimeContext& context) = 0;

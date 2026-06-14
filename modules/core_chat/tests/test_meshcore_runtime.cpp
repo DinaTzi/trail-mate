@@ -25,6 +25,7 @@ int main()
     using chat::runtime::MeshCoreAppAckRegistration;
     using chat::runtime::MeshCoreAutoDiscoverMissingPeerInput;
     using chat::runtime::MeshCoreRuntime;
+    using chat::runtime::PacketHandling;
     using chat::runtime::PublishNodeInfoEffect;
     using chat::runtime::ProtocolActionKind;
     using chat::runtime::ProtocolActionState;
@@ -215,7 +216,9 @@ int main()
         packet.payload_type = chat::meshcore::kMeshCorePayloadTypeControl;
         packet.payload.assign(payload, payload + payload_len);
 
-        const auto effects = runtime.handleIncoming(packet, context);
+        const auto result = runtime.handleIncomingPacket(packet, context);
+        assert(result.handling == PacketHandling::HandledStop);
+        const auto& effects = result.effects;
         assert(effects.items.size() == 1);
         const auto* response = effectAt<SendDiscoverResponseEffect>(effects, 0);
         assert(response);
@@ -229,7 +232,9 @@ int main()
                                                                   sizeof(payload),
                                                                   &payload_len));
         packet.payload.assign(payload, payload + payload_len);
-        assert(runtime.handleIncoming(packet, context).items.empty());
+        const auto repeater_result = runtime.handleIncomingPacket(packet, context);
+        assert(repeater_result.handling == PacketHandling::HandledStop);
+        assert(repeater_result.effects.empty());
 
         request.type_filter = static_cast<uint8_t>(1U << chat::meshcore::kMeshCoreAdvertTypeChat);
         request.since = 1781260000UL;
@@ -238,7 +243,9 @@ int main()
                                                                   sizeof(payload),
                                                                   &payload_len));
         packet.payload.assign(payload, payload + payload_len);
-        assert(runtime.handleIncoming(packet, context).items.empty());
+        const auto stale_result = runtime.handleIncomingPacket(packet, context);
+        assert(stale_result.handling == PacketHandling::HandledStop);
+        assert(stale_result.effects.empty());
     }
 
     {
@@ -267,7 +274,9 @@ int main()
         packet.payload.assign(payload, payload + payload_len);
         packet.rx_meta.rssi_dbm_x10 = -840;
 
-        const auto effects = runtime.handleIncoming(packet, context);
+        const auto result = runtime.handleIncomingPacket(packet, context);
+        assert(result.handling == PacketHandling::HandledStop);
+        const auto& effects = result.effects;
         assert(effects.items.size() == 2);
         const auto* publish = effectAt<PublishNodeInfoEffect>(effects, 0);
         assert(publish);
@@ -306,7 +315,9 @@ int main()
         packet.from = 0x22222222UL;
         packet.payload.assign(payload, payload + payload_len);
 
-        const auto effects = runtime.handleIncoming(packet, context);
+        const auto result = runtime.handleIncomingPacket(packet, context);
+        assert(result.handling == PacketHandling::HandledStop);
+        const auto& effects = result.effects;
         assert(effects.items.size() == 1);
         const auto* reply = effectAt<SendNodeInfoEffect>(effects, 0);
         assert(reply);
@@ -338,7 +349,9 @@ int main()
         packet.rx_meta.hop_count = 3;
         packet.payload.assign(payload, payload + payload_len);
 
-        const auto effects = runtime.handleIncoming(packet, context);
+        const auto result = runtime.handleIncomingPacket(packet, context);
+        assert(result.handling == PacketHandling::HandledStop);
+        const auto& effects = result.effects;
         assert(effects.items.size() == 1);
         const auto* publish = effectAt<PublishNodeInfoEffect>(effects, 0);
         assert(publish);
@@ -395,7 +408,9 @@ int main()
         packet.payload_type = chat::meshcore::kMeshCorePayloadTypeTrace;
         packet.payload.assign(payload, payload + payload_len);
         packet.path.assign({10, 11});
-        const auto rx_effects = runtime.handleIncoming(packet, context);
+        const auto rx_result = runtime.handleIncomingPacket(packet, context);
+        assert(rx_result.handling == PacketHandling::HandledStop);
+        const auto& rx_effects = rx_result.effects;
         assert(rx_effects.items.size() == 1);
         const auto* completed = effectAt<EmitActionResultEffect>(rx_effects, 0);
         assert(completed);
@@ -428,6 +443,18 @@ int main()
         assert(timed_out->state == ProtocolActionState::TimedOut);
         assert(timed_out->peer == intent.peer);
         assert(timed_out->request_id == intent.request_id);
+    }
+
+    {
+        IncomingPacket packet{};
+        packet.protocol = MeshProtocol::MeshCore;
+        packet.portnum = 0xFEEDUL;
+        packet.payload_type = 0x01;
+        packet.payload.push_back(0xAA);
+
+        const auto result = runtime.handleIncomingPacket(packet, context);
+        assert(result.handling == PacketHandling::NotHandled);
+        assert(result.effects.empty());
     }
 
     {

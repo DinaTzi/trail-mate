@@ -74,37 +74,66 @@ class MeshCoreRuntime final : public IProtocolRuntime
     ProtocolEffects handleIncoming(const IncomingPacket& packet,
                                    const RuntimeContext& context) override
     {
-        ProtocolEffects effects{};
+        return handleIncomingPacket(packet, context).effects;
+    }
+
+    IncomingPacketHandlingResult handleIncomingPacket(
+        const IncomingPacket& packet,
+        const RuntimeContext& context) override
+    {
+        IncomingPacketHandlingResult result{};
         if (packet.protocol != MeshProtocol::MeshCore)
         {
-            return effects;
+            return result;
         }
 
-        if (packet.payload_type == chat::meshcore::kMeshCorePayloadTypeTrace)
+        if (absorbIncomingHandlingResult(result, handleIncomingAck(packet, context)))
         {
-            handleIncomingTrace(packet, effects);
-            return effects;
+            return result;
         }
-
-        if (packet.payload_type == chat::meshcore::kMeshCorePayloadTypeControl &&
-            !packet.payload.empty() &&
-            (packet.payload[0] & 0x80U) != 0)
+        if (absorbIncomingHandlingResult(result,
+                                         handleIncomingDiscoverControl(packet, context)))
         {
-            handleIncomingDiscoverControl(packet, context, effects);
-            return effects;
+            return result;
         }
+        if (absorbIncomingHandlingResult(result, handleIncomingNodeInfoControl(packet, context)))
+        {
+            return result;
+        }
+        if (absorbIncomingHandlingResult(result, handleIncomingTrace(packet, context)))
+        {
+            return result;
+        }
+        absorbIncomingHandlingResult(result, handleIncomingTextOrAppData(packet, context));
+        return result;
+    }
 
+    static IncomingPacketHandlingResult handleIncomingAck(
+        const IncomingPacket& packet,
+        const RuntimeContext& context)
+    {
+        (void)packet;
+        (void)context;
+        return {};
+    }
+
+    static IncomingPacketHandlingResult handleIncomingNodeInfoControl(
+        const IncomingPacket& packet,
+        const RuntimeContext& context)
+    {
         if (packet.portnum != chat::meshcore::kMeshCoreNodeInfoPortnum)
         {
-            return effects;
+            return {};
         }
 
+        IncomingPacketHandlingResult result{};
+        result.handling = PacketHandling::HandledStop;
         chat::meshcore::DecodedNodeInfoControl decoded{};
         if (!chat::meshcore::decodeNodeInfoControlPayload(packet.payload.data(),
                                                           packet.payload.size(),
                                                           &decoded))
         {
-            return effects;
+            return result;
         }
 
         if (decoded.type == chat::meshcore::MeshCoreNodeInfoControlType::Query)
@@ -118,9 +147,9 @@ class MeshCoreRuntime final : public IProtocolRuntime
                                  ? packet.from
                                  : 0;
                 reply.want_response = false;
-                effects.add(reply);
+                result.effects.add(reply);
             }
-            return effects;
+            return result;
         }
 
         if (decoded.type == chat::meshcore::MeshCoreNodeInfoControlType::Info &&
@@ -133,7 +162,7 @@ class MeshCoreRuntime final : public IProtocolRuntime
             }
             if (node == 0)
             {
-                return effects;
+                return result;
             }
 
             PublishNodeInfoEffect publish{};
@@ -150,10 +179,10 @@ class MeshCoreRuntime final : public IProtocolRuntime
                 publish.hops = packet.rx_meta.hop_count;
             }
             publish.rx_meta = packet.rx_meta;
-            effects.add(std::move(publish));
+            result.effects.add(std::move(publish));
         }
 
-        return effects;
+        return result;
     }
 
     ProtocolEffects handleTxResult(const TxResult& result,
@@ -521,10 +550,19 @@ class MeshCoreRuntime final : public IProtocolRuntime
         }
     }
 
-    void handleIncomingDiscoverControl(const IncomingPacket& packet,
-                                       const RuntimeContext& context,
-                                       ProtocolEffects& effects)
+    IncomingPacketHandlingResult handleIncomingDiscoverControl(
+        const IncomingPacket& packet,
+        const RuntimeContext& context)
     {
+        if (packet.payload_type != chat::meshcore::kMeshCorePayloadTypeControl ||
+            packet.payload.empty() ||
+            (packet.payload[0] & 0x80U) == 0)
+        {
+            return {};
+        }
+
+        IncomingPacketHandlingResult result{};
+        result.handling = PacketHandling::HandledStop;
         chat::meshcore::DecodedDiscoverRequest request{};
         if (chat::meshcore::decodeDiscoverRequest(packet.payload.data(),
                                                   packet.payload.size(),
@@ -533,7 +571,7 @@ class MeshCoreRuntime final : public IProtocolRuntime
             if (!chat::meshcore::discoverFilterMatchesType(request.type_filter,
                                                            context.meshcore_discover_node_type))
             {
-                return;
+                return result;
             }
 
             if (request.since != 0 &&
@@ -541,15 +579,15 @@ class MeshCoreRuntime final : public IProtocolRuntime
                 isValidEpoch(context.meshcore_local_modified_epoch) &&
                 context.meshcore_local_modified_epoch < request.since)
             {
-                return;
+                return result;
             }
 
             SendDiscoverResponseEffect response{};
             response.protocol = MeshProtocol::MeshCore;
             response.tag = request.tag;
             response.prefix_only = request.prefix_only;
-            effects.add(response);
-            return;
+            result.effects.add(response);
+            return result;
         }
 
         chat::meshcore::DecodedDiscoverResponse response{};
@@ -559,20 +597,20 @@ class MeshCoreRuntime final : public IProtocolRuntime
             response.pubkey_len == 0 ||
             response.pubkey == nullptr)
         {
-            return;
+            return result;
         }
 
         const uint8_t peer_hash = response.pubkey[0];
         if (peer_hash == static_cast<uint8_t>(context.self_node & 0xFFU))
         {
-            return;
+            return result;
         }
 
         const NodeId node = chat::meshcore::deriveNodeIdFromPubkey(response.pubkey,
                                                                    response.pubkey_len);
         if (node == 0)
         {
-            return;
+            return result;
         }
 
         const uint8_t hops = packet.path.size() <= 255
@@ -592,7 +630,7 @@ class MeshCoreRuntime final : public IProtocolRuntime
         publish.hops = hops;
         publish.rx_meta = rx_meta;
         publish.has_public_key = response.pubkey_len == chat::meshcore::kMeshCorePubKeySize;
-        effects.add(std::move(publish));
+        result.effects.add(std::move(publish));
 
         UpdatePeerRouteEffect route{};
         route.protocol = MeshProtocol::MeshCore;
@@ -605,7 +643,8 @@ class MeshCoreRuntime final : public IProtocolRuntime
         {
             route.public_key.assign(response.pubkey, response.pubkey + response.pubkey_len);
         }
-        effects.add(std::move(route));
+        result.effects.add(std::move(route));
+        return result;
     }
 
     void resolveTraceRoute(const TraceRouteIntent& intent,
@@ -645,8 +684,17 @@ class MeshCoreRuntime final : public IProtocolRuntime
         effects.add(effect);
     }
 
-    void handleIncomingTrace(const IncomingPacket& packet, ProtocolEffects& effects)
+    IncomingPacketHandlingResult handleIncomingTrace(const IncomingPacket& packet,
+                                                    const RuntimeContext& context)
     {
+        (void)context;
+        if (packet.payload_type != chat::meshcore::kMeshCorePayloadTypeTrace)
+        {
+            return {};
+        }
+
+        IncomingPacketHandlingResult result{};
+        result.handling = PacketHandling::HandledStop;
         chat::meshcore::DecodedTracePayload trace{};
         if (!chat::meshcore::decodeTracePayload(packet.payload.data(),
                                                 packet.payload.size(),
@@ -656,7 +704,7 @@ class MeshCoreRuntime final : public IProtocolRuntime
             !pending_trace_.active ||
             trace.tag != pending_trace_.request_id)
         {
-            return;
+            return result;
         }
 
         EmitActionResultEffect completed{};
@@ -666,8 +714,18 @@ class MeshCoreRuntime final : public IProtocolRuntime
         completed.peer = pending_trace_.peer;
         completed.request_id = pending_trace_.request_id;
         completed.detail = static_cast<int32_t>(packet.path.size());
-        effects.add(completed);
+        result.effects.add(completed);
         pending_trace_ = PendingTraceRoute{};
+        return result;
+    }
+
+    static IncomingPacketHandlingResult handleIncomingTextOrAppData(
+        const IncomingPacket& packet,
+        const RuntimeContext& context)
+    {
+        (void)packet;
+        (void)context;
+        return {};
     }
 
     EmitActionResultEffect buildTraceResult(ProtocolActionState state, int32_t detail) const
