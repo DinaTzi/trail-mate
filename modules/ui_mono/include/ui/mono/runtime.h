@@ -3,7 +3,7 @@
 #include "app/app_config.h"
 #include "app/app_facades.h"
 #include "chat/domain/contact_types.h"
-#include "chat/runtime/meshtastic_app_action_runtime.h"
+#include "chat/runtime/meshtastic_runtime.h"
 #include "chat/usecase/chat_service.h"
 #include "platform/ui/device_runtime.h"
 #include "platform/ui/gps_runtime.h"
@@ -267,8 +267,8 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
     void executeNodeAction();
     void requestNodePositionExchange();
     chat::MessageId nextMeshtasticActionRequestId(chat::NodeId peer);
-    void handleMeshtasticAppActionUpdate(
-        const chat::runtime::MeshtasticAppActionSnapshot& snapshot);
+    void handleMeshtasticProtocolEffects(const chat::runtime::ProtocolEffects& effects);
+    void handleMeshtasticActionResult(const chat::runtime::EmitActionResultEffect& result);
     void showTransientPopup(const char* title, const char* message, uint32_t duration_ms = 2000U);
     void expireTransientPopup();
 
@@ -318,7 +318,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
     size_t message_menu_index_ = 0;
     size_t message_info_scroll_ = 0;
     size_t gnss_page_index_ = 0;
-    chat::runtime::MeshtasticAppActionRuntime meshtastic_action_runtime_{};
+    chat::runtime::MeshtasticRuntime meshtastic_protocol_runtime_{};
     chat::MessageId next_meshtastic_action_request_id_ = 0;
 
     static constexpr size_t kMaxConversationItems = 8;

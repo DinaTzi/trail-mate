@@ -1,5 +1,6 @@
 #pragma once
 
+#include "chat/runtime/meshtastic_app_action_runtime.h"
 #include "chat/runtime/meshtastic_position_core.h"
 #include "chat/runtime/meshtastic_waypoint_core.h"
 #include "chat/runtime/protocol_runtime.h"
@@ -13,6 +14,10 @@
 
 namespace chat::runtime
 {
+
+constexpr int32_t kMeshtasticActionDetailInvalidPeer = -1;
+constexpr int32_t kMeshtasticActionDetailEncodeFailed = -2;
+constexpr int32_t kMeshtasticActionDetailLocalSendFailed = -3;
 
 enum class MeshtasticPkiResyncCause : uint8_t
 {
@@ -97,7 +102,7 @@ class MeshtasticRuntime final : public IProtocolRuntime
     {
         ProtocolEffects effects{};
         std::visit(
-            [&effects, &context](const auto& item)
+            [this, &effects, &context](const auto& item)
             {
                 using Intent = std::decay_t<decltype(item)>;
                 if constexpr (std::is_same_v<Intent, TraceRouteIntent>)
@@ -121,21 +126,60 @@ class MeshtasticRuntime final : public IProtocolRuntime
         return effects;
     }
 
-    ProtocolEffects handleIncoming(const IncomingPacket&,
-                                   const RuntimeContext&) override
+    ProtocolEffects handleIncoming(const IncomingPacket& packet,
+                                   const RuntimeContext& context) override
     {
-        return ProtocolEffects{};
+        ProtocolEffects effects{};
+        if (packet.protocol != MeshProtocol::Meshtastic)
+        {
+            return effects;
+        }
+
+        MeshtasticAppActionSnapshot snapshot{};
+        if (app_actions_.consumeIncomingData(toMeshIncomingData(packet),
+                                             context.now_ms,
+                                             &snapshot))
+        {
+            effects.add(actionResultFromSnapshot(snapshot));
+        }
+        return effects;
     }
 
-    ProtocolEffects handleTxResult(const TxResult&,
-                                   const RuntimeContext&) override
+    ProtocolEffects handleTxResult(const TxResult& result,
+                                   const RuntimeContext& context) override
     {
-        return ProtocolEffects{};
+        ProtocolEffects effects{};
+        if (result.protocol != MeshProtocol::Meshtastic ||
+            result.ok ||
+            result.request_id == 0 ||
+            !app_actions_.active())
+        {
+            return effects;
+        }
+
+        const MeshtasticAppActionSnapshot current = app_actions_.snapshot();
+        if (current.request_id != result.request_id)
+        {
+            return effects;
+        }
+
+        app_actions_.markLocalSendFailed(current.kind,
+                                         current.request_id,
+                                         current.peer,
+                                         context.now_ms);
+        effects.add(actionResultFromSnapshot(app_actions_.snapshot()));
+        return effects;
     }
 
-    ProtocolEffects tick(const RuntimeContext&) override
+    ProtocolEffects tick(const RuntimeContext& context) override
     {
-        return ProtocolEffects{};
+        ProtocolEffects effects{};
+        MeshtasticAppActionSnapshot snapshot{};
+        if (app_actions_.tick(context.now_ms, &snapshot))
+        {
+            effects.add(actionResultFromSnapshot(snapshot));
+        }
+        return effects;
     }
 
     ProtocolEffects handlePkiResync(const MeshtasticPkiResyncInput& input) const
@@ -180,9 +224,9 @@ class MeshtasticRuntime final : public IProtocolRuntime
         return failed;
     }
 
-    static void resolveTraceRoute(const TraceRouteIntent& intent,
-                                  const RuntimeContext& context,
-                                  ProtocolEffects& effects)
+    void resolveTraceRoute(const TraceRouteIntent& intent,
+                           const RuntimeContext& context,
+                           ProtocolEffects& effects)
     {
         const NodeId peer = normalizePeer(intent.peer);
         const MessageId request_id = makeRequestId(intent.request_id,
@@ -194,7 +238,7 @@ class MeshtasticRuntime final : public IProtocolRuntime
             effects.add(buildFailedAction(ProtocolActionKind::TraceRoute,
                                           peer,
                                           request_id,
-                                          -1));
+                                          kMeshtasticActionDetailInvalidPeer));
             return;
         }
 
@@ -206,7 +250,7 @@ class MeshtasticRuntime final : public IProtocolRuntime
             effects.add(buildFailedAction(ProtocolActionKind::TraceRoute,
                                           peer,
                                           request_id,
-                                          -2));
+                                          kMeshtasticActionDetailEncodeFailed));
             return;
         }
 
@@ -220,11 +264,17 @@ class MeshtasticRuntime final : public IProtocolRuntime
         packet.want_response = true;
         packet.payload.assign(route_buf, route_buf + stream.bytes_written);
         effects.add(std::move(packet));
+        app_actions_.startTraceRoute(request_id,
+                                     peer,
+                                     context.now_ms,
+                                     intent.timeout_ms == 0
+                                         ? kMeshtasticAppActionTimeoutMs
+                                         : intent.timeout_ms);
     }
 
-    static void resolveExchangePosition(const ExchangePositionIntent& intent,
-                                        const RuntimeContext& context,
-                                        ProtocolEffects& effects)
+    void resolveExchangePosition(const ExchangePositionIntent& intent,
+                                 const RuntimeContext& context,
+                                 ProtocolEffects& effects)
     {
         const NodeId peer = normalizePeer(intent.peer);
         const MessageId request_id = makeRequestId(intent.request_id,
@@ -236,7 +286,7 @@ class MeshtasticRuntime final : public IProtocolRuntime
             effects.add(buildFailedAction(ProtocolActionKind::ExchangePosition,
                                           peer,
                                           request_id,
-                                          -1));
+                                          kMeshtasticActionDetailInvalidPeer));
             return;
         }
 
@@ -249,6 +299,9 @@ class MeshtasticRuntime final : public IProtocolRuntime
         packet.want_ack = false;
         packet.want_response = true;
         effects.add(std::move(packet));
+        app_actions_.startPositionExchange(request_id,
+                                           peer,
+                                           context.now_ms);
     }
 
     static void resolveSharePosition(const SharePositionIntent& intent,
@@ -276,7 +329,7 @@ class MeshtasticRuntime final : public IProtocolRuntime
             effects.add(buildFailedAction(ProtocolActionKind::SharePosition,
                                           normalizePeer(intent.peer),
                                           0,
-                                          -2));
+                                          kMeshtasticActionDetailEncodeFailed));
             return;
         }
 
@@ -314,7 +367,7 @@ class MeshtasticRuntime final : public IProtocolRuntime
             effects.add(buildFailedAction(ProtocolActionKind::ShareWaypoint,
                                           normalizePeer(intent.peer),
                                           0,
-                                          -2));
+                                          kMeshtasticActionDetailEncodeFailed));
             return;
         }
 
@@ -329,7 +382,79 @@ class MeshtasticRuntime final : public IProtocolRuntime
         effects.add(std::move(packet));
     }
 
+    static MeshIncomingData toMeshIncomingData(const IncomingPacket& packet)
+    {
+        MeshIncomingData data{};
+        data.portnum = packet.portnum;
+        data.from = packet.from;
+        data.to = packet.to;
+        data.packet_id = packet.packet_id;
+        data.request_id = packet.request_id;
+        data.channel = packet.channel;
+        data.want_response = packet.want_response;
+        data.payload = packet.payload;
+        data.rx_meta = packet.rx_meta;
+        return data;
+    }
+
+    static ProtocolActionKind actionKindFromSnapshot(
+        const MeshtasticAppActionSnapshot& snapshot)
+    {
+        switch (snapshot.kind)
+        {
+        case MeshtasticAppActionKind::TraceRoute:
+            return ProtocolActionKind::TraceRoute;
+        case MeshtasticAppActionKind::PositionExchange:
+            return ProtocolActionKind::ExchangePosition;
+        default:
+            return ProtocolActionKind::Unknown;
+        }
+    }
+
+    static ProtocolActionState actionStateFromSnapshot(
+        const MeshtasticAppActionSnapshot& snapshot)
+    {
+        switch (snapshot.state)
+        {
+        case MeshtasticAppActionState::Delivered:
+            return ProtocolActionState::Delivered;
+        case MeshtasticAppActionState::Completed:
+            return ProtocolActionState::Completed;
+        case MeshtasticAppActionState::Failed:
+            return ProtocolActionState::Failed;
+        case MeshtasticAppActionState::TimedOut:
+            return ProtocolActionState::TimedOut;
+        case MeshtasticAppActionState::Pending:
+        case MeshtasticAppActionState::Idle:
+        default:
+            return ProtocolActionState::Pending;
+        }
+    }
+
+    static int32_t actionDetailFromSnapshot(const MeshtasticAppActionSnapshot& snapshot)
+    {
+        if (snapshot.reason == MeshtasticAppActionReason::LocalSendFailed)
+        {
+            return kMeshtasticActionDetailLocalSendFailed;
+        }
+        return static_cast<int32_t>(snapshot.routing_error);
+    }
+
+    static EmitActionResultEffect actionResultFromSnapshot(
+        const MeshtasticAppActionSnapshot& snapshot)
+    {
+        EmitActionResultEffect effect{};
+        effect.protocol = MeshProtocol::Meshtastic;
+        effect.action = actionKindFromSnapshot(snapshot);
+        effect.state = actionStateFromSnapshot(snapshot);
+        effect.peer = snapshot.peer;
+        effect.request_id = snapshot.request_id;
+        effect.detail = actionDetailFromSnapshot(snapshot);
+        return effect;
+    }
+
     MeshtasticPkiResyncState pki_resync_{};
+    MeshtasticAppActionRuntime app_actions_{};
 };
 
 } // namespace chat::runtime

@@ -1,9 +1,11 @@
 #include "chat/runtime/meshtastic_runtime.h"
 
 #include "pb_decode.h"
+#include "pb_encode.h"
 
 #include <cassert>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -15,6 +17,18 @@ const T* effectAt(const chat::runtime::ProtocolEffects& effects, size_t index)
     return std::get_if<T>(&effects.items[index]);
 }
 
+std::vector<uint8_t> encodeRouting(meshtastic_Routing_Error reason)
+{
+    meshtastic_Routing routing = meshtastic_Routing_init_zero;
+    routing.which_variant = meshtastic_Routing_error_reason_tag;
+    routing.error_reason = reason;
+
+    uint8_t buffer[32] = {};
+    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+    assert(pb_encode(&stream, meshtastic_Routing_fields, &routing));
+    return std::vector<uint8_t>(buffer, buffer + stream.bytes_written);
+}
+
 } // namespace
 
 int main()
@@ -24,6 +38,9 @@ int main()
     using chat::runtime::EmitActionResultEffect;
     using chat::runtime::ExchangePositionIntent;
     using chat::runtime::ForgetPeerKeyEffect;
+    using chat::runtime::IncomingPacket;
+    using chat::runtime::kMeshtasticActionDetailLocalSendFailed;
+    using chat::runtime::kMeshtasticAppActionTimeoutMs;
     using chat::runtime::MeshtasticPkiResyncCause;
     using chat::runtime::MeshtasticPkiResyncInput;
     using chat::runtime::MeshtasticRuntime;
@@ -36,6 +53,7 @@ int main()
     using chat::runtime::SharePositionIntent;
     using chat::runtime::ShareWaypointIntent;
     using chat::runtime::TraceRouteIntent;
+    using chat::runtime::TxResult;
 
     MeshtasticRuntime runtime;
     RuntimeContext context{};
@@ -206,6 +224,95 @@ int main()
         assert(failed->state == ProtocolActionState::Failed);
         assert(failed->peer == context.self_node);
         assert(failed->request_id == intent.request_id);
+    }
+
+    {
+        MeshtasticRuntime action_runtime;
+        RuntimeContext action_context = context;
+        action_context.now_ms = 1000;
+
+        TraceRouteIntent intent{};
+        intent.peer = 0x24242424UL;
+        intent.request_id = 0x6006UL;
+        intent.timeout_ms = 5000;
+        assert(action_runtime.prepareOutgoing(intent, action_context).items.size() == 1);
+
+        IncomingPacket routing{};
+        routing.protocol = MeshProtocol::Meshtastic;
+        routing.portnum = meshtastic_PortNum_ROUTING_APP;
+        routing.request_id = intent.request_id;
+        routing.payload = encodeRouting(meshtastic_Routing_Error_NONE);
+        action_context.now_ms = 1200;
+
+        const auto delivered_effects = action_runtime.handleIncoming(routing, action_context);
+        assert(delivered_effects.items.size() == 1);
+        const auto* delivered = effectAt<EmitActionResultEffect>(delivered_effects, 0);
+        assert(delivered);
+        assert(delivered->action == ProtocolActionKind::TraceRoute);
+        assert(delivered->state == ProtocolActionState::Delivered);
+        assert(delivered->request_id == intent.request_id);
+
+        IncomingPacket response{};
+        response.protocol = MeshProtocol::Meshtastic;
+        response.portnum = meshtastic_PortNum_TRACEROUTE_APP;
+        response.request_id = intent.request_id;
+        response.payload.push_back(0);
+        action_context.now_ms = 1500;
+
+        const auto completed_effects = action_runtime.handleIncoming(response, action_context);
+        assert(completed_effects.items.size() == 1);
+        const auto* completed = effectAt<EmitActionResultEffect>(completed_effects, 0);
+        assert(completed);
+        assert(completed->action == ProtocolActionKind::TraceRoute);
+        assert(completed->state == ProtocolActionState::Completed);
+        assert(completed->request_id == intent.request_id);
+    }
+
+    {
+        MeshtasticRuntime action_runtime;
+        RuntimeContext action_context = context;
+        action_context.now_ms = 2000;
+
+        ExchangePositionIntent intent{};
+        intent.peer = 0x35353535UL;
+        intent.request_id = 0x7007UL;
+        assert(action_runtime.prepareOutgoing(intent, action_context).items.size() == 1);
+
+        TxResult tx{};
+        tx.protocol = MeshProtocol::Meshtastic;
+        tx.request_id = intent.request_id;
+        tx.ok = false;
+        action_context.now_ms = 2100;
+
+        const auto failed_effects = action_runtime.handleTxResult(tx, action_context);
+        assert(failed_effects.items.size() == 1);
+        const auto* failed = effectAt<EmitActionResultEffect>(failed_effects, 0);
+        assert(failed);
+        assert(failed->action == ProtocolActionKind::ExchangePosition);
+        assert(failed->state == ProtocolActionState::Failed);
+        assert(failed->detail == kMeshtasticActionDetailLocalSendFailed);
+    }
+
+    {
+        MeshtasticRuntime action_runtime;
+        RuntimeContext action_context = context;
+        action_context.now_ms = 3000;
+
+        ExchangePositionIntent intent{};
+        intent.peer = 0x46464646UL;
+        intent.request_id = 0x8008UL;
+        assert(action_runtime.prepareOutgoing(intent, action_context).items.size() == 1);
+
+        action_context.now_ms = 3000 + kMeshtasticAppActionTimeoutMs - 1;
+        assert(action_runtime.tick(action_context).items.empty());
+
+        action_context.now_ms = 3000 + kMeshtasticAppActionTimeoutMs;
+        const auto timeout_effects = action_runtime.tick(action_context);
+        assert(timeout_effects.items.size() == 1);
+        const auto* timed_out = effectAt<EmitActionResultEffect>(timeout_effects, 0);
+        assert(timed_out);
+        assert(timed_out->action == ProtocolActionKind::ExchangePosition);
+        assert(timed_out->state == ProtocolActionState::TimedOut);
     }
 
     {

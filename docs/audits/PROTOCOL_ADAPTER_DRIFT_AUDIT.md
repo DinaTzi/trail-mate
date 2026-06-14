@@ -197,12 +197,14 @@ Current state:
   `TRACEROUTE_APP` packet should produce a reply.
 - Shared `updateTraceRoutePayload(...)` now owns decode -> insert unknown hops -> append local
   node/SNR -> re-encode mutation for incoming TraceRoute payloads.
-- Shared `MeshtasticAppActionRuntime` now owns outgoing TraceRoute and Position Exchange
-  lifecycle interpretation: pending, routing delivered where available, routing error,
-  matching app response completed, and timeout.
+- Shared `MeshtasticRuntime` now owns outgoing TraceRoute and Position Exchange lifecycle
+  interpretation by holding the app-action state internally: pending, routing delivered where available,
+  routing error, local TX failure, matching app response completed, and timeout.
 - `MeshtasticRuntime::prepareOutgoing(...)` now maps nRF mono UI `TraceRouteIntent` and
   `ExchangePositionIntent` into `SendPacketEffect`, so the UI no longer constructs
   `TRACEROUTE_APP` / `POSITION_APP` packets or protobuf payloads directly.
+- nRF mono UI keeps a long-lived `MeshtasticRuntime` and feeds it incoming packet, TX result, and tick
+  events; UI now only renders `EmitActionResultEffect` instead of owning the action state machine.
 - Mono UI observes `ChatService::IncomingDataObserver` instead of polling the adapter queue
   directly, so TraceRoute result state does not steal app-data from BLE/other consumers.
 - Adapter/UI executor send mechanics still exist on ESP32 and nRF.
