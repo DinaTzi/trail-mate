@@ -5,6 +5,41 @@
 namespace
 {
 
+class FakeWorker final : public sys::runtime::IActiveWorker
+{
+  public:
+    void tick(uint32_t now_ms) override
+    {
+        last_tick_ms = now_ms;
+    }
+
+    bool submit(const sys::runtime::RuntimeCommand& command) override
+    {
+        submitted = true;
+        last_command = command;
+        return accept;
+    }
+
+    bool accept = true;
+    bool submitted = false;
+    uint32_t last_tick_ms = 0;
+    sys::runtime::RuntimeCommand last_command{};
+};
+
+class FakeUiEffectSink final : public sys::runtime::IUiEffectSink
+{
+  public:
+    bool apply(const sys::runtime::RuntimeUiEffect& effect) override
+    {
+        applied = true;
+        last_effect = effect;
+        return true;
+    }
+
+    bool applied = false;
+    sys::runtime::RuntimeUiEffect last_effect{};
+};
+
 void test_priority_pop_order()
 {
     sys::runtime::FixedCommandQueue<4> queue;
@@ -90,6 +125,104 @@ void test_event_queue_bounds()
     assert(out.event_id == 1);
 }
 
+void test_runtime_facade_submit_tick()
+{
+    sys::runtime::FixedCommandQueue<4> commands;
+    sys::runtime::FixedEventSink<4> events;
+    sys::runtime::RuntimeState state;
+    sys::runtime::DefaultRuntimePolicyStrategy policy;
+    FakeWorker worker;
+    sys::runtime::RuntimeFacade facade(commands, worker, events, state, policy);
+
+    sys::runtime::RuntimeIntent intent{};
+    intent.kind = sys::runtime::RuntimeCommandKind::PersistenceSave;
+    intent.origin = 7;
+    intent.generation = 11;
+    intent.dedupe_key = 99;
+    intent.submitted_at_ms = 100;
+    intent.priority_hint = sys::runtime::RuntimePriority::Background;
+    intent.cancel_policy = sys::runtime::RuntimeCancelPolicy::CancelByDedupeKey;
+
+    assert(facade.submit(intent));
+    assert(state.status == sys::runtime::RuntimeStatus::Queued);
+    assert(commands.size() == 1);
+    assert(events.size() == 1);
+    assert(facade.drainEvents() == 1);
+    assert(facade.drainEvents() == 0);
+
+    sys::runtime::RuntimeEvent queued{};
+    assert(events.pop(queued));
+    assert(queued.kind == sys::runtime::RuntimeEventKind::CommandQueued);
+    assert(queued.command_id == 1);
+
+    facade.tick(120);
+    assert(worker.submitted);
+    assert(worker.last_tick_ms == 120);
+    assert(worker.last_command.kind == intent.kind);
+    assert(worker.last_command.origin == intent.origin);
+    assert(worker.last_command.generation == intent.generation);
+    assert(worker.last_command.dedupe_key == intent.dedupe_key);
+    assert(worker.last_command.priority == intent.priority_hint);
+    assert(state.status == sys::runtime::RuntimeStatus::Running);
+
+    sys::runtime::RuntimeEvent started{};
+    assert(events.pop(started));
+    assert(started.kind == sys::runtime::RuntimeEventKind::CommandStarted);
+    assert(started.command_id == worker.last_command.command_id);
+    assert(facade.drainEvents() == 1);
+}
+
+void test_runtime_facade_dedupe_cancel_policy()
+{
+    sys::runtime::FixedCommandQueue<4> commands;
+    sys::runtime::FixedEventSink<4> events;
+    sys::runtime::RuntimeState state;
+    sys::runtime::DefaultRuntimePolicyStrategy policy;
+    FakeWorker worker;
+    sys::runtime::RuntimeFacade facade(commands, worker, events, state, policy);
+
+    sys::runtime::RuntimeIntent first{};
+    first.kind = sys::runtime::RuntimeCommandKind::PersistenceSave;
+    first.dedupe_key = 44;
+    first.cancel_policy = sys::runtime::RuntimeCancelPolicy::CancelByDedupeKey;
+    first.submitted_at_ms = 1;
+
+    sys::runtime::RuntimeIntent second = first;
+    second.submitted_at_ms = 2;
+
+    assert(facade.submit(first));
+    assert(facade.submit(second));
+    assert(commands.size() == 1);
+
+    facade.tick(10);
+    assert(worker.submitted);
+    assert(worker.last_command.command_id == 2);
+}
+
+void test_event_to_ui_effect_bridge()
+{
+    sys::runtime::FixedEventSink<2> events;
+    FakeUiEffectSink effects;
+    sys::runtime::RuntimeEventUiEffectBridge bridge(events, effects);
+
+    sys::runtime::RuntimeEvent event{};
+    event.event_id = 7;
+    event.kind = sys::runtime::RuntimeEventKind::PersistenceFailed;
+    event.command_id = 3;
+    event.error = -9;
+
+    assert(bridge.publish(event));
+    assert(effects.applied);
+    assert(effects.last_effect.kind == event.kind);
+    assert(effects.last_effect.event_id == event.event_id);
+    assert(effects.last_effect.command_id == event.command_id);
+    assert(effects.last_effect.error == event.error);
+
+    sys::runtime::RuntimeEvent out{};
+    assert(events.pop(out));
+    assert(out.event_id == event.event_id);
+}
+
 } // namespace
 
 int main()
@@ -98,5 +231,8 @@ int main()
     test_dedupe_replace();
     test_cancel_generation();
     test_event_queue_bounds();
+    test_runtime_facade_submit_tick();
+    test_runtime_facade_dedupe_cancel_policy();
+    test_event_to_ui_effect_bridge();
     return 0;
 }

@@ -143,6 +143,33 @@ class FakeEventSink final : public ui::map_tiles::IMapTileEventSink
     }
 };
 
+class FakePolicy final : public sys::runtime::RuntimePolicyStrategy
+{
+  public:
+    sys::runtime::RuntimePriority selectPriority(
+        const sys::runtime::RuntimeIntent& intent) const override
+    {
+        (void)intent;
+        return sys::runtime::RuntimePriority::Realtime;
+    }
+
+    sys::runtime::BusAccessPolicy selectBusPolicy(
+        const sys::runtime::RuntimeCommand& command) const override
+    {
+        (void)command;
+        return sys::runtime::BusAccessPolicy::RecoveryExclusive;
+    }
+
+    sys::runtime::RuntimeRetryDecision selectRetry(
+        const sys::runtime::RuntimeCommand& command,
+        const sys::runtime::PlatformStorageResult& result) const override
+    {
+        (void)command;
+        (void)result;
+        return {};
+    }
+};
+
 void test_generation_cancels_old_commands()
 {
     FakeCommandSink sink;
@@ -236,6 +263,28 @@ void test_worker_success_publishes_ready()
     assert(events.events[0].payload_size == 3);
 }
 
+void test_runtime_and_worker_use_policy_strategy()
+{
+    FakeCommandSink sink;
+    FakePolicy policy;
+    ui::map_tiles::MapTileAsyncRuntime runtime(sink, &policy);
+
+    ui::map_tiles::MapViewportPlan plan{};
+    plan.generation = 5;
+    plan.tile_count = 1;
+    plan.tiles[0] = make_tile(50);
+    assert(runtime.requestVisibleTiles(plan, 500) == 1);
+    assert(sink.commands[0].runtime.priority == sys::runtime::RuntimePriority::Realtime);
+
+    FakeBackend backend;
+    FakeBusArbiter bus;
+    FakeEventSink events;
+    uint8_t scratch[8]{};
+    ui::map_tiles::MapTileWorker worker(backend, bus, events, scratch, sizeof(scratch), &policy);
+    assert(worker.execute(sink.commands[0], 510));
+    assert(bus.last_policy == sys::runtime::BusAccessPolicy::RecoveryExclusive);
+}
+
 } // namespace
 
 int main()
@@ -244,5 +293,6 @@ int main()
     test_stale_event_is_ignored();
     test_worker_busy_does_not_read_storage();
     test_worker_success_publishes_ready();
+    test_runtime_and_worker_use_policy_strategy();
     return 0;
 }

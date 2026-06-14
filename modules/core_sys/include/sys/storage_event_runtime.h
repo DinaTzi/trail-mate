@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sys/runtime_async.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -88,6 +90,38 @@ class LatestSnapshotStorageRuntime
         }
         pending_ = true;
         state_ = StorageWorkState::FailedPendingRetry;
+    }
+
+    bool flushPending(IPlatformStorageAdapter& storage,
+                      IEventSink& events,
+                      const char* path,
+                      uint32_t now_ms)
+    {
+        StorageWorkItem work{};
+        if (!takeNext(work))
+        {
+            return true;
+        }
+
+        PlatformStorageWriteRequest request{};
+        request.command_id = work.generation;
+        request.path = path;
+        request.data = work.data;
+        request.len = work.len;
+        request.durable = true;
+        const PlatformStorageResult result = storage.write(request);
+        complete(work.generation, result.ok);
+
+        RuntimeEvent event{};
+        event.event_id = work.generation;
+        event.kind = result.ok ? RuntimeEventKind::PersistenceSaved
+                               : RuntimeEventKind::PersistenceFailed;
+        event.command_id = work.generation;
+        event.timestamp_ms = now_ms;
+        event.generation = work.generation;
+        event.error = result.error;
+        (void)events.publish(event);
+        return result.ok;
     }
 
     bool pending() const { return pending_; }

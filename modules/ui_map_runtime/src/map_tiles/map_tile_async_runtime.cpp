@@ -5,8 +5,9 @@ namespace ui
 namespace map_tiles
 {
 
-MapTileAsyncRuntime::MapTileAsyncRuntime(IMapTileCommandSink& commands)
-    : commands_(commands)
+MapTileAsyncRuntime::MapTileAsyncRuntime(IMapTileCommandSink& commands,
+                                         sys::runtime::RuntimePolicyStrategy* policy)
+    : commands_(commands), policy_(policy ? policy : &default_policy_)
 {
 }
 
@@ -31,23 +32,29 @@ std::size_t MapTileAsyncRuntime::requestVisibleTiles(const MapViewportPlan& plan
                                                                            : MapViewportPlan::kMaxTiles;
     for (std::size_t i = 0; i < count; ++i)
     {
+        sys::runtime::RuntimeIntent intent{};
+        intent.kind = sys::runtime::RuntimeCommandKind::MapTileLoad;
+        intent.priority_hint = priorityFor(plan.interaction_mode);
+        intent.cancel_policy = sys::runtime::RuntimeCancelPolicy::CancelByGeneration;
+        intent.submitted_at_ms = now_ms;
+        intent.generation = plan.generation;
+        intent.origin = static_cast<uint32_t>(plan.interaction_mode);
+        intent.dedupe_key =
+            (static_cast<uint32_t>(plan.tiles[i].z & 0xFF) << 24) ^
+            ((plan.tiles[i].x & 0xFFFu) << 12) ^
+            (plan.tiles[i].y & 0xFFFu) ^
+            (static_cast<uint32_t>(plan.tiles[i].layer) << 28);
+
         LoadTileCommand command{};
         command.tile = plan.tiles[i];
-        command.runtime.command_id = next_command_id_++;
-        command.runtime.kind = sys::runtime::RuntimeCommandKind::MapTileLoad;
-        command.runtime.priority = priorityFor(plan.interaction_mode);
-        command.runtime.cancel_policy = sys::runtime::RuntimeCancelPolicy::CancelByGeneration;
-        command.runtime.created_at_ms = now_ms;
-        command.runtime.generation = plan.generation;
-        command.runtime.dedupe_key =
-            (static_cast<uint32_t>(command.tile.z & 0xFF) << 24) ^
-            ((command.tile.x & 0xFFFu) << 12) ^
-            (command.tile.y & 0xFFFu) ^
-            (static_cast<uint32_t>(command.tile.layer) << 28);
+        command.runtime = commandFromIntent(intent);
 
         if (commands_.enqueue(command))
         {
             ++queued;
+            state_.status = sys::runtime::RuntimeStatus::Queued;
+            state_.active_kind = command.runtime.kind;
+            state_.active_command_id = command.runtime.command_id;
         }
     }
     return queued;
@@ -87,19 +94,41 @@ sys::runtime::RuntimePriority MapTileAsyncRuntime::priorityFor(MapTileInteractio
                                                            : sys::runtime::RuntimePriority::Normal;
 }
 
+sys::runtime::RuntimeCommand MapTileAsyncRuntime::commandFromIntent(
+    const sys::runtime::RuntimeIntent& intent)
+{
+    sys::runtime::RuntimeCommand command{};
+    command.command_id = next_command_id_++;
+    command.kind = intent.kind;
+    command.priority = policy_->selectPriority(intent);
+    command.cancel_policy = intent.cancel_policy;
+    command.created_at_ms = intent.submitted_at_ms;
+    command.deadline_ms = intent.deadline_ms;
+    command.generation = intent.generation;
+    command.dedupe_key = intent.dedupe_key;
+    command.origin = intent.origin;
+    return command;
+}
+
 MapTileWorker::MapTileWorker(IMapTileWorkerBackend& backend,
                              sys::runtime::IBusArbiter& bus,
                              IMapTileEventSink& events,
                              uint8_t* scratch,
-                             std::size_t scratch_size)
-    : backend_(backend), bus_(bus), events_(events), scratch_(scratch), scratch_size_(scratch_size)
+                             std::size_t scratch_size,
+                             sys::runtime::RuntimePolicyStrategy* policy)
+    : backend_(backend),
+      bus_(bus),
+      events_(events),
+      policy_(policy ? policy : &default_policy_),
+      scratch_(scratch),
+      scratch_size_(scratch_size)
 {
 }
 
 bool MapTileWorker::execute(const LoadTileCommand& command, uint32_t now_ms)
 {
     sys::runtime::BusAcquireRequest request{};
-    request.policy = busPolicyFor(command.runtime.priority);
+    request.policy = policy_->selectBusPolicy(command.runtime);
     request.command_id = command.runtime.command_id;
     request.deadline_ms = command.runtime.deadline_ms;
 
@@ -144,13 +173,6 @@ bool MapTileWorker::execute(const LoadTileCommand& command, uint32_t now_ms)
     (void)events_.publish(event);
     (void)now_ms;
     return ok;
-}
-
-sys::runtime::BusAccessPolicy MapTileWorker::busPolicyFor(sys::runtime::RuntimePriority priority)
-{
-    return priority == sys::runtime::RuntimePriority::Interactive
-               ? sys::runtime::BusAccessPolicy::InteractiveWorkerBounded
-               : sys::runtime::BusAccessPolicy::BackgroundWorkerBounded;
 }
 
 } // namespace map_tiles

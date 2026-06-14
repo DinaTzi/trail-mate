@@ -46,6 +46,15 @@ enum class RuntimeEventKind : uint8_t
     FeedbackDropped,
 };
 
+enum class RuntimeStatus : uint8_t
+{
+    Idle,
+    Queued,
+    Running,
+    Degraded,
+    Failed,
+};
+
 enum class RuntimePriority : uint8_t
 {
     Realtime = 0,
@@ -61,6 +70,18 @@ enum class RuntimeCancelPolicy : uint8_t
     CancelByGeneration,
     CancelByDedupeKey,
     DropIfStale,
+};
+
+struct RuntimeIntent
+{
+    RuntimeCommandKind kind = RuntimeCommandKind::Unknown;
+    uint32_t origin = 0;
+    uint32_t generation = 0;
+    uint32_t dedupe_key = 0;
+    uint32_t deadline_ms = 0;
+    uint32_t submitted_at_ms = 0;
+    RuntimeCancelPolicy cancel_policy = RuntimeCancelPolicy::None;
+    RuntimePriority priority_hint = RuntimePriority::Normal;
 };
 
 enum class BusAccessPolicy : uint8_t
@@ -112,6 +133,15 @@ struct RuntimeEvent
     int32_t error = 0;
 };
 
+struct RuntimeState
+{
+    RuntimeStatus status = RuntimeStatus::Idle;
+    RuntimeCommandKind active_kind = RuntimeCommandKind::Unknown;
+    uint32_t active_command_id = 0;
+    uint32_t last_event_id = 0;
+    int32_t last_error = 0;
+};
+
 struct BusAcquireRequest
 {
     uint32_t resource = 0;
@@ -153,6 +183,83 @@ struct StorageHealthState
     uint32_t last_transition_ms = 0;
 };
 
+struct RuntimeRetryDecision
+{
+    bool retry = false;
+    uint32_t delay_ms = 0;
+};
+
+struct PlatformStorageReadRequest
+{
+    uint32_t command_id = 0;
+    const char* path = nullptr;
+    uint8_t* buffer = nullptr;
+    std::size_t capacity = 0;
+};
+
+struct PlatformStorageWriteRequest
+{
+    uint32_t command_id = 0;
+    const char* path = nullptr;
+    const uint8_t* data = nullptr;
+    std::size_t len = 0;
+    bool durable = false;
+};
+
+struct PlatformStorageListRequest
+{
+    uint32_t command_id = 0;
+    const char* path = nullptr;
+};
+
+struct PlatformStorageFlushRequest
+{
+    uint32_t command_id = 0;
+    uint32_t handle = 0;
+};
+
+struct PlatformStorageResult
+{
+    bool ok = false;
+    std::size_t bytes = 0;
+    int32_t error = 0;
+};
+
+struct RuntimeUiEffect
+{
+    RuntimeEventKind kind = RuntimeEventKind::Unknown;
+    uint32_t event_id = 0;
+    uint32_t command_id = 0;
+    int32_t error = 0;
+};
+
+class ICommandQueue
+{
+  public:
+    virtual ~ICommandQueue() = default;
+
+    virtual bool enqueue(const RuntimeCommand& command) = 0;
+    virtual std::size_t cancel(uint32_t dedupe_key) = 0;
+    virtual bool popReady(uint32_t now_ms, RuntimeCommand& out) = 0;
+};
+
+class IEventSink
+{
+  public:
+    virtual ~IEventSink() = default;
+
+    virtual bool publish(const RuntimeEvent& event) = 0;
+};
+
+class IActiveWorker
+{
+  public:
+    virtual ~IActiveWorker() = default;
+
+    virtual void tick(uint32_t now_ms) = 0;
+    virtual bool submit(const RuntimeCommand& command) = 0;
+};
+
 class IBusArbiter
 {
   public:
@@ -163,6 +270,25 @@ class IBusArbiter
     virtual StorageHealthState health() const = 0;
 };
 
+class IPlatformStorageAdapter
+{
+  public:
+    virtual ~IPlatformStorageAdapter() = default;
+
+    virtual PlatformStorageResult read(const PlatformStorageReadRequest& request) = 0;
+    virtual PlatformStorageResult write(const PlatformStorageWriteRequest& request) = 0;
+    virtual PlatformStorageResult list(const PlatformStorageListRequest& request) = 0;
+    virtual PlatformStorageResult flush(const PlatformStorageFlushRequest& request) = 0;
+};
+
+class IUiEffectSink
+{
+  public:
+    virtual ~IUiEffectSink() = default;
+
+    virtual bool apply(const RuntimeUiEffect& effect) = 0;
+};
+
 class IUiOwnerGuard
 {
   public:
@@ -170,6 +296,190 @@ class IUiOwnerGuard
 
     virtual bool isUiOwner() const = 0;
     virtual void recordForbiddenBlockingCall(RuntimeCommandKind kind) = 0;
+};
+
+class RuntimePolicyStrategy
+{
+  public:
+    virtual ~RuntimePolicyStrategy() = default;
+
+    virtual RuntimePriority selectPriority(const RuntimeIntent& intent) const = 0;
+    virtual BusAccessPolicy selectBusPolicy(const RuntimeCommand& command) const = 0;
+    virtual RuntimeRetryDecision selectRetry(const RuntimeCommand& command,
+                                             const PlatformStorageResult& result) const = 0;
+};
+
+class DefaultRuntimePolicyStrategy : public RuntimePolicyStrategy
+{
+  public:
+    RuntimePriority selectPriority(const RuntimeIntent& intent) const override
+    {
+        return intent.priority_hint;
+    }
+
+    BusAccessPolicy selectBusPolicy(const RuntimeCommand& command) const override
+    {
+        if (command.priority == RuntimePriority::Realtime ||
+            command.priority == RuntimePriority::Interactive)
+        {
+            return BusAccessPolicy::InteractiveWorkerBounded;
+        }
+        if (command.priority == RuntimePriority::Idle ||
+            command.priority == RuntimePriority::Background)
+        {
+            return BusAccessPolicy::BackgroundWorkerBounded;
+        }
+        return BusAccessPolicy::BackgroundWorkerBounded;
+    }
+
+    RuntimeRetryDecision selectRetry(const RuntimeCommand& command,
+                                     const PlatformStorageResult& result) const override
+    {
+        RuntimeRetryDecision decision{};
+        if (!result.ok && command.cancel_policy != RuntimeCancelPolicy::DropIfStale)
+        {
+            decision.retry = true;
+            decision.delay_ms = 250;
+        }
+        return decision;
+    }
+};
+
+class RuntimeFacade
+{
+  public:
+    RuntimeFacade(ICommandQueue& commands,
+                  IActiveWorker& worker,
+                  IEventSink& events,
+                  RuntimeState& state,
+                  RuntimePolicyStrategy& policy)
+        : commands_(commands), worker_(worker), events_(events), state_(state), policy_(policy)
+    {
+    }
+
+    bool submit(const RuntimeIntent& intent)
+    {
+        RuntimeCommand command{};
+        command.command_id = next_command_id_++;
+        command.kind = intent.kind;
+        command.priority = policy_.selectPriority(intent);
+        command.cancel_policy = intent.cancel_policy;
+        command.created_at_ms = intent.submitted_at_ms;
+        command.deadline_ms = intent.deadline_ms;
+        command.generation = intent.generation;
+        command.dedupe_key = intent.dedupe_key;
+        command.origin = intent.origin;
+
+        if (command.cancel_policy == RuntimeCancelPolicy::CancelByDedupeKey &&
+            command.dedupe_key != 0)
+        {
+            (void)commands_.cancel(command.dedupe_key);
+        }
+
+        const bool queued = commands_.enqueue(command);
+        RuntimeEvent event{};
+        event.event_id = next_event_id_++;
+        event.kind = queued ? RuntimeEventKind::CommandQueued : RuntimeEventKind::CommandFailed;
+        event.command_id = command.command_id;
+        event.timestamp_ms = intent.submitted_at_ms;
+        event.generation = command.generation;
+        event.error = queued ? 0 : -1;
+        (void)publishEvent(event);
+        state_.status = queued ? RuntimeStatus::Queued : RuntimeStatus::Failed;
+        state_.active_kind = intent.kind;
+        state_.active_command_id = command.command_id;
+        state_.last_event_id = event.event_id;
+        state_.last_error = event.error;
+        return queued;
+    }
+
+    void tick(uint32_t now_ms)
+    {
+        RuntimeCommand command{};
+        while (commands_.popReady(now_ms, command))
+        {
+            state_.status = RuntimeStatus::Running;
+            state_.active_kind = command.kind;
+            state_.active_command_id = command.command_id;
+
+            RuntimeEvent started{};
+            started.event_id = next_event_id_++;
+            started.kind = RuntimeEventKind::CommandStarted;
+            started.command_id = command.command_id;
+            started.timestamp_ms = now_ms;
+            started.generation = command.generation;
+            (void)publishEvent(started);
+            state_.last_event_id = started.event_id;
+
+            if (!worker_.submit(command))
+            {
+                RuntimeEvent failed{};
+                failed.event_id = next_event_id_++;
+                failed.kind = RuntimeEventKind::CommandFailed;
+                failed.command_id = command.command_id;
+                failed.timestamp_ms = now_ms;
+                failed.generation = command.generation;
+                failed.error = -1;
+                (void)publishEvent(failed);
+                state_.status = RuntimeStatus::Failed;
+                state_.last_event_id = failed.event_id;
+                state_.last_error = failed.error;
+            }
+        }
+        worker_.tick(now_ms);
+    }
+
+    std::size_t drainEvents()
+    {
+        const std::size_t drained = pending_event_count_;
+        pending_event_count_ = 0;
+        return drained;
+    }
+
+  private:
+    bool publishEvent(const RuntimeEvent& event)
+    {
+        const bool ok = events_.publish(event);
+        if (ok)
+        {
+            ++pending_event_count_;
+        }
+        return ok;
+    }
+
+    ICommandQueue& commands_;
+    IActiveWorker& worker_;
+    IEventSink& events_;
+    RuntimeState& state_;
+    RuntimePolicyStrategy& policy_;
+    uint32_t next_command_id_ = 1;
+    uint32_t next_event_id_ = 1;
+    std::size_t pending_event_count_ = 0;
+};
+
+class RuntimeEventUiEffectBridge : public IEventSink
+{
+  public:
+    RuntimeEventUiEffectBridge(IEventSink& events, IUiEffectSink& effects)
+        : events_(events), effects_(effects)
+    {
+    }
+
+    bool publish(const RuntimeEvent& event) override
+    {
+        const bool published = events_.publish(event);
+        RuntimeUiEffect effect{};
+        effect.kind = event.kind;
+        effect.event_id = event.event_id;
+        effect.command_id = event.command_id;
+        effect.error = event.error;
+        (void)effects_.apply(effect);
+        return published;
+    }
+
+  private:
+    IEventSink& events_;
+    IUiEffectSink& effects_;
 };
 
 template <typename T, std::size_t N>
@@ -255,10 +565,10 @@ class FixedRuntimeQueue
 };
 
 template <std::size_t N>
-class FixedCommandQueue
+class FixedCommandQueue : public ICommandQueue
 {
   public:
-    bool enqueue(const RuntimeCommand& command)
+    bool enqueue(const RuntimeCommand& command) override
     {
         return queue_.enqueue(command);
     }
@@ -343,6 +653,11 @@ class FixedCommandQueue
         return true;
     }
 
+    bool popReady(uint32_t now_ms, RuntimeCommand& out) override
+    {
+        return popNext(now_ms, out);
+    }
+
     std::size_t cancelGeneration(uint32_t generation)
     {
         return removeMatching(generation, 0, true);
@@ -351,6 +666,11 @@ class FixedCommandQueue
     std::size_t cancelDedupeKey(uint32_t dedupe_key)
     {
         return removeMatching(0, dedupe_key, false);
+    }
+
+    std::size_t cancel(uint32_t dedupe_key) override
+    {
+        return cancelDedupeKey(dedupe_key);
     }
 
     std::size_t size() const
@@ -403,6 +723,29 @@ class FixedCommandQueue
 
 template <std::size_t N>
 using FixedEventQueue = FixedRuntimeQueue<RuntimeEvent, N>;
+
+template <std::size_t N>
+class FixedEventSink : public IEventSink
+{
+  public:
+    bool publish(const RuntimeEvent& event) override
+    {
+        return queue_.enqueue(event);
+    }
+
+    bool pop(RuntimeEvent& out)
+    {
+        return queue_.pop(out);
+    }
+
+    std::size_t size() const
+    {
+        return queue_.size();
+    }
+
+  private:
+    FixedEventQueue<N> queue_{};
+};
 
 } // namespace runtime
 } // namespace sys
