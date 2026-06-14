@@ -5521,7 +5521,13 @@ void Runtime::sendComposeMessage()
         return;
     }
 
-    app()->getChatService().sendText(active_conversation_.channel, compose_buffer_, active_conversation_.peer);
+    const chat::MessageId msg_id =
+        app()->getChatService().sendText(active_conversation_.channel,
+                                         compose_buffer_,
+                                         active_conversation_.peer);
+    showTransientPopup("MESSAGE",
+                       msg_id != 0 ? "SENT" : "SEND FAILED",
+                       msg_id != 0 ? 1500U : 2000U);
     finishTextEdit(false);
     enterPage(Page::Conversation);
 }

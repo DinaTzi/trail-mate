@@ -16,6 +16,7 @@
 #include "ui/assets/fonts/font_utils.h"
 #include "ui/localization.h"
 #include "ui/screens/chat/chat_protocol_support.h"
+#include "ui/screens/chat/chat_send_flow.h"
 #include "ui/screens/chat/chat_team_workflow.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/ime/ime_widget.h"
@@ -190,6 +191,40 @@ const char* key_verification_action_failure_message(::ui::UiActionResult result)
         return "Key verification unavailable";
     }
     return "Key verification failed";
+}
+
+const char* local_text_send_failure_message(::ui::UiActionResult result)
+{
+    switch (result.failure)
+    {
+    case ::ui::UiActionFailure::ChannelKeyMissing:
+        return "Channel key missing";
+    case ::ui::UiActionFailure::PeerKeyMissing:
+        return "Peer key missing";
+    case ::ui::UiActionFailure::TxDisabled:
+        return "TX disabled";
+    case ::ui::UiActionFailure::RadioOffline:
+        return "Radio offline";
+    case ::ui::UiActionFailure::DutyCycleLimited:
+        return "TX rate limited";
+    case ::ui::UiActionFailure::RadioTxFailed:
+        return "Radio TX failed";
+    case ::ui::UiActionFailure::LocalIdentityMissing:
+        return "Identity missing";
+    case ::ui::UiActionFailure::Busy:
+        return "Radio busy";
+    case ::ui::UiActionFailure::Unsupported:
+        return "Conversation unsupported";
+    case ::ui::UiActionFailure::InvalidInput:
+        return "Message unavailable";
+    case ::ui::UiActionFailure::NotReady:
+        return "Radio not ready";
+    case ::ui::UiActionFailure::Rejected:
+    case ::ui::UiActionFailure::StorageError:
+    case ::ui::UiActionFailure::None:
+    default:
+        return "Send failed";
+    }
 }
 
 const char* delivery_retry_failure_message(
@@ -776,12 +811,9 @@ void UiController::handleSendMessage(const std::string& text)
     {
         const ::ui::UiActionResult result =
             team_workflow_.sendText(text.c_str());
-        if (!result.ok)
-        {
-            ::ui::SystemNotification::show(
-                team_workflow_.textSendFailureMessage(result),
-                2000);
-        }
+        ::ui::SystemNotification::show(
+            result.ok ? "Sent" : team_workflow_.textSendFailureMessage(result),
+            result.ok ? 1400 : 2000);
         handleComposeSendDone(result.ok, false);
         return;
     }
@@ -790,52 +822,27 @@ void UiController::handleSendMessage(const std::string& text)
         ::ui::SystemNotification::show(chat_support::local_text_chat_unavailable_message(), 2200);
         return;
     }
-    const ::ui::UiActionResult result = chat_model_.sendMessage(text.c_str());
-    if (!result.ok)
+
+    if (state_ == State::Compose && compose_)
     {
-        const char* message = "Send failed";
-        if (result.failure == ::ui::UiActionFailure::ChannelKeyMissing)
+        if (chat::ui::send_flow::begin_local_text_send(compose_.get(),
+                                                       &service_,
+                                                       current_conv_,
+                                                       text,
+                                                       handleComposeSendDoneCallback,
+                                                       this))
         {
-            message = "Channel key missing";
+            return;
         }
-        else if (result.failure == ::ui::UiActionFailure::PeerKeyMissing)
-        {
-            message = "Peer key missing";
-        }
-        else if (result.failure == ::ui::UiActionFailure::TxDisabled)
-        {
-            message = "TX disabled";
-        }
-        else if (result.failure == ::ui::UiActionFailure::RadioOffline)
-        {
-            message = "Radio offline";
-        }
-        else if (result.failure == ::ui::UiActionFailure::DutyCycleLimited)
-        {
-            message = "TX rate limited";
-        }
-        else if (result.failure == ::ui::UiActionFailure::RadioTxFailed)
-        {
-            message = "Radio TX failed";
-        }
-        else if (result.failure == ::ui::UiActionFailure::LocalIdentityMissing)
-        {
-            message = "Identity missing";
-        }
-        else if (result.failure == ::ui::UiActionFailure::Busy)
-        {
-            message = "Radio busy";
-        }
-        else if (result.failure == ::ui::UiActionFailure::Unsupported)
-        {
-            message = "Conversation unsupported";
-        }
-        else if (result.failure == ::ui::UiActionFailure::InvalidInput)
-        {
-            message = "Message unavailable";
-        }
-        ::ui::SystemNotification::show(message, 2000);
+
+        ::ui::SystemNotification::show("Send failed", 2000);
+        handleComposeSendDone(false, false);
+        return;
     }
+
+    const ::ui::UiActionResult result = chat_model_.sendMessage(text.c_str());
+    ::ui::SystemNotification::show(result.ok ? "Sent" : local_text_send_failure_message(result),
+                                  result.ok ? 1400 : 2000);
     handleComposeSendDone(result.ok, false);
 }
 
@@ -1417,13 +1424,10 @@ void UiController::handleComposeAction(ChatComposeScreen::ActionIntent intent)
         }
         const ::ui::UiActionResult result =
             team_workflow_.sendText(text.c_str());
-        if (!result.ok)
-        {
-            ::ui::SystemNotification::show(
-                team_workflow_.textSendFailureMessage(result),
-                2000);
-        }
-        switchToConversation(current_conv_);
+        ::ui::SystemNotification::show(
+            result.ok ? "Sent" : team_workflow_.textSendFailureMessage(result),
+            result.ok ? 1400 : 2000);
+        handleComposeSendDone(result.ok, false);
         return;
     }
 

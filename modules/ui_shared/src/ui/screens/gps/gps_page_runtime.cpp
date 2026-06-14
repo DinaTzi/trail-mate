@@ -68,10 +68,6 @@ void hide_toast()
 namespace
 {
 
-constexpr lv_coord_t kCompactTopBarHeight = 26;
-constexpr lv_coord_t kCompactTopBarBackWidth = 34;
-constexpr lv_coord_t kCompactTopBarBackHeight = 18;
-constexpr lv_coord_t kCompactTopBarRightWidth = 56;
 constexpr int kCardputerZeroMapDefaultZoom = gps_ui::kDefaultZoom;
 constexpr lv_coord_t kMapControlBarHeight = 24;
 constexpr lv_coord_t kMapControlButtonHeight = 20;
@@ -156,7 +152,6 @@ uint32_t s_member_list_hash = 0;
 uint32_t s_selected_member_id = kInvalidMemberId;
 uint32_t s_member_panel_last_ms = 0;
 
-void apply_compact_top_bar_style(::ui::widgets::TopBar& bar);
 void refresh_view();
 void root_key_event_cb(lv_event_t* e);
 void open_map_help_modal();
@@ -860,7 +855,6 @@ void refresh_gps_status_view()
     }
 
     ui_update_top_bar_battery(s_top_bar);
-    apply_compact_top_bar_style(s_top_bar);
 
     const auto snapshot = gps_status_model().snapshot();
     if (!snapshot.header.valid)
@@ -905,43 +899,6 @@ void refresh_gps_status_view()
     set_compact_label(s_gps_motion_label, line);
     set_compact_label(s_gps_time_label, snapshot.time_label.c_str());
     set_compact_label(s_gps_diag_label, diagnostic_label());
-}
-
-void apply_compact_top_bar_style(::ui::widgets::TopBar& bar)
-{
-    if (!bar.container || !lv_obj_is_valid(bar.container))
-    {
-        return;
-    }
-
-    lv_obj_set_height(bar.container, kCompactTopBarHeight);
-    lv_obj_set_style_pad_left(bar.container, 8, 0);
-    lv_obj_set_style_pad_right(bar.container, 8, 0);
-    lv_obj_set_style_pad_top(bar.container, 2, 0);
-    lv_obj_set_style_pad_bottom(bar.container, 2, 0);
-    lv_obj_set_style_pad_column(bar.container, 4, 0);
-
-    if (bar.back_btn && lv_obj_is_valid(bar.back_btn))
-    {
-        lv_obj_set_size(bar.back_btn, kCompactTopBarBackWidth, kCompactTopBarBackHeight);
-        lv_obj_set_style_radius(bar.back_btn, kCompactTopBarBackHeight / 2, LV_PART_MAIN);
-        lv_obj_set_style_text_font(bar.back_btn, &lv_font_montserrat_12, 0);
-        lv_obj_t* back_label = lv_obj_get_child(bar.back_btn, 0);
-        if (back_label && lv_obj_is_valid(back_label))
-        {
-            lv_obj_set_style_text_font(back_label, &lv_font_montserrat_12, 0);
-        }
-    }
-
-    if (bar.title_label && lv_obj_is_valid(bar.title_label))
-    {
-        lv_obj_set_style_text_font(bar.title_label, &lv_font_montserrat_12, 0);
-    }
-    if (bar.right_label && lv_obj_is_valid(bar.right_label))
-    {
-        lv_obj_set_width(bar.right_label, kCompactTopBarRightWidth);
-        lv_obj_set_style_text_font(bar.right_label, &lv_font_montserrat_12, 0);
-    }
 }
 
 std::string trim_copy(std::string value)
@@ -1291,7 +1248,6 @@ void refresh_view()
     }
 
     ui_update_top_bar_battery(s_top_bar);
-    apply_compact_top_bar_style(s_top_bar);
 
     sync_workspace_layers_from_renderer();
     auto snapshot = map_workspace_model().snapshot();
@@ -2404,7 +2360,7 @@ void enter(const shell::Host* host, lv_obj_t* parent, shell::Projection projecti
     lv_obj_add_event_cb(s_root, root_key_event_cb, LV_EVENT_KEY, nullptr);
 
     ::ui::widgets::TopBarConfig top_bar_config{};
-    top_bar_config.height = kCompactTopBarHeight;
+    top_bar_config.height = ::ui::page_profile::current().top_bar_height;
     ::ui::widgets::top_bar_init(s_top_bar, s_root, top_bar_config);
     ::ui::widgets::top_bar_set_title(
         s_top_bar,
@@ -2415,7 +2371,6 @@ void enter(const shell::Host* host, lv_obj_t* parent, shell::Projection projecti
         lv_obj_add_event_cb(s_top_bar.back_btn, root_key_event_cb, LV_EVENT_KEY, nullptr);
     }
     ui_update_top_bar_battery(s_top_bar);
-    apply_compact_top_bar_style(s_top_bar);
 
     if (app_g && s_top_bar.back_btn)
     {
