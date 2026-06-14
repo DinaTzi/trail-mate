@@ -162,6 +162,16 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_meshcore_runtime_smoke
              COMMAND trailmate_meshcore_runtime_smoke)
 
+    add_executable(trailmate_mesh_protocol_facade_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/tests/test_mesh_protocol_facade.cpp")
+    target_include_directories(trailmate_mesh_protocol_facade_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/include")
+    target_compile_features(trailmate_mesh_protocol_facade_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_mesh_protocol_facade_smoke
+             COMMAND trailmate_mesh_protocol_facade_smoke)
+
     add_executable(trailmate_meshtastic_runtime_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/tests/test_meshtastic_runtime.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_chat/src/runtime/meshtastic_position_core.cpp"
