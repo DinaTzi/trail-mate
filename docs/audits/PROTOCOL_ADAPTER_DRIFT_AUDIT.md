@@ -165,6 +165,9 @@ Current state:
 - Linux uConsole POI sharing now enters `ShareWaypointIntent -> MeshtasticRuntime ->
   SendPacketEffect`, so the workspace model no longer encodes `meshtastic_Waypoint` or references
   `WAYPOINT_APP` directly.
+- nRF mono UI and Linux uConsole execute `SendPacketEffect` through shared
+  `MeshAdapterProtocolEffectExecutor`; UI/workspace code no longer reads `SendPacketEffect::portnum`
+  directly.
 - Platform adapters still own `sendPositionTo(...)`, radio/channel mechanics, and whether a local
   platform GPS source has produced a candidate reading.
 

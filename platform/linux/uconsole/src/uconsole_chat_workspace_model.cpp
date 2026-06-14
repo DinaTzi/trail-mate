@@ -13,6 +13,7 @@
 #include "app/linux_app_services.h"
 #include "chat/domain/contact_types.h"
 #include "chat/ports/i_mesh_adapter.h"
+#include "chat/runtime/mesh_adapter_protocol_effect_executor.h"
 #include "chat/runtime/meshtastic_runtime.h"
 #include "chat/usecase/chat_service.h"
 #include "chat/usecase/contact_service.h"
@@ -106,35 +107,6 @@ namespace
 {
     const std::string name = contactDisplayName(contacts, node_id);
     return name.empty() ? formatNodeLabel(node_id) : name;
-}
-
-[[nodiscard]] const ::chat::runtime::SendPacketEffect* firstSendPacketEffect(
-    const ::chat::runtime::ProtocolEffects& effects)
-{
-    for (const auto& effect : effects.items)
-    {
-        if (const auto* packet =
-                std::get_if<::chat::runtime::SendPacketEffect>(&effect))
-        {
-            return packet;
-        }
-    }
-    return nullptr;
-}
-
-bool executeSendPacketEffect(::chat::IMeshAdapter& adapter,
-                             const ::chat::runtime::SendPacketEffect& packet)
-{
-    const std::uint8_t* payload =
-        packet.payload.empty() ? nullptr : packet.payload.data();
-    return adapter.sendAppData(packet.channel,
-                               packet.portnum,
-                               payload,
-                               packet.payload.size(),
-                               packet.dest,
-                               packet.want_ack,
-                               packet.request_id,
-                               packet.want_response);
 }
 
 [[nodiscard]] std::string formatChannel(::chat::ChannelId channel)
@@ -1369,13 +1341,16 @@ bool UConsoleChatWorkspaceModel::sendCurrentPosition()
     context.self_node = adapter->getNodeId();
 
     const auto effects = runtime.prepareOutgoing(intent, context);
-    const auto* packet = firstSendPacketEffect(effects);
-    if (packet == nullptr)
+    const auto result =
+        ::chat::runtime::MeshAdapterProtocolEffectExecutor::executeFirstSendPacket(
+            *adapter,
+            effects);
+    if (result.state == ::chat::runtime::ProtocolEffectExecutionState::NoSupportedEffect)
     {
         action_status_ = "Position encoding failed.";
         return false;
     }
-    if (!executeSendPacketEffect(*adapter, *packet))
+    if (!result.sent())
     {
         action_status_ = "Position failed to queue.";
         return false;
@@ -1423,13 +1398,16 @@ bool UConsoleChatWorkspaceModel::sendCurrentPoi()
     context.self_node = adapter->getNodeId();
 
     const auto effects = runtime.prepareOutgoing(intent, context);
-    const auto* packet = firstSendPacketEffect(effects);
-    if (packet == nullptr)
+    const auto result =
+        ::chat::runtime::MeshAdapterProtocolEffectExecutor::executeFirstSendPacket(
+            *adapter,
+            effects);
+    if (result.state == ::chat::runtime::ProtocolEffectExecutionState::NoSupportedEffect)
     {
         action_status_ = "POI encoding failed.";
         return false;
     }
-    if (!executeSendPacketEffect(*adapter, *packet))
+    if (!result.sent())
     {
         action_status_ = "POI failed to queue.";
         return false;

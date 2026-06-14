@@ -1,7 +1,9 @@
+#include "chat/runtime/mesh_adapter_protocol_effect_executor.h"
 #include "chat/runtime/meshtastic_runtime.h"
 #include "chat/runtime/protocol_runtime.h"
 
 #include <cassert>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -29,6 +31,76 @@ class RecordingProtocolExecutor final : public chat::runtime::IProtocolEffectExe
 
     bool next_result = true;
     std::vector<chat::runtime::ProtocolEffect> effects{};
+};
+
+class FakeMeshAdapter final : public chat::IMeshAdapter
+{
+  public:
+    bool sendText(chat::ChannelId,
+                  const std::string&,
+                  chat::MessageId* out_msg_id,
+                  chat::NodeId = 0) override
+    {
+        if (out_msg_id)
+        {
+            *out_msg_id = 1;
+        }
+        return true;
+    }
+
+    bool pollIncomingText(chat::MeshIncomingText*) override
+    {
+        return false;
+    }
+
+    bool sendAppData(chat::ChannelId channel,
+                     uint32_t portnum,
+                     const uint8_t* payload,
+                     size_t len,
+                     chat::NodeId dest = 0,
+                     bool want_ack = false,
+                     chat::MessageId packet_id = 0,
+                     bool want_response = false) override
+    {
+        last_channel = channel;
+        last_portnum = portnum;
+        last_dest = dest;
+        last_want_ack = want_ack;
+        last_packet_id = packet_id;
+        last_want_response = want_response;
+        last_payload.clear();
+        if (payload != nullptr && len > 0)
+        {
+            last_payload.assign(payload, payload + len);
+        }
+        return next_send_result;
+    }
+
+    bool pollIncomingData(chat::MeshIncomingData*) override
+    {
+        return false;
+    }
+
+    void applyConfig(const chat::MeshConfig&) override {}
+
+    bool isReady() const override
+    {
+        return true;
+    }
+
+    bool pollIncomingRawPacket(uint8_t*, size_t&, size_t) override
+    {
+        return false;
+    }
+
+    bool next_send_result = true;
+    chat::ChannelId last_channel = chat::ChannelId::PRIMARY;
+    uint32_t last_portnum = 0;
+    chat::NodeId last_dest = 0;
+    bool last_want_ack = false;
+    chat::MessageId last_packet_id = 0;
+    bool last_want_response = false;
+    std::vector<uint8_t> last_payload{};
 };
 
 bool executeAll(chat::runtime::IProtocolEffectExecutor& executor,
@@ -124,6 +196,68 @@ int main()
         assert(!executeAll(executor, effects));
         assert(executor.effects.size() == 1);
         assert(executor.effectAt<chat::runtime::SendSelfAnnouncementEffect>(0));
+    }
+
+    {
+        chat::runtime::SendPacketEffect packet{};
+        packet.channel = chat::ChannelId::SECONDARY;
+        packet.portnum = 0x1234U;
+        packet.dest = 0x11223344UL;
+        packet.want_ack = true;
+        packet.request_id = 0xAABBCCDDUL;
+        packet.want_response = true;
+        packet.payload.assign({1, 2, 3, 4});
+
+        chat::runtime::ProtocolEffects effects{};
+        effects.add(packet);
+
+        FakeMeshAdapter adapter{};
+        const auto result =
+            chat::runtime::MeshAdapterProtocolEffectExecutor::executeFirstSendPacket(
+                adapter,
+                effects);
+        assert(result.state == chat::runtime::ProtocolEffectExecutionState::Sent);
+        assert(result.request_id == packet.request_id);
+        assert(adapter.last_channel == packet.channel);
+        assert(adapter.last_portnum == packet.portnum);
+        assert(adapter.last_dest == packet.dest);
+        assert(adapter.last_want_ack == packet.want_ack);
+        assert(adapter.last_packet_id == packet.request_id);
+        assert(adapter.last_want_response == packet.want_response);
+        assert(adapter.last_payload == packet.payload);
+    }
+
+    {
+        FakeMeshAdapter adapter{};
+        adapter.next_send_result = false;
+
+        chat::runtime::SendPacketEffect packet{};
+        packet.request_id = 0x1010UL;
+
+        chat::runtime::ProtocolEffects effects{};
+        effects.add(packet);
+
+        const auto result =
+            chat::runtime::MeshAdapterProtocolEffectExecutor::executeFirstSendPacket(
+                adapter,
+                effects);
+        assert(result.state == chat::runtime::ProtocolEffectExecutionState::Failed);
+        assert(result.request_id == packet.request_id);
+    }
+
+    {
+        chat::runtime::ProtocolEffects effects{};
+        chat::runtime::EmitActionResultEffect failed{};
+        effects.add(failed);
+
+        FakeMeshAdapter adapter{};
+        const auto result =
+            chat::runtime::MeshAdapterProtocolEffectExecutor::executeFirstSendPacket(
+                adapter,
+                effects);
+        assert(result.state ==
+               chat::runtime::ProtocolEffectExecutionState::NoSupportedEffect);
+        assert(result.request_id == 0);
     }
 
     return 0;

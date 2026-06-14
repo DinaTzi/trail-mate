@@ -329,13 +329,15 @@ Current C++17 migration state:
   then emits `SendPacketEffect`.
 - Meshtastic direct position sharing can enter the runtime as `SharePositionIntent`; the runtime delegates
   payload construction to `MeshtasticPositionCore`, selects `POSITION_APP`, and emits `SendPacketEffect`.
-- nRF mono UI executes those `SendPacketEffect`s through its platform mesh adapter and keeps UI-only lifecycle
-  projection in `MeshtasticAppActionRuntime`; it no longer constructs `TRACEROUTE_APP` /
+- nRF mono UI executes those `SendPacketEffect`s through `MeshAdapterProtocolEffectExecutor` and keeps UI-only
+  lifecycle projection in `MeshtasticAppActionRuntime`; it no longer constructs `TRACEROUTE_APP` /
   `POSITION_APP` packets directly.
 - Linux uConsole chat position sharing also uses `SharePositionIntent` and no longer constructs
   Meshtastic Position protobuf or portnum directly.
 - Linux uConsole POI sharing uses `ShareWaypointIntent`; the runtime delegates payload construction to
   `MeshtasticWaypointCore`, selects `WAYPOINT_APP`, and emits `SendPacketEffect`.
+- Linux uConsole also executes runtime packet effects through `MeshAdapterProtocolEffectExecutor`, so the
+  workspace model no longer reads protocol portnum fields directly.
 - Platform adapters still own physical radio send, local GPS source selection, BLE projection, queueing, and
   adapter-side incoming packet execution until those can be represented as runtime effects/state.
 

@@ -6,6 +6,7 @@
 #include "chat/infra/meshcore/mc_region_presets.h"
 #include "chat/infra/meshtastic/mt_protocol_helpers.h"
 #include "chat/infra/meshtastic/mt_region.h"
+#include "chat/runtime/mesh_adapter_protocol_effect_executor.h"
 #include "chat/runtime/meshtastic_runtime.h"
 #include "chat/runtime/self_identity_policy.h"
 #include "chat/usecase/chat_service.h"
@@ -173,33 +174,6 @@ constexpr uint32_t kScreenTimeoutOptionsMs[] = {15000UL, 30000UL, 60000UL, kScre
 uint16_t normalizedMeshtasticChannelNum(uint16_t channel_num)
 {
     return std::min<uint16_t>(channel_num, kMeshtasticChannelNumMax);
-}
-
-const chat::runtime::SendPacketEffect* firstSendPacketEffect(
-    const chat::runtime::ProtocolEffects& effects)
-{
-    for (const auto& effect : effects.items)
-    {
-        if (const auto* packet = std::get_if<chat::runtime::SendPacketEffect>(&effect))
-        {
-            return packet;
-        }
-    }
-    return nullptr;
-}
-
-bool executeSendPacketEffect(chat::IMeshAdapter& mesh,
-                             const chat::runtime::SendPacketEffect& packet)
-{
-    const uint8_t* payload = packet.payload.empty() ? nullptr : packet.payload.data();
-    return mesh.sendAppData(packet.channel,
-                            packet.portnum,
-                            payload,
-                            packet.payload.size(),
-                            packet.dest,
-                            packet.want_ack,
-                            packet.request_id,
-                            packet.want_response);
 }
 
 void sanitizeMeshtasticChannelNum(app::AppConfig& cfg)
@@ -7426,9 +7400,13 @@ void Runtime::executeNodeAction()
         intent.request_id = nextMeshtasticActionRequestId(node->node_id);
 
         const auto effects = protocol_runtime.prepareOutgoing(intent, context);
-        const auto* packet = firstSendPacketEffect(effects);
-        const chat::MessageId request_id = packet ? packet->request_id : intent.request_id;
-        const bool ok = packet && executeSendPacketEffect(*mesh, *packet);
+        const auto result =
+            chat::runtime::MeshAdapterProtocolEffectExecutor::executeFirstSendPacket(
+                *mesh,
+                effects);
+        const chat::MessageId request_id =
+            result.request_id != 0 ? result.request_id : intent.request_id;
+        const bool ok = result.sent();
         if (ok)
         {
             meshtastic_action_runtime_.startTraceRoute(request_id, node->node_id, nowMs());
@@ -7492,9 +7470,13 @@ void Runtime::requestNodePositionExchange()
     intent.request_id = nextMeshtasticActionRequestId(node->node_id);
 
     const auto effects = protocol_runtime.prepareOutgoing(intent, context);
-    const auto* packet = firstSendPacketEffect(effects);
-    const chat::MessageId request_id = packet ? packet->request_id : intent.request_id;
-    const bool ok = packet && executeSendPacketEffect(*mesh, *packet);
+    const auto result =
+        chat::runtime::MeshAdapterProtocolEffectExecutor::executeFirstSendPacket(
+            *mesh,
+            effects);
+    const chat::MessageId request_id =
+        result.request_id != 0 ? result.request_id : intent.request_id;
+    const bool ok = result.sent();
     if (ok)
     {
         meshtastic_action_runtime_.startPositionExchange(request_id, node->node_id, nowMs());
