@@ -56,6 +56,31 @@ MeshSendResult ChatService::sendTextDetailed(ChannelId channel, const std::strin
     return sendTextWithIdDetailed(channel, text, 0, peer);
 }
 
+bool ChatService::canSendToConversation(const ConversationId& conversation) const
+{
+    return conversation.protocol == active_protocol_;
+}
+
+MessageId ChatService::sendTextToConversation(const ConversationId& conversation,
+                                              const std::string& text)
+{
+    const MeshSendResult result =
+        sendTextToConversationDetailed(conversation, text);
+    return result.ok ? result.msg_id : 0;
+}
+
+MeshSendResult ChatService::sendTextToConversationDetailed(
+    const ConversationId& conversation,
+    const std::string& text)
+{
+    if (!canSendToConversation(conversation))
+    {
+        return MeshSendResult::fail(MeshOperationFailure::Unsupported);
+    }
+
+    return sendTextDetailed(conversation.channel, text, conversation.peer);
+}
+
 MeshSendResult ChatService::sendTextWithIdDetailed(ChannelId channel, const std::string& text,
                                                    MessageId forced_msg_id, NodeId peer)
 {
@@ -143,6 +168,10 @@ bool ChatService::resendFailed(MessageId msg_id)
     }
 
     if (msg.status != MessageStatus::Failed)
+    {
+        return false;
+    }
+    if (msg.protocol != active_protocol_)
     {
         return false;
     }

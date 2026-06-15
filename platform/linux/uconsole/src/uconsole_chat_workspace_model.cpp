@@ -1283,13 +1283,14 @@ bool UConsoleChatWorkspaceModel::sendText(const std::string& text)
     }
     if (!canSendActiveConversation())
     {
-        action_status_ = "No Linux mesh transport is connected.";
+        action_status_ = services_.chat().canSendToConversation(active_conversation_)
+                             ? "No Linux mesh transport is connected."
+                             : "Conversation is read-only in the active protocol.";
         return false;
     }
 
     const ::chat::MessageId message_id =
-        services_.chat().sendText(active_conversation_.channel, trimmed,
-                                  active_conversation_.peer);
+        services_.chat().sendTextToConversation(active_conversation_, trimmed);
     if (message_id == 0)
     {
         action_status_ = "Message failed to queue.";
@@ -1629,6 +1630,11 @@ void UConsoleChatWorkspaceModel::ensureActiveConversation()
 
 bool UConsoleChatWorkspaceModel::canSendActiveConversation() const
 {
+    if (!services_.chat().canSendToConversation(active_conversation_))
+    {
+        return false;
+    }
+
     const auto* adapter = services_.meshAdapter();
     if (adapter == nullptr || !adapter->isReady())
     {

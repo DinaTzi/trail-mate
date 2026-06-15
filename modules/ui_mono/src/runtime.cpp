@@ -290,6 +290,12 @@ constexpr const char* kMessageMenuItems[] = {
     "RETRY",
 };
 
+constexpr const char* kNewChatItems[] = {
+    "PRIMARY",
+    "SECONDARY",
+    "CANCEL",
+};
+
 constexpr size_t kNodeActionItemCount = 7;
 
 constexpr const char* kWeekdays[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
@@ -2553,11 +2559,17 @@ void Runtime::handleInput(InputAction action)
     }
 
     case Page::ChatList:
+    {
+        const size_t item_count = conversation_count_ + 1U;
+        if (chat_list_index_ >= item_count)
+        {
+            chat_list_index_ = item_count - 1U;
+        }
         if (action == InputAction::Up && chat_list_index_ > 0)
         {
             --chat_list_index_;
         }
-        else if (action == InputAction::Down && chat_list_index_ + 1 < conversation_count_)
+        else if (action == InputAction::Down && chat_list_index_ + 1 < item_count)
         {
             ++chat_list_index_;
         }
@@ -2565,11 +2577,37 @@ void Runtime::handleInput(InputAction action)
         {
             enterPage(Page::MainMenu);
         }
-        else if ((action == InputAction::Right || action == InputAction::Select || action == InputAction::Primary) &&
-                 chat_list_index_ < conversation_count_)
+        else if (action == InputAction::Right || action == InputAction::Select || action == InputAction::Primary)
         {
-            active_conversation_ = conversations_[chat_list_index_].id;
-            enterPage(Page::Conversation);
+            if (chat_list_index_ == 0)
+            {
+                enterPage(Page::NewChatPage);
+            }
+            else if ((chat_list_index_ - 1U) < conversation_count_)
+            {
+                active_conversation_ = conversations_[chat_list_index_ - 1U].id;
+                enterPage(Page::Conversation);
+            }
+        }
+        break;
+    }
+
+    case Page::NewChatPage:
+        if (action == InputAction::Up && new_chat_index_ > 0)
+        {
+            --new_chat_index_;
+        }
+        else if (action == InputAction::Down && new_chat_index_ + 1 < arrayCount(kNewChatItems))
+        {
+            ++new_chat_index_;
+        }
+        else if (action == InputAction::Left || action == InputAction::Back)
+        {
+            enterPage(Page::ChatList);
+        }
+        else if (action == InputAction::Right || action == InputAction::Select || action == InputAction::Primary)
+        {
+            executeNewChatPageItem(new_chat_index_);
         }
         break;
 
@@ -2686,6 +2724,11 @@ void Runtime::handleInput(InputAction action)
             }
             else if (message_menu_index_ == 1)
             {
+                if (!app() || !app()->getChatService().canSendToConversation(active_conversation_))
+                {
+                    showTransientPopup("MESSAGE", "VIEW ONLY", 2000U);
+                    break;
+                }
                 openCompose(EditTarget::Message);
             }
             else
@@ -3158,6 +3201,9 @@ void Runtime::render()
     case Page::ChatList:
         renderChatList();
         break;
+    case Page::NewChatPage:
+        renderNewChatPage();
+        break;
     case Page::NodeList:
         renderNodeList();
         break;
@@ -3470,41 +3516,49 @@ void Runtime::renderChatList()
 {
     rebuildConversationList();
     const size_t page_size = visibleRowsFrom(10);
-    const size_t total_pages = std::max<size_t>(1U, (conversation_count_ + page_size - 1U) / page_size);
-    const size_t selected = (conversation_count_ > 0)
-                                ? std::min(chat_list_index_, conversation_count_ - 1U)
-                                : 0U;
-    const size_t start = (conversation_count_ > 0) ? ((selected / page_size) * page_size) : 0U;
-    const size_t current_page = (conversation_count_ > 0) ? ((start / page_size) + 1U) : 1U;
+    const size_t item_count = conversation_count_ + 1U;
+    const size_t total_pages = std::max<size_t>(1U, (item_count + page_size - 1U) / page_size);
+    const size_t selected = std::min(chat_list_index_, item_count - 1U);
+    const size_t start = (selected / page_size) * page_size;
+    const size_t current_page = (start / page_size) + 1U;
     char pos[16] = {};
     std::snprintf(pos, sizeof(pos), "%u/%u",
                   static_cast<unsigned>(current_page),
                   static_cast<unsigned>(total_pages));
     drawTitleBar("CHATS", pos);
-    if (conversation_count_ == 0)
-    {
-        text_renderer_.drawText(display_, 0, 18, "NO CONVERSATIONS");
-        return;
-    }
 
     const int line_h = text_renderer_.lineHeight();
-    const size_t visible = std::min(conversation_count_ - start, page_size);
+    const size_t visible = std::min(item_count - start, page_size);
     const int marker_w = std::max(8, text_renderer_.measureTextWidth("T") + 2);
     const int marker_x = std::max(0, display_.width() - marker_w);
     const int line_w = std::max(0, marker_x - 1);
     for (size_t i = 0; i < visible; ++i)
     {
-        const size_t conversation_index = start + i;
-        const bool selected_row = (conversation_index == selected);
+        const size_t item_index = start + i;
+        const bool selected_row = (item_index == selected);
         char line[32] = {};
-        const auto& conv = conversations_[conversation_index];
-        std::snprintf(line, sizeof(line), "%s%s",
-                      conv.unread > 0 ? "*" : "",
-                      conv.name.c_str());
+        const char* marker = app() ? protocolMarker(app()->getConfig().mesh_protocol) : "";
+        if (item_index == 0)
+        {
+            std::snprintf(line, sizeof(line), "+ NEW CHANNEL");
+        }
+        else
+        {
+            const auto& conv = conversations_[item_index - 1U];
+            std::snprintf(line, sizeof(line), "%s%s",
+                          conv.unread > 0 ? "*" : "",
+                          conv.name.c_str());
+            marker = protocolMarker(conv.id.protocol);
+        }
         const int y = 10 + static_cast<int>(i * line_h);
         drawTextClipped(0, y, line_w, line, selected_row);
-        drawTextClipped(marker_x, y, marker_w, protocolMarker(conv.id.protocol), selected_row);
+        drawTextClipped(marker_x, y, marker_w, marker, selected_row);
     }
+}
+
+void Runtime::renderNewChatPage()
+{
+    drawMenuList("NEW CHAT", kNewChatItems, arrayCount(kNewChatItems), new_chat_index_);
 }
 
 void Runtime::renderNodeList()
@@ -5054,7 +5108,11 @@ void Runtime::enterPage(Page page)
     if (page == Page::ChatList)
     {
         rebuildConversationList();
-        chat_list_index_ = std::min(chat_list_index_, conversation_count_ == 0 ? 0U : conversation_count_ - 1U);
+        chat_list_index_ = std::min(chat_list_index_, conversation_count_);
+    }
+    else if (page == Page::NewChatPage)
+    {
+        new_chat_index_ = std::min(new_chat_index_, arrayCount(kNewChatItems) - 1U);
     }
     else if (page == Page::NodeList)
     {
@@ -5686,10 +5744,15 @@ void Runtime::sendComposeMessage()
         return;
     }
 
+    if (!app()->getChatService().canSendToConversation(active_conversation_))
+    {
+        showTransientPopup("MESSAGE", "VIEW ONLY", 2000U);
+        return;
+    }
+
     const chat::MessageId msg_id =
-        app()->getChatService().sendText(active_conversation_.channel,
-                                         compose_buffer_,
-                                         active_conversation_.peer);
+        app()->getChatService().sendTextToConversation(active_conversation_,
+                                                       compose_buffer_);
     if (msg_id == 0)
     {
         showTransientPopup("MESSAGE", "SEND FAILED", 2000U);
@@ -5711,6 +5774,12 @@ void Runtime::retrySelectedMessage()
         showTransientPopup("MESSAGE", "NOT RETRYABLE", 1800U);
         return;
     }
+    if (!app()->getChatService().canSendToConversation(
+            chat::ConversationId(msg->channel, msg->peer, msg->protocol)))
+    {
+        showTransientPopup("MESSAGE", "VIEW ONLY", 2000U);
+        return;
+    }
 
     if (!app()->getChatService().resendFailed(msg->msg_id))
     {
@@ -5721,6 +5790,30 @@ void Runtime::retrySelectedMessage()
     showTransientPopup("MESSAGE", "RETRY QUEUED", 1600U);
     rebuildMessages();
     enterPage(Page::Conversation);
+}
+
+void Runtime::executeNewChatPageItem(size_t index)
+{
+    if (index >= arrayCount(kNewChatItems) - 1U)
+    {
+        enterPage(Page::ChatList);
+        return;
+    }
+    if (!app())
+    {
+        showTransientPopup("NEW CHAT", "APP NOT READY");
+        return;
+    }
+    active_conversation_ = chat::ConversationId(
+        index == 1U ? chat::ChannelId::SECONDARY : chat::ChannelId::PRIMARY,
+        0,
+        app()->getConfig().mesh_protocol);
+    if (!app()->getChatService().canSendToConversation(active_conversation_))
+    {
+        showTransientPopup("NEW CHAT", "VIEW ONLY");
+        return;
+    }
+    openCompose(EditTarget::Message);
 }
 
 void Runtime::executeDiscoverPageItem(size_t index)
@@ -7626,12 +7719,17 @@ const char* Runtime::nodeActionLabel(size_t index) const
 {
     const chat::contacts::NodeInfo* node = selectedNode();
     const bool meshtastic_mode = app() && app()->getConfig().mesh_protocol != chat::MeshProtocol::MeshCore;
+    const bool can_reply = node && app() &&
+                           chat::infra::meshProtocolFromRaw(
+                               static_cast<uint8_t>(node->protocol),
+                               app()->getConfig().mesh_protocol) ==
+                               app()->getConfig().mesh_protocol;
     switch (index)
     {
     case 0:
         return "DETAIL";
     case 1:
-        return "REPLY";
+        return can_reply ? "REPLY" : "VIEW ONLY";
     case 2:
         return "ADD CONTACT";
     case 3:
@@ -7668,11 +7766,22 @@ void Runtime::executeNodeAction()
         return;
     case 1:
     {
+        if (!app())
+        {
+            showTransientPopup("NODE", "APP NOT READY");
+            return;
+        }
+        const chat::MeshProtocol node_protocol =
+            chat::infra::meshProtocolFromRaw(static_cast<uint8_t>(node->protocol),
+                                             app()->getConfig().mesh_protocol);
+        if (node_protocol != app()->getConfig().mesh_protocol)
+        {
+            showTransientPopup("NODE", "VIEW ONLY");
+            return;
+        }
         active_conversation_ = chat::ConversationId(chat::ChannelId::PRIMARY,
                                                     node->node_id,
-                                                    chat::infra::meshProtocolFromRaw(
-                                                        static_cast<uint8_t>(node->protocol),
-                                                        app()->getConfig().mesh_protocol));
+                                                    node_protocol);
         openCompose(EditTarget::Message);
         return;
     }

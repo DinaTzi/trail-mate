@@ -96,6 +96,19 @@ int main()
     chat::RamStore store;
     chat::ChatService service(model, mesh, store);
 
+    const chat::ConversationId meshcore_conv(
+        chat::ChannelId::PRIMARY,
+        0x11223344,
+        chat::MeshProtocol::MeshCore);
+    const chat::ConversationId meshtastic_conv(
+        chat::ChannelId::PRIMARY,
+        0x11223344,
+        chat::MeshProtocol::Meshtastic);
+    assert(!service.canSendToConversation(meshcore_conv));
+    assert(service.canSendToConversation(meshtastic_conv));
+    assert(!service.sendTextToConversationDetailed(meshcore_conv, "wrong proto").ok);
+    assert(mesh.send_count == 0);
+
     mesh.next_send_ok = false;
     mesh.next_msg_id = 42;
     const chat::MeshSendResult failed =
@@ -141,6 +154,17 @@ int main()
     assert(list.size() == 2);
     assert(list.back().msg_id == 77);
     assert(list.back().status == chat::MessageStatus::Failed);
+
+    mesh.next_send_ok = false;
+    mesh.next_msg_id = 88;
+    const chat::MeshSendResult third_failed =
+        service.sendTextToConversationDetailed(conv, "proto retry guard");
+    assert(!third_failed.ok);
+    assert(third_failed.msg_id == 88);
+    const int before_cross_protocol_retry = mesh.send_count;
+    service.setActiveProtocol(chat::MeshProtocol::MeshCore);
+    assert(!service.resendFailed(88));
+    assert(mesh.send_count == before_cross_protocol_retry);
 
     return 0;
 }

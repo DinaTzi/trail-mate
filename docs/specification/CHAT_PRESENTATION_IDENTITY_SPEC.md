@@ -45,6 +45,10 @@ and UI presentation identity types.
   failure does not roll back the UI selection because selection is presentation
   state, while the sink is a synchronization hook for app-side side effects
   such as read cursors and mark-read behavior.
+- A selected conversation whose protocol differs from the active runtime
+  protocol is still a valid readable conversation. It is not a valid send
+  target. Renderers may show it and allow message inspection, but compose,
+  reply, retry, and direct send actions must be disabled or rejected.
 - `ChatWorkspaceModel` must not own or expose `ChatService`, `ContactService`,
   `IMeshAdapter`, stores, protocol adapters, or `chat::ConversationId`.
 - `ChatWorkspaceSnapshot` must not expose `ChatService`, `ContactService`,
@@ -132,6 +136,11 @@ ChatWorkspaceModel::markRead(...)
 `sendMessage` sends against the selected UI conversation token. Mapping that UI
 token back to `core_chat` identity, `MeshSession`, or legacy send behavior
 belongs to the Source/Sink adapter layer, not to `ui_presentation`.
+
+The Source/Sink adapter must preserve the protocol field during that mapping.
+Dropping the protocol and sending only by channel/peer is invalid because it
+turns a readable cross-protocol conversation into a send target for the active
+protocol.
 
 ## Source/Sink Adapter Contract
 

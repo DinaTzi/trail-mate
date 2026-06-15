@@ -148,6 +148,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
         Sleep,
         MainMenu,
         ChatList,
+        NewChatPage,
         NodeList,
         NodeActionMenu,
         NodeInfo,
@@ -182,6 +183,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
     void renderSleep();
     void renderMainMenu();
     void renderChatList();
+    void renderNewChatPage();
     void renderNodeList();
     void renderNodeActionMenu();
     void renderNodeInfo();
@@ -210,6 +212,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
     void buildMessageInfo();
     void sendComposeMessage();
     void retrySelectedMessage();
+    void executeNewChatPageItem(size_t index);
     void executeDiscoverPageItem(size_t index);
     void commitConfig();
     void ensureBootExit();
@@ -328,6 +331,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
     size_t message_index_ = 0;
     uint32_t message_focus_started_ms_ = 0;
     size_t message_menu_index_ = 0;
+    size_t new_chat_index_ = 0;
     size_t message_info_scroll_ = 0;
     size_t gnss_page_index_ = 0;
     chat::runtime::MeshtasticRuntime meshtastic_protocol_runtime_{};

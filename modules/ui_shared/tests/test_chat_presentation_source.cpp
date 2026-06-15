@@ -164,6 +164,21 @@ int main()
     assert(mesh.last_peer == 1234);
     assert(mesh.last_text == "hello");
 
+    const ui::chat::ConversationId meshcore_channel = meshCoreBroadcastConversation();
+    const int send_count_before_mismatch = mesh.send_count;
+    const ui::chat::SendMessageView mismatched_send{meshcore_channel, "mc", 2};
+    const auto mismatched_result = sink.sendMessage(mismatched_send);
+    assert(!mismatched_result.ok);
+    assert(mismatched_result.failure == ui::UiActionFailure::Unsupported);
+    assert(mesh.send_count == send_count_before_mismatch);
+
+    ui::chat::ChatWorkspaceRequest mismatched_request;
+    mismatched_request.selected = meshcore_channel;
+    ui::chat::ChatWorkspaceSnapshot mismatched_snapshot;
+    assert(source.buildChatWorkspaceSnapshot(mismatched_request, mismatched_snapshot));
+    assert(!mismatched_snapshot.can_send);
+    assert(!mismatched_snapshot.composer_enabled);
+
     ::chat::delivery::ChatDeliveryRecord delivered{};
     delivered.ref.protocol_id = 100;
     delivered.state = ::chat::delivery::DeliveryState::Delivered;
@@ -283,6 +298,7 @@ int main()
     assert(!snapshot.composer_enabled);
 
     send.conversation = broadcast;
+    service.setActiveProtocol(::chat::MeshProtocol::Meshtastic);
     mesh.send_ok = true;
     const auto broadcast_send = sink.sendMessage(send);
     assert(broadcast_send.ok);

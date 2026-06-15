@@ -55,6 +55,27 @@ ChatWorkspaceModel::markRead(id)
 
 The model forwards actions to `IChatActionSink`.
 
+## Protocol Send Eligibility
+
+Conversation protocol and active send protocol are separate facts.
+
+`ConversationId.protocol` identifies what protocol produced or owns the
+conversation. The active runtime protocol identifies which transport can send
+right now. If they differ, the conversation remains visible and selectable, but
+it is read-only for chat commands.
+
+Required behavior:
+
+- Read paths must continue to show cross-protocol conversations and messages.
+- Compose, reply, retry, and `sendMessage` must be disabled or rejected for
+  cross-protocol conversations.
+- `IChatActionSink` adapters must map `SendMessageView.conversation` back to a
+  full core `chat::ConversationId`; they must not drop the protocol and send by
+  bare `channel + peer`.
+- Devices that lack a channel creation entry may add one in their renderer, but
+  renderers that already provide channel selection must not grow a second
+  duplicate entry.
+
 ## Optimistic Selection
 
 `selectConversation(id)` uses optimistic UI selection.
