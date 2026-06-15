@@ -87,6 +87,7 @@ struct RuntimeIntent
 enum class BusAccessPolicy : uint8_t
 {
     UiNeverBlock,
+    DisplayFrameCritical,
     InteractiveWorkerBounded,
     BackgroundWorkerBounded,
     DurableCommit,
@@ -295,6 +296,10 @@ class DefaultBusPolicyStrategy : public BusPolicyStrategy
   public:
     BusAccessPolicy select(const RuntimeCommand& command) const override
     {
+        if (command.kind == RuntimeCommandKind::MapTileLoad)
+        {
+            return BusAccessPolicy::DisplayFrameCritical;
+        }
         if (command.priority == RuntimePriority::Realtime ||
             command.priority == RuntimePriority::Interactive)
         {
@@ -313,6 +318,7 @@ class DefaultBusPolicyStrategy : public BusPolicyStrategy
         switch (policy)
         {
         case BusAccessPolicy::UiNeverBlock:
+        case BusAccessPolicy::DisplayFrameCritical:
             return 0;
         case BusAccessPolicy::InteractiveWorkerBounded:
             return 2;
@@ -477,6 +483,10 @@ class DefaultRuntimePolicyStrategy : public RuntimePolicyStrategy
 
     BusAccessPolicy selectBusPolicy(const RuntimeCommand& command) const override
     {
+        if (command.kind == RuntimeCommandKind::MapTileLoad)
+        {
+            return BusAccessPolicy::DisplayFrameCritical;
+        }
         if (command.priority == RuntimePriority::Realtime ||
             command.priority == RuntimePriority::Interactive)
         {

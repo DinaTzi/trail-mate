@@ -45,6 +45,7 @@ struct DecodedTileCache
 {
     int32_t x, y, z;         // Tile coordinates
     uint8_t map_source;      // Base map source (OSM/Terrain/Satellite)
+    ui::map_tiles::MapTileLayer layer; // Base or contour layer represented by this cache entry
     lv_image_dsc_t* img_dsc; // Decoded image descriptor (RGB565 data in RAM)
     uint32_t last_used_ms;   // For LRU eviction
     bool bound_to_lvgl_object; // True while referenced by a live LVGL image object
@@ -67,9 +68,16 @@ struct MapTile
     int priority;                 // Loading priority (distance from screen center, lower = higher priority)
     bool has_png_file;            // True if tile has loaded base image file (PNG/JPG)
     bool base_missing;            // True if the base tile file was confirmed missing for this render state
+    bool base_request_pending;    // True while a worker request is in flight for the base tile
+    uint32_t base_request_generation; // Generation associated with the in-flight base request
+    uint32_t base_retry_not_before_ms; // Backoff deadline after resource pressure/busy failures
     bool contour_checked;         // True if contour file lookup was attempted for this tile
     bool contour_loaded;          // True if contour overlay object is present
+    bool contour_request_pending; // True while a worker request is in flight for the contour tile
+    uint32_t contour_request_generation; // Generation associated with the in-flight contour request
+    uint32_t contour_retry_not_before_ms; // Backoff deadline after contour resource pressure/busy failures
     DecodedTileCache* cached_img; // Decoded image entry currently bound to img_obj (NULL if not cached)
+    DecodedTileCache* contour_cached_img; // Decoded contour entry currently bound to contour_obj
 };
 
 // Tile management context (passed to functions instead of using global state)

@@ -36,6 +36,18 @@ UI owner context never waits for storage, shared-SPI, filesystem, decode,
 protocol completion, or persistence.
 ```
 
+After the ESP shared-SPI map freeze investigation, this goal is tightened:
+
+```text
+Moving work off the UI owner context is necessary but not sufficient.
+No storage worker may hold, starve, or repeatedly reacquire a physical bus that
+display flush depends on in a way that prevents frame progress, input-visible
+feedback, wake rendering, or page navigation.
+```
+
+Responsiveness is protected by ownership of time-critical resources, not only
+by moving slow calls to another task.
+
 ## Core Distinctions
 
 ### UI Owner Context
@@ -124,6 +136,43 @@ A platform adapter wraps a technical API:
 
 Adapters must not own business rules, retry policy, tile priority, feedback
 eligibility, chat delivery semantics, or tracker state transitions.
+
+### Resource Topology
+
+Resource topology describes the physical resource domains that can block each
+other on a target:
+
+- display flush bus / DMA path
+- SD or flash storage bus
+- radio SPI bus
+- touch or NFC bus
+- shared mutex or controller domain
+
+Two features are in different business contexts but the same physical topology
+when they share a controller, chip-select bus, DMA path, or lock. On ESP targets
+such as T-Deck and T-LoRa Pager, display, SD, radio, and optional NFC can share
+the same SPI domain. Therefore a storage operation that holds the shared bus can
+freeze display progress even when it runs outside the UI owner task.
+
+### Display Frame Critical Resource
+
+Display flush, wake rendering, and input-visible feedback are frame-critical.
+They are not ordinary bus consumers. Any storage or protocol worker using a
+display-shared resource must yield to frame progress.
+
+Four budgets are distinct:
+
+| Budget | Meaning | Failure mode when missing |
+| --- | --- | --- |
+| `wait_budget` | Maximum time a caller waits to acquire a resource | Caller blocks before work starts |
+| `hold_budget` | Maximum expected time a holder keeps the resource | Display frames are starved after acquisition |
+| `burst_budget` | Maximum repeated acquisitions in a time window | Many short operations still freeze UI |
+| `frame_budget` | Maximum time display can be denied progress | Screen appears frozen while logs continue |
+
+Bounded waiting alone is not sufficient. A worker can acquire immediately and
+still hold the display-shared bus for tens of milliseconds during SD open/read.
+That violates this spec unless the operation is outside UI hot paths, explicitly
+budgeted, and followed by cooldown/backpressure.
 
 ## Pattern Decision
 
@@ -559,12 +608,18 @@ one physical thread, the same ownership model still applies cooperatively:
 slow work must be incremental, budgeted, and represented as commands/events
 rather than blocking UI execution.
 
+When storage and display share a physical SPI domain, the storage worker is also
+not the resource owner. It owns command state. A bus/storage scheduler owns
+permission to occupy the display-shared resource and must apply wait, hold,
+burst, and frame budgets.
+
 ## UML Bus Arbitration Class Model
 
 ```mermaid
 classDiagram
   class BusAccessPolicy {
     <<enum>>
+    DisplayFrameCritical
     UiNeverBlock
     InteractiveWorkerBounded
     BackgroundWorkerBounded
@@ -1197,6 +1252,7 @@ bus/storage arbiter with explicit policies:
 
 | Policy | Intended callers | Wait behavior | Failure behavior |
 | --- | --- | --- | --- |
+| `DisplayFrameCritical` | display flush, wake render, input-visible feedback | frame-budget bounded, highest priority | skip/defer non-critical storage |
 | `UiNeverBlock` | UI event/timer/input paths | no wait or frame-budget-only try | defer, cancel, or render pending state |
 | `InteractiveWorkerBounded` | map tile worker during drag | short bounded wait | cancel stale tile or retry later |
 | `BackgroundWorkerBounded` | track append, node save, prefetch | bounded wait with backpressure | reschedule, batch, or enter degraded state |
@@ -1220,6 +1276,11 @@ policy
 The arbiter expresses scheduling intent. A mutex only expresses exclusion. Code
 that uses a bare blocking mutex to coordinate UI, SD, and display refresh is not
 conformant.
+
+For display-shared SPI, storage work must use a try-lock or bounded acquisition
+and must enter cooldown/backpressure after every slow hold. The scheduler may
+drop, defer, or mark commands `ResourceBusy`; it must not spin on the lock or
+drain a burst of SD operations while display is trying to render.
 
 ## Map Tile Runtime Design
 
@@ -1250,11 +1311,42 @@ Mandatory behavior:
 
 - LVGL timers and input callbacks must not open tile files.
 - LVGL timers and input callbacks must not wait for shared-SPI.
+- Tile file lookup/read/decode must not be performed from drag, timer, input,
+  or page render callbacks.
 - Tile requests carry a viewport generation.
 - Completion for stale generations must be ignored or released without UI work.
 - Dragging uses interactive priority and cancels stale pending requests.
 - Idle prefetch uses lower priority and must yield to current viewport tiles.
 - Missing, loading, ready, failed, and cancelled are explicit tile states.
+- Unknown tile availability is also state. The UI owner may render a pending or
+  placeholder state, but it must not probe the SD card to discover whether a
+  missing file exists.
+- Negative tile probes must be cached or cooled down. Repeated `SD.open()` miss
+  probes for adjacent tiles are forbidden in UI-visible paths.
+- ESP active tile loading is not conforming until a slow/missing SD simulation
+  proves UI ticks continue while storage work is deferred, marked busy, or
+  completed later.
+
+ESP active loader rules:
+
+- `tile_loader_step()` is a UI owner path because it is reached from LVGL timers
+  and map viewport callbacks.
+- `tile_loader_step()` may calculate visible tile refs, move existing renderer
+  objects, apply completed in-memory tile events, and submit/cancel runtime
+  events.
+- `tile_loader_step()` must not call `lv_fs_open`, SD file APIs, or a
+  shared-SPI lock.
+- The ESP worker adapter uses the SD runtime file adapter and acquires
+  display-shared SPI only through the bus/storage scheduler. For visible tiles
+  it must use try-lock or tightly bounded acquisition, publish `ResourceBusy`
+  when the bus is not immediately available, and apply cooldown after any slow
+  hold.
+- `MapTileAsyncEvent` carries a copied `MapTilePayload` to the UI owner drain.
+  The payload must be released even when stale.
+- The ESP UI drain is non-blocking on command/event queues. A busy queue means
+  the tile remains pending, not that the UI waits.
+- The ESP UI drain applies at most one tile event per drain pass to avoid a
+  burst of completed worker events monopolising the LVGL timer tick.
 
 ## Track Recording Runtime Design
 

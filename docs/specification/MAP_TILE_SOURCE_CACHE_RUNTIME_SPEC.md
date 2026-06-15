@@ -102,6 +102,56 @@ Phase 7.10 introduces:
 
 Existing platform map tile runtimes may keep LVGL drawing and decoded image cache logic temporarily, but path mapping must flow through `FilesystemMapTileSource`.
 
+## Phase 7.11 ESP Active Loader Burn-Down
+
+Phase 7.11 burns down the ESP active map loader legacy path that probes tile
+files from the LVGL/UI owner context.
+
+The distinction for this phase is:
+
+| Concern | Owner | Must Not |
+| --- | --- | --- |
+| Visible tile math | UI owner / renderer | Open files, wait for shared SPI |
+| Tile availability | Tile source worker | Drive LVGL objects |
+| Tile payload bytes | Tile source worker -> event payload | Leak filesystem paths into render code |
+| Decoded LVGL image descriptors | Renderer-owned decoded cache | Perform SD reads during decode from a page/timer/input callback |
+| Missing tile memory | Tile runtime state | Re-open the same missing path every frame/drag step |
+
+Mandatory behavior:
+
+- `tile_loader_step()` and functions it calls synchronously may calculate
+  visible tile refs, move/hide LVGL objects, submit async tile commands, and
+  apply already-delivered tile events.
+- `tile_loader_step()` and functions it calls synchronously must not call
+  `lv_fs_open`, Arduino `SD.open`, `SdRuntimeFile`, `SharedSpiLockGuard`, or
+  any other display-shared SPI acquisition.
+- Missing tile detection is a worker result, not a UI probe. A missing result is
+  cached/backed off so dragging over a sparse map area cannot repeatedly open
+  the same missing files from the UI cadence.
+- Base and contour tiles use the same async source/event mechanism. Contour
+  overlays must not keep a second synchronous `lv_fs_open` path.
+- ESP UI helpers such as `base_tile_available()` are not authoritative storage
+  probes. When called from shared UI code such as node-detail mini map zoom
+  selection, they must not open SD files; they may only answer whether rendering
+  should be attempted and let the async tile result settle actual availability.
+- The ESP worker must read a tile payload in one source operation. It must not
+  perform a separate existence lookup followed by a read for the same tile in
+  the active map path.
+- The ESP worker may return `ResourceBusy` when display-shared SPI is busy or
+  cooling down. `ResourceBusy` is not a tile-missing result; the renderer keeps
+  the tile requestable after a short backoff.
+- UI event draining is bounded. The UI owner may apply at most a small bounded
+  number of tile events per tick and must release stale payloads by generation.
+
+Acceptance checks for this phase:
+
+- A slow or missing SD tile open must not occur on the UI/LVGL call stack.
+- Sparse map areas must not produce an unbounded loop of missing-file opens.
+- Display lock timeouts may be logged, but they must not be caused by the map UI
+  repeatedly probing tile paths from a drag/timer callback.
+- The Linux/uConsole online-capable map behavior remains owned by the Linux
+  runtime and is not collapsed into the ESP offline loader.
+
 ## Non-Goals
 
 Phase 7.10 does not:

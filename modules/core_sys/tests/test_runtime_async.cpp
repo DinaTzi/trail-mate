@@ -278,6 +278,25 @@ void test_storage_bus_arbiter_uses_policy_timeout()
     assert(adapter.release_count == 1);
 }
 
+void test_map_tile_policy_is_display_frame_critical()
+{
+    FakeBusAdapter adapter;
+    sys::runtime::DefaultBusPolicyStrategy policy;
+    sys::runtime::StorageBusArbiter arbiter(adapter, policy);
+
+    sys::runtime::RuntimeCommand command{};
+    command.kind = sys::runtime::RuntimeCommandKind::MapTileLoad;
+    command.priority = sys::runtime::RuntimePriority::Normal;
+    assert(policy.select(command) == sys::runtime::BusAccessPolicy::DisplayFrameCritical);
+
+    sys::runtime::BusAcquireRequest request{};
+    request.policy = policy.select(command);
+    const sys::runtime::BusAcquireResult result = arbiter.acquire(request);
+    assert(result.status == sys::runtime::BusAcquireStatus::Acquired);
+    assert(adapter.last_timeout_ms == 0);
+    arbiter.release(result.token);
+}
+
 void test_storage_bus_arbiter_reports_degraded_after_timeouts()
 {
     FakeBusAdapter adapter;
@@ -307,6 +326,7 @@ int main()
     test_runtime_facade_dedupe_cancel_policy();
     test_event_to_ui_effect_bridge();
     test_storage_bus_arbiter_uses_policy_timeout();
+    test_map_tile_policy_is_display_frame_critical();
     test_storage_bus_arbiter_reports_degraded_after_timeouts();
     return 0;
 }

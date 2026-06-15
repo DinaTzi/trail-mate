@@ -5,7 +5,11 @@
 
 #include "ui/widgets/map/map_tiles.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "lvgl.h"
+#include "platform/esp/arduino_common/storage/sd_card_runtime.h"
+#include "platform/esp/common/shared_spi_lock.h"
 #include "src/draw/lv_image_decoder_private.h"
 #include "src/misc/cache/instance/lv_image_cache.h"
 #include "sys/clock.h"
@@ -14,12 +18,16 @@
 #include "ui/screens/gps/gps_constants.h"
 #include "ui/support/lvgl_fs_utils.h"
 #include "ui_map_runtime/map_tiles/filesystem_map_tile_source.h"
+#include "ui_map_runtime/map_tiles/map_tile_async_runtime.h"
 #include "ui_map_runtime/map_tiles/map_tile_decoder_cache.h"
 
+#include <esp_heap_caps.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring> // For memcpy
+#include <new>
 
 // Use LVGL's decoder API to decode PNG images
 // We'll decode PNG to RGB565 and cache it in RAM to avoid re-decoding on every render
@@ -101,6 +109,7 @@ static bool g_active_contour_enabled = false;
 static bool g_missing_tile_notice_pending = false;
 static bool g_missing_tile_notice_emitted = false;
 static uint8_t g_missing_tile_notice_source = 0;
+static uint32_t g_map_tile_runtime_generation = 1;
 
 namespace
 {
@@ -122,30 +131,669 @@ class LvglMapTileFileSystem final : public ui::map_tiles::IMapTileFileSystem
                   std::size_t capacity,
                   std::size_t& out_size) const override
     {
+        // ESP UI code may resolve paths, but tile payload reads belong to the worker-side SD source.
+        out_size = 0;
+        (void)path;
+        (void)buffer;
+        (void)capacity;
+        return false;
+    }
+};
+
+class SdMapTileFileSystem final : public ui::map_tiles::IMapTileFileSystem
+{
+  public:
+    bool exists(const char* path) const override
+    {
+        return ::platform::esp::arduino_common::storage::sd_exists(path);
+    }
+
+    bool isDirectory(const char* path) const override
+    {
+        return ::platform::esp::arduino_common::storage::sd_is_directory(path);
+    }
+
+    bool readFile(const char* path,
+                  uint8_t* buffer,
+                  std::size_t capacity,
+                  std::size_t& out_size) const override
+    {
         out_size = 0;
         if (!path || !buffer || capacity == 0)
         {
             return false;
         }
 
-        lv_fs_file_t file;
-        if (lv_fs_open(&file, path, LV_FS_MODE_RD) != LV_FS_RES_OK)
+        ::platform::esp::arduino_common::storage::SdRuntimeFile file;
+        if (!file.open(path, "r"))
         {
             return false;
         }
 
-        uint32_t bytes_read = 0;
-        const lv_fs_res_t result =
-            lv_fs_read(&file, buffer, static_cast<uint32_t>(capacity), &bytes_read);
-        lv_fs_close(&file);
-        if (result != LV_FS_RES_OK)
+        const uint64_t file_size = file.size();
+        if (file_size == 0 || file_size > capacity)
         {
+            file.close();
             return false;
         }
 
-        out_size = bytes_read;
+        const int bytes_read = file.read(buffer, static_cast<std::size_t>(file_size));
+        file.close();
+        if (bytes_read < 0 || static_cast<uint64_t>(bytes_read) != file_size)
+        {
+            out_size = bytes_read > 0 ? static_cast<std::size_t>(bytes_read) : 0;
+            return false;
+        }
+
+        out_size = static_cast<std::size_t>(bytes_read);
         return true;
     }
+};
+
+constexpr std::size_t kMapTileCommandQueueCapacity = 48;
+constexpr std::size_t kMapTileEventQueueCapacity = 48;
+constexpr std::size_t kMapTileWorkerScratchBytes = 192U * 1024U;
+constexpr int kMapTileEventsPerUiDrain = 1;
+constexpr uint32_t kMapTileLayerBusyBackoffMs = 250;
+constexpr uint32_t kMapTileLayerCacheBackoffMs = 350;
+constexpr uint32_t kMapTileGenerationInitial = 1;
+constexpr uint32_t kMapTileBusResource = 1;
+constexpr uint32_t kMapTileDiagnosticLogIntervalMs = 1000;
+constexpr TickType_t kMapTileWorkerPostCommandYieldTicks = pdMS_TO_TICKS(16);
+constexpr uint32_t kMapTileDisplaySpiSlowHoldMs = 16;
+constexpr uint32_t kMapTileDisplaySpiNormalCooldownMs = 64;
+constexpr uint32_t kMapTileDisplaySpiSlowCooldownMs = 250;
+
+uint32_t g_map_tile_decode_log_ms = 0;
+uint32_t g_map_tile_event_log_ms = 0;
+
+bool should_log_map_tile_diagnostic(uint32_t& last_ms, uint32_t now_ms)
+{
+    if (last_ms == 0 || static_cast<uint32_t>(now_ms - last_ms) >= kMapTileDiagnosticLogIntervalMs)
+    {
+        last_ms = now_ms;
+        return true;
+    }
+    return false;
+}
+
+const char* map_tile_format_name(ui::map_tiles::MapTileFormat format)
+{
+    switch (format)
+    {
+    case ui::map_tiles::MapTileFormat::Png:
+        return "png";
+    case ui::map_tiles::MapTileFormat::Jpeg:
+        return "jpeg";
+    case ui::map_tiles::MapTileFormat::Unknown:
+    default:
+        return "unknown";
+    }
+}
+
+const char* map_tile_layer_name(ui::map_tiles::MapTileLayer layer)
+{
+    switch (layer)
+    {
+    case ui::map_tiles::MapTileLayer::Terrain:
+        return "terrain";
+    case ui::map_tiles::MapTileLayer::Satellite:
+        return "satellite";
+    case ui::map_tiles::MapTileLayer::Osm:
+        return "osm";
+    case ui::map_tiles::MapTileLayer::ContourMajor500:
+        return "contour-major-500";
+    case ui::map_tiles::MapTileLayer::ContourMajor200:
+        return "contour-major-200";
+    case ui::map_tiles::MapTileLayer::ContourMajor100:
+        return "contour-major-100";
+    case ui::map_tiles::MapTileLayer::ContourMajor50:
+        return "contour-major-50";
+    case ui::map_tiles::MapTileLayer::ContourMajor25:
+        return "contour-major-25";
+    case ui::map_tiles::MapTileLayer::ContourMinor100:
+        return "contour-minor-100";
+    case ui::map_tiles::MapTileLayer::ContourMinor50:
+        return "contour-minor-50";
+    case ui::map_tiles::MapTileLayer::ContourMinor20:
+        return "contour-minor-20";
+    case ui::map_tiles::MapTileLayer::ContourMinor10:
+        return "contour-minor-10";
+    case ui::map_tiles::MapTileLayer::ContourMinor5:
+        return "contour-minor-5";
+    default:
+        return "unknown";
+    }
+}
+
+const char* map_tile_event_kind_name(ui::map_tiles::MapTileAsyncEventKind kind)
+{
+    switch (kind)
+    {
+    case ui::map_tiles::MapTileAsyncEventKind::Ready:
+        return "ready";
+    case ui::map_tiles::MapTileAsyncEventKind::Failed:
+        return "failed";
+    case ui::map_tiles::MapTileAsyncEventKind::ResourceBusy:
+        return "busy";
+    case ui::map_tiles::MapTileAsyncEventKind::Cancelled:
+        return "cancelled";
+    default:
+        return "unknown";
+    }
+}
+
+bool resolve_map_tile_log_path(const ui::map_tiles::MapTileRef& ref,
+                               char* out_path,
+                               std::size_t out_size)
+{
+    ui::map_tiles::MapTileResolver resolver("/");
+    return resolver.resolvePath(ref, out_path, out_size);
+}
+
+bool fallback_base_ref_to_osm(const ui::map_tiles::MapTileRef& ref,
+                              ui::map_tiles::MapTileRef& out)
+{
+    if (ui::map_tiles::mapTileLayerIsContour(ref.layer) ||
+        ref.layer == ui::map_tiles::MapTileLayer::Osm)
+    {
+        return false;
+    }
+    out = ref;
+    out.layer = ui::map_tiles::MapTileLayer::Osm;
+    return true;
+}
+
+lv_color_format_t lvgl_source_format_for_tile(ui::map_tiles::MapTileFormat format)
+{
+    switch (format)
+    {
+    case ui::map_tiles::MapTileFormat::Png:
+        return LV_COLOR_FORMAT_RAW_ALPHA;
+    case ui::map_tiles::MapTileFormat::Jpeg:
+        return LV_COLOR_FORMAT_RAW;
+    case ui::map_tiles::MapTileFormat::Unknown:
+    default:
+        return LV_COLOR_FORMAT_UNKNOWN;
+    }
+}
+
+void log_map_tile_decode_failure(const char* stage,
+                                 const ui::map_tiles::MapTileRef& ref,
+                                 ui::map_tiles::MapTileFormat format,
+                                 std::size_t size,
+                                 long error)
+{
+    const uint32_t now_ms = sys::millis_now();
+    if (!should_log_map_tile_diagnostic(g_map_tile_decode_log_ms, now_ms))
+    {
+        return;
+    }
+    std::printf("[GPS][MAP][decode] fail stage=%s layer=%u z=%u x=%lu y=%lu fmt=%s size=%lu err=%ld\n",
+                stage ? stage : "unknown",
+                static_cast<unsigned>(ref.layer),
+                static_cast<unsigned>(ref.z),
+                static_cast<unsigned long>(ref.x),
+                static_cast<unsigned long>(ref.y),
+                map_tile_format_name(format),
+                static_cast<unsigned long>(size),
+                error);
+    std::fflush(stdout);
+}
+
+void log_map_tile_event_failure(const char* stage,
+                                const ui::map_tiles::MapTileAsyncEvent& event,
+                                long error)
+{
+    const uint32_t now_ms = sys::millis_now();
+    if (!should_log_map_tile_diagnostic(g_map_tile_event_log_ms, now_ms))
+    {
+        return;
+    }
+    char path[160]{};
+    (void)resolve_map_tile_log_path(event.tile, path, sizeof(path));
+    std::printf("[GPS][MAP][event] fail stage=%s kind=%s layer=%s(%u) z=%u x=%lu y=%lu gen=%lu active_gen=%lu err=%ld path=%s\n",
+                stage ? stage : "unknown",
+                map_tile_event_kind_name(event.kind),
+                map_tile_layer_name(event.tile.layer),
+                static_cast<unsigned>(event.tile.layer),
+                static_cast<unsigned>(event.tile.z),
+                static_cast<unsigned long>(event.tile.x),
+                static_cast<unsigned long>(event.tile.y),
+                static_cast<unsigned long>(event.generation),
+                static_cast<unsigned long>(g_map_tile_runtime_generation),
+                error,
+                path[0] != '\0' ? path : "<resolve-failed>");
+    std::fflush(stdout);
+}
+
+void log_map_tile_source_fallback(const char* stage,
+                                  const ui::map_tiles::MapTileRef& requested,
+                                  const ui::map_tiles::MapTileRef& fallback)
+{
+    const uint32_t now_ms = sys::millis_now();
+    if (!should_log_map_tile_diagnostic(g_map_tile_event_log_ms, now_ms))
+    {
+        return;
+    }
+
+    char requested_path[160]{};
+    char fallback_path[160]{};
+    (void)resolve_map_tile_log_path(requested, requested_path, sizeof(requested_path));
+    (void)resolve_map_tile_log_path(fallback, fallback_path, sizeof(fallback_path));
+    std::printf("[GPS][MAP][source] fallback stage=%s requested=%s(%u) fallback=%s(%u) z=%u x=%lu y=%lu requested_path=%s fallback_path=%s\n",
+                stage ? stage : "unknown",
+                map_tile_layer_name(requested.layer),
+                static_cast<unsigned>(requested.layer),
+                map_tile_layer_name(fallback.layer),
+                static_cast<unsigned>(fallback.layer),
+                static_cast<unsigned>(requested.z),
+                static_cast<unsigned long>(requested.x),
+                static_cast<unsigned long>(requested.y),
+                requested_path[0] != '\0' ? requested_path : "<resolve-failed>",
+                fallback_path[0] != '\0' ? fallback_path : "<resolve-failed>");
+    std::fflush(stdout);
+}
+
+uint8_t* allocate_tile_payload(std::size_t size)
+{
+    if (size == 0)
+    {
+        return nullptr;
+    }
+    return static_cast<uint8_t*>(
+        heap_caps_malloc_prefer(size,
+                                2,
+                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+                                MALLOC_CAP_8BIT));
+}
+
+void release_tile_payload(ui::map_tiles::MapTileAsyncEvent& event)
+{
+    if (event.payload.data != nullptr)
+    {
+        heap_caps_free(const_cast<uint8_t*>(event.payload.data));
+    }
+    event.payload = {};
+    event.payload_size = 0;
+}
+
+class MapTileCommandQueue final : public ui::map_tiles::IMapTileCommandSink
+{
+  public:
+    bool enqueue(const ui::map_tiles::LoadTileCommand& command) override
+    {
+        if (!ensureMutex() || xSemaphoreTake(mutex_, 0) != pdTRUE)
+        {
+            return false;
+        }
+
+        bool ok = false;
+        for (std::size_t i = 0; i < queue_.size(); ++i)
+        {
+            auto* existing = queue_.at(i);
+            if (existing &&
+                existing->runtime.generation == command.runtime.generation &&
+                existing->runtime.dedupe_key == command.runtime.dedupe_key &&
+                command.runtime.dedupe_key != 0)
+            {
+                *existing = command;
+                ok = true;
+                break;
+            }
+        }
+        if (!ok)
+        {
+            ok = queue_.enqueue(command);
+        }
+        xSemaphoreGive(mutex_);
+        return ok;
+    }
+
+    std::size_t cancelGeneration(uint32_t generation) override
+    {
+        if (!ensureMutex() || xSemaphoreTake(mutex_, 0) != pdTRUE)
+        {
+            return 0;
+        }
+
+        sys::runtime::FixedRuntimeQueue<ui::map_tiles::LoadTileCommand,
+                                        kMapTileCommandQueueCapacity>
+            kept;
+        std::size_t removed = 0;
+        for (std::size_t i = 0; i < queue_.size(); ++i)
+        {
+            const auto* command = queue_.at(i);
+            if (!command)
+            {
+                continue;
+            }
+            if (command->runtime.generation == generation)
+            {
+                ++removed;
+                continue;
+            }
+            (void)kept.enqueue(*command);
+        }
+        queue_ = kept;
+        xSemaphoreGive(mutex_);
+        return removed;
+    }
+
+    bool pop(uint32_t now_ms, ui::map_tiles::LoadTileCommand& out)
+    {
+        if (!ensureMutex() || xSemaphoreTake(mutex_, pdMS_TO_TICKS(10)) != pdTRUE)
+        {
+            return false;
+        }
+
+        std::size_t best_index = kMapTileCommandQueueCapacity;
+        for (std::size_t i = 0; i < queue_.size(); ++i)
+        {
+            const auto* candidate = queue_.at(i);
+            if (!candidate)
+            {
+                continue;
+            }
+            if (candidate->runtime.deadline_ms != 0 &&
+                static_cast<int32_t>(candidate->runtime.deadline_ms - now_ms) < 0)
+            {
+                continue;
+            }
+            if (best_index == kMapTileCommandQueueCapacity)
+            {
+                best_index = i;
+                continue;
+            }
+
+            const auto* best = queue_.at(best_index);
+            if (!best ||
+                static_cast<uint8_t>(candidate->runtime.priority) <
+                    static_cast<uint8_t>(best->runtime.priority) ||
+                (candidate->runtime.priority == best->runtime.priority &&
+                 candidate->runtime.created_at_ms < best->runtime.created_at_ms))
+            {
+                best_index = i;
+            }
+        }
+
+        if (best_index == kMapTileCommandQueueCapacity)
+        {
+            xSemaphoreGive(mutex_);
+            return false;
+        }
+
+        sys::runtime::FixedRuntimeQueue<ui::map_tiles::LoadTileCommand,
+                                        kMapTileCommandQueueCapacity>
+            kept;
+        for (std::size_t i = 0; i < queue_.size(); ++i)
+        {
+            const auto* command = queue_.at(i);
+            if (!command)
+            {
+                continue;
+            }
+            if (i == best_index)
+            {
+                out = *command;
+            }
+            else
+            {
+                (void)kept.enqueue(*command);
+            }
+        }
+        queue_ = kept;
+        xSemaphoreGive(mutex_);
+        return true;
+    }
+
+  private:
+    bool ensureMutex()
+    {
+        if (mutex_ == nullptr)
+        {
+            mutex_ = xSemaphoreCreateMutex();
+        }
+        return mutex_ != nullptr;
+    }
+
+    SemaphoreHandle_t mutex_ = nullptr;
+    sys::runtime::FixedRuntimeQueue<ui::map_tiles::LoadTileCommand,
+                                    kMapTileCommandQueueCapacity>
+        queue_{};
+};
+
+class MapTileEventQueue final : public ui::map_tiles::IMapTileEventSink
+{
+  public:
+    bool publish(const ui::map_tiles::MapTileAsyncEvent& event) override
+    {
+        ui::map_tiles::MapTileAsyncEvent owned = event;
+        if (owned.kind == ui::map_tiles::MapTileAsyncEventKind::Ready &&
+            event.payload.data != nullptr &&
+            event.payload.size > 0)
+        {
+            uint8_t* payload = allocate_tile_payload(event.payload.size);
+            if (payload == nullptr)
+            {
+                log_map_tile_event_failure("payload_alloc", owned, -12);
+                owned.kind = ui::map_tiles::MapTileAsyncEventKind::Failed;
+                owned.error = -12;
+                owned.payload = {};
+                owned.payload_size = 0;
+            }
+            else
+            {
+                std::memcpy(payload, event.payload.data, event.payload.size);
+                owned.payload.data = payload;
+                owned.payload.size = event.payload.size;
+                owned.payload.format = event.payload.format;
+                owned.payload.ref = event.payload.ref;
+            }
+        }
+
+        if (!ensureMutex() || xSemaphoreTake(mutex_, pdMS_TO_TICKS(20)) != pdTRUE)
+        {
+            log_map_tile_event_failure("event_queue_lock", owned, -1);
+            release_tile_payload(owned);
+            return false;
+        }
+        const bool ok = queue_.enqueue(owned);
+        xSemaphoreGive(mutex_);
+        if (!ok)
+        {
+            log_map_tile_event_failure("event_queue_full", owned, -2);
+            release_tile_payload(owned);
+        }
+        return ok;
+    }
+
+    bool pop(ui::map_tiles::MapTileAsyncEvent& out)
+    {
+        if (!ensureMutex() || xSemaphoreTake(mutex_, 0) != pdTRUE)
+        {
+            return false;
+        }
+        const bool ok = queue_.pop(out);
+        xSemaphoreGive(mutex_);
+        return ok;
+    }
+
+  private:
+    bool ensureMutex()
+    {
+        if (mutex_ == nullptr)
+        {
+            mutex_ = xSemaphoreCreateMutex();
+        }
+        return mutex_ != nullptr;
+    }
+
+    SemaphoreHandle_t mutex_ = nullptr;
+    sys::runtime::FixedRuntimeQueue<ui::map_tiles::MapTileAsyncEvent,
+                                    kMapTileEventQueueCapacity>
+        queue_{};
+};
+
+class EspMapTileBusArbiter final : public sys::runtime::IBusArbiter
+{
+  public:
+    sys::runtime::BusAcquireResult acquire(
+        const sys::runtime::BusAcquireRequest& request) override
+    {
+        const uint32_t start_ms = sys::millis_now();
+        if (static_cast<int32_t>(cooldown_until_ms_ - start_ms) > 0)
+        {
+            sys::runtime::BusAcquireResult result{};
+            result.status = sys::runtime::BusAcquireStatus::Busy;
+            result.diagnostics.resource = request.resource;
+            result.diagnostics.command_id = request.command_id;
+            result.diagnostics.policy = sys::runtime::BusAccessPolicy::DisplayFrameCritical;
+            updateHealth(result.status, start_ms);
+            return result;
+        }
+
+        const uint32_t timeout_ms = timeoutFor(request.policy);
+        const bool acquired =
+            ::platform::esp::common::shared_spi_lock(pdMS_TO_TICKS(timeout_ms));
+        const uint32_t end_ms = sys::millis_now();
+
+        sys::runtime::BusAcquireResult result{};
+        result.status = acquired ? sys::runtime::BusAcquireStatus::Acquired
+                                 : (timeout_ms == 0 ? sys::runtime::BusAcquireStatus::Busy
+                                                    : sys::runtime::BusAcquireStatus::TimedOut);
+        result.token.valid = acquired;
+        result.token.resource = request.resource;
+        result.token.owner = request.command_id;
+        result.token.acquired_ms = acquired ? end_ms : 0;
+        result.diagnostics.resource = request.resource;
+        result.diagnostics.command_id = request.command_id;
+        result.diagnostics.wait_ms = end_ms - start_ms;
+        result.diagnostics.policy = sys::runtime::BusAccessPolicy::DisplayFrameCritical;
+        updateHealth(result.status, end_ms);
+        return result;
+    }
+
+    void release(const sys::runtime::BusAccessToken& token) override
+    {
+        if (!token.valid)
+        {
+            return;
+        }
+        const uint32_t release_ms = sys::millis_now();
+        const uint32_t hold_ms = release_ms - token.acquired_ms;
+        ::platform::esp::common::shared_spi_unlock();
+        const bool slow_hold = hold_ms >= kMapTileDisplaySpiSlowHoldMs;
+        const uint32_t cooldown_ms = slow_hold ? kMapTileDisplaySpiSlowCooldownMs
+                                               : kMapTileDisplaySpiNormalCooldownMs;
+        cooldown_until_ms_ = release_ms + cooldown_ms;
+        if (slow_hold && should_log_map_tile_diagnostic(last_slow_hold_log_ms_, release_ms))
+        {
+            std::printf("[GPS][MAP][bus] display_shared_slow_hold hold_ms=%lu cooldown_ms=%lu\n",
+                        static_cast<unsigned long>(hold_ms),
+                        static_cast<unsigned long>(cooldown_ms));
+            std::fflush(stdout);
+        }
+        consecutive_timeouts_ = 0;
+        if (health_.status == sys::runtime::StorageHealthStatus::Slow ||
+            health_.status == sys::runtime::StorageHealthStatus::Recovering)
+        {
+            health_.status = sys::runtime::StorageHealthStatus::Healthy;
+            health_.last_error = 0;
+            health_.last_transition_ms = sys::millis_now();
+        }
+    }
+
+    sys::runtime::StorageHealthState health() const override
+    {
+        return health_;
+    }
+
+  private:
+    static uint32_t timeoutFor(sys::runtime::BusAccessPolicy policy)
+    {
+        (void)policy;
+        return 0;
+    }
+
+    void updateHealth(sys::runtime::BusAcquireStatus status, uint32_t now_ms)
+    {
+        if (status == sys::runtime::BusAcquireStatus::Acquired)
+        {
+            return;
+        }
+        health_.last_transition_ms = now_ms;
+        ++consecutive_timeouts_;
+        health_.last_error = status == sys::runtime::BusAcquireStatus::TimedOut ? -2 : -1;
+        health_.status = consecutive_timeouts_ >= 3 ? sys::runtime::StorageHealthStatus::Degraded
+                                                    : sys::runtime::StorageHealthStatus::Slow;
+    }
+
+    sys::runtime::StorageHealthState health_{};
+    uint8_t consecutive_timeouts_ = 0;
+    uint32_t cooldown_until_ms_ = 0;
+    uint32_t last_slow_hold_log_ms_ = 0;
+};
+
+class EspMapTileWorkerBackend final : public ui::map_tiles::IMapTileWorkerBackend
+{
+  public:
+    explicit EspMapTileWorkerBackend(ui::map_tiles::IMapTileSource& source)
+        : source_(source)
+    {
+    }
+
+    ui::map_tiles::MapTileLookupResult lookup(
+        const ui::map_tiles::MapTileRef& ref) override
+    {
+        const auto result = source_.lookup(ref);
+        if (result.status == ui::map_tiles::MapTileStatus::Available)
+        {
+            return result;
+        }
+
+        ui::map_tiles::MapTileRef fallback{};
+        if (!fallback_base_ref_to_osm(ref, fallback))
+        {
+            return result;
+        }
+
+        const auto fallback_result = source_.lookup(fallback);
+        if (fallback_result.status == ui::map_tiles::MapTileStatus::Available)
+        {
+            log_map_tile_source_fallback("lookup", ref, fallback);
+            return fallback_result;
+        }
+        return result;
+    }
+
+    bool read(const ui::map_tiles::MapTileRef& ref,
+              uint8_t* buffer,
+              std::size_t capacity,
+              std::size_t& out_size,
+              ui::map_tiles::MapTileFormat& out_format) override
+    {
+        if (source_.read(ref, buffer, capacity, out_size, out_format))
+        {
+            return true;
+        }
+
+        ui::map_tiles::MapTileRef fallback{};
+        if (!fallback_base_ref_to_osm(ref, fallback))
+        {
+            return false;
+        }
+
+        if (source_.read(fallback, buffer, capacity, out_size, out_format))
+        {
+            log_map_tile_source_fallback("read", ref, fallback);
+            return true;
+        }
+        return false;
+    }
+
+  private:
+    ui::map_tiles::IMapTileSource& source_;
 };
 
 class LvglDecodedTileCache final : public ui::map_tiles::IMapTileDecoderCache
@@ -200,6 +848,7 @@ class LvglDecodedTileCache final : public ui::map_tiles::IMapTileDecoderCache
             if (slots_[i].x == static_cast<int32_t>(ref.x) &&
                 slots_[i].y == static_cast<int32_t>(ref.y) &&
                 slots_[i].z == static_cast<int32_t>(ref.z) &&
+                slots_[i].layer == ref.layer &&
                 slots_[i].map_source == map_source &&
                 slots_[i].img_dsc != NULL)
             {
@@ -308,6 +957,7 @@ class LvglDecodedTileCache final : public ui::map_tiles::IMapTileDecoderCache
         slot.y = -1;
         slot.z = -1;
         slot.map_source = 0;
+        slot.layer = ui::map_tiles::MapTileLayer::Osm;
         slot.img_dsc = NULL;
         slot.last_used_ms = 0;
         slot.bound_to_lvgl_object = false;
@@ -335,6 +985,158 @@ ui::map_tiles::FilesystemMapTileSource& tile_source()
     return source;
 }
 
+ui::map_tiles::FilesystemMapTileSource& worker_tile_source()
+{
+    static SdMapTileFileSystem fs;
+    static ui::map_tiles::FilesystemMapTileSource source(fs, "/");
+    return source;
+}
+
+class MapTileAsyncHost final
+{
+  public:
+    bool request(const ui::map_tiles::MapTileRef& ref,
+                 uint32_t generation,
+                 ui::map_tiles::MapTileInteractionMode mode)
+    {
+        if (!ensureStarted())
+        {
+            return false;
+        }
+
+        ui::map_tiles::MapViewportPlan plan{};
+        plan.generation = generation;
+        plan.interaction_mode = mode;
+        plan.tiles[0] = ref;
+        plan.tile_count = 1;
+        return runtime_.requestVisibleTiles(plan, sys::millis_now()) == 1;
+    }
+
+    bool popEvent(ui::map_tiles::MapTileAsyncEvent& out)
+    {
+        return events_.pop(out);
+    }
+
+    bool acceptEvent(const ui::map_tiles::MapTileAsyncEvent& event,
+                     ui::map_tiles::MapTileRenderQueue* render_queue)
+    {
+        (void)render_queue;
+        ui::map_tiles::MapTileRenderQueue acceptance_queue;
+        return runtime_.handle(event, acceptance_queue);
+    }
+
+    void cancelGeneration(uint32_t generation)
+    {
+        (void)runtime_.cancelGeneration(generation);
+    }
+
+  private:
+    static void taskThunk(void* self)
+    {
+        static_cast<MapTileAsyncHost*>(self)->taskLoop();
+    }
+
+    void taskLoop()
+    {
+        for (;;)
+        {
+            ui::map_tiles::LoadTileCommand command{};
+            if (commands_.pop(sys::millis_now(), command))
+            {
+                command.runtime.origin = kMapTileBusResource;
+                if (worker_ != nullptr)
+                {
+                    (void)worker_->execute(command, sys::millis_now());
+                }
+                vTaskDelay(kMapTileWorkerPostCommandYieldTicks);
+                continue;
+            }
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+    }
+
+    bool ensureStarted()
+    {
+        if (started_)
+        {
+            return true;
+        }
+
+        if (scratch_ == nullptr)
+        {
+            scratch_ = allocate_tile_payload(kMapTileWorkerScratchBytes);
+            if (scratch_ == nullptr)
+            {
+                if (!scratch_alloc_failed_logged_)
+                {
+                    std::printf("[GPS][MAP][worker] scratch_alloc_failed bytes=%u\n",
+                                static_cast<unsigned>(kMapTileWorkerScratchBytes));
+                    scratch_alloc_failed_logged_ = true;
+                }
+                return false;
+            }
+        }
+
+        if (worker_ == nullptr)
+        {
+            worker_ = new (std::nothrow)
+                ui::map_tiles::MapTileWorker(backend_,
+                                             bus_,
+                                             events_,
+                                             scratch_,
+                                             kMapTileWorkerScratchBytes);
+            if (worker_ == nullptr)
+            {
+                if (!task_start_failed_logged_)
+                {
+                    std::printf("[GPS][MAP][worker] worker_alloc_failed\n");
+                    task_start_failed_logged_ = true;
+                }
+                return false;
+            }
+        }
+
+        const BaseType_t ok = xTaskCreate(taskThunk,
+                                          "map_tile_worker",
+                                          6144,
+                                          this,
+                                          1,
+                                          &task_);
+        if (ok != pdPASS)
+        {
+            if (!task_start_failed_logged_)
+            {
+                std::printf("[GPS][MAP][worker] task_start_failed rc=%ld\n",
+                            static_cast<long>(ok));
+                task_start_failed_logged_ = true;
+            }
+            return false;
+        }
+        started_ = true;
+        return true;
+    }
+
+    MapTileCommandQueue commands_{};
+    MapTileEventQueue events_{};
+    EspMapTileBusArbiter bus_{};
+    EspMapTileWorkerBackend backend_{worker_tile_source()};
+    uint8_t* scratch_ = nullptr;
+    ui::map_tiles::MapTileWorker* worker_ = nullptr;
+    ui::map_tiles::MapTileAsyncRuntime async_runtime_{commands_};
+    ui::map_tiles::MapTileStateMachine state_machine_{};
+    ui::map_tiles::MapTileRuntime runtime_{async_runtime_, state_machine_};
+    TaskHandle_t task_ = nullptr;
+    bool started_ = false;
+    bool scratch_alloc_failed_logged_ = false;
+    bool task_start_failed_logged_ = false;
+};
+
+MapTileAsyncHost& map_tile_async_host()
+{
+    static MapTileAsyncHost host;
+    return host;
+}
+
 uint8_t clamp_tile_zoom(int z)
 {
     if (z < 0)
@@ -356,6 +1158,20 @@ ui::map_tiles::MapTileRef base_tile_ref(int z, int x, int y, uint8_t map_source)
     ref.x = static_cast<uint32_t>(x < 0 ? 0 : x);
     ref.y = static_cast<uint32_t>(y < 0 ? 0 : y);
     return ref;
+}
+
+uint8_t map_source_for_layer(ui::map_tiles::MapTileLayer layer)
+{
+    switch (layer)
+    {
+    case ui::map_tiles::MapTileLayer::Terrain:
+        return 1;
+    case ui::map_tiles::MapTileLayer::Satellite:
+        return 2;
+    case ui::map_tiles::MapTileLayer::Osm:
+    default:
+        return 0;
+    }
 }
 
 bool contour_tile_ref(int z, int x, int y, ui::map_tiles::MapTileRef& out)
@@ -484,6 +1300,25 @@ void summarize_visible_tiles(const TileContext& ctx,
     }
 }
 
+void update_visible_map_data_flag(TileContext& ctx)
+{
+    if (!ctx.has_visible_map_data || !ctx.tiles)
+    {
+        return;
+    }
+
+    bool visible_png_found = false;
+    for (auto& tile : *ctx.tiles)
+    {
+        if (tile.visible && tile.has_png_file)
+        {
+            visible_png_found = true;
+            break;
+        }
+    }
+    *ctx.has_visible_map_data = visible_png_found;
+}
+
 size_t tiles_covering_axis(lv_coord_t axis_px)
 {
     const lv_coord_t clamped = std::max<lv_coord_t>(axis_px, 1);
@@ -561,8 +1396,12 @@ bool build_base_tile_path(int z, int x, int y, uint8_t map_source, char* out_pat
 
 bool base_tile_available(int z, int x, int y, uint8_t map_source)
 {
-    const auto result = tile_source().lookup(base_tile_ref(z, x, y, map_source));
-    return result.status == ui::map_tiles::MapTileStatus::Available;
+    // ESP availability checks are non-blocking hints; the async tile worker owns the real SD result.
+    (void)z;
+    (void)x;
+    (void)y;
+    (void)map_source;
+    return true;
 }
 
 bool build_contour_tile_path(int z, int x, int y, char* out_path, size_t out_size)
@@ -622,6 +1461,11 @@ static void release_tile_decode_cache_usage()
 static DecodedTileCache* find_cached_tile(int x, int y, int z, uint8_t map_source)
 {
     return decoded_tile_cache().find(base_tile_ref(z, x, y, map_source));
+}
+
+static DecodedTileCache* find_cached_tile_ref(const ui::map_tiles::MapTileRef& ref)
+{
+    return decoded_tile_cache().find(ref);
 }
 
 /**
@@ -913,9 +1757,16 @@ static MapTile& ensure_tile(TileContext& ctx, int x, int y, int z, int priority)
     t.priority = priority;
     t.has_png_file = false;
     t.base_missing = false;
+    t.base_request_pending = false;
+    t.base_request_generation = 0;
+    t.base_retry_not_before_ms = 0;
     t.contour_checked = false;
     t.contour_loaded = false;
+    t.contour_request_pending = false;
+    t.contour_request_generation = 0;
+    t.contour_retry_not_before_ms = 0;
     t.cached_img = NULL; // No cached image initially
+    t.contour_cached_img = NULL;
     ctx.tiles->push_back(t);
     return ctx.tiles->back();
 }
@@ -964,6 +1815,15 @@ static void release_tile_decoded_cache(MapTile& tile)
     }
 }
 
+static void release_contour_decoded_cache(MapTile& tile)
+{
+    if (tile.contour_cached_img != NULL)
+    {
+        tile.contour_cached_img->bound_to_lvgl_object = false;
+        tile.contour_cached_img = NULL;
+    }
+}
+
 static void bind_tile_decoded_cache(MapTile& tile, DecodedTileCache& cache)
 {
     release_tile_decoded_cache(tile);
@@ -972,21 +1832,43 @@ static void bind_tile_decoded_cache(MapTile& tile, DecodedTileCache& cache)
     tile.cached_img = &cache;
 }
 
+static void bind_contour_decoded_cache(MapTile& tile, DecodedTileCache& cache)
+{
+    release_contour_decoded_cache(tile);
+    cache.bound_to_lvgl_object = true;
+    cache.last_used_ms = sys::millis_now();
+    tile.contour_cached_img = &cache;
+}
+
 static void touch_tile_decoded_cache(MapTile& tile)
 {
     if (tile.cached_img == NULL)
     {
-        return;
+        if (tile.contour_cached_img == NULL)
+        {
+            return;
+        }
     }
 
-    if (tile.img_obj == NULL)
+    if (tile.cached_img != NULL && tile.img_obj == NULL)
     {
         release_tile_decoded_cache(tile);
-        return;
+    }
+    else if (tile.cached_img != NULL)
+    {
+        tile.cached_img->bound_to_lvgl_object = true;
+        tile.cached_img->last_used_ms = sys::millis_now();
     }
 
-    tile.cached_img->bound_to_lvgl_object = true;
-    tile.cached_img->last_used_ms = sys::millis_now();
+    if (tile.contour_cached_img != NULL && tile.contour_obj == NULL)
+    {
+        release_contour_decoded_cache(tile);
+    }
+    else if (tile.contour_cached_img != NULL)
+    {
+        tile.contour_cached_img->bound_to_lvgl_object = true;
+        tile.contour_cached_img->last_used_ms = sys::millis_now();
+    }
 }
 
 static void reset_tile_runtime(MapTile& tile)
@@ -997,11 +1879,18 @@ static void reset_tile_runtime(MapTile& tile)
         tile.img_obj = NULL;
     }
     release_tile_decoded_cache(tile);
+    release_contour_decoded_cache(tile);
     tile.contour_obj = NULL; // contour object is a child of img_obj and is deleted with it
     tile.has_png_file = false;
     tile.base_missing = false;
+    tile.base_request_pending = false;
+    tile.base_request_generation = 0;
+    tile.base_retry_not_before_ms = 0;
     tile.contour_checked = false;
     tile.contour_loaded = false;
+    tile.contour_request_pending = false;
+    tile.contour_request_generation = 0;
+    tile.contour_retry_not_before_ms = 0;
 }
 
 static bool evict_invisible_cached_tile_object(TileContext& ctx)
@@ -1018,7 +1907,7 @@ static bool evict_invisible_cached_tile_object(TileContext& ctx)
         MapTile& candidate = (*ctx.tiles)[i];
         if (candidate.visible ||
             candidate.img_obj == NULL ||
-            candidate.cached_img == NULL)
+            (candidate.cached_img == NULL && candidate.contour_cached_img == NULL))
         {
             continue;
         }
@@ -1078,8 +1967,15 @@ static void sync_render_settings(TileContext& ctx)
     }
 
     bool source_changed = (map_source != g_active_map_source);
+    const uint32_t previous_generation = g_map_tile_runtime_generation;
     g_active_map_source = map_source;
     g_active_contour_enabled = contour_enabled;
+    ++g_map_tile_runtime_generation;
+    if (g_map_tile_runtime_generation == 0)
+    {
+        g_map_tile_runtime_generation = kMapTileGenerationInitial;
+    }
+    map_tile_async_host().cancelGeneration(previous_generation);
 
     reset_all_tiles_for_render_change(ctx);
     if (source_changed)
@@ -1096,344 +1992,410 @@ static void sync_render_settings(TileContext& ctx)
     }
 }
 
-/**
- * Load tile image from SD card
- */
-static void load_tile_image(TileContext& ctx, MapTile& tile)
+static void mark_missing_base_tile(TileContext& ctx, MapTile& tile)
 {
-    if (!ctx.map_container || !ctx.tiles)
+    if (!ctx.map_container)
     {
-        GPS_LOG("[GPS] ERROR: Invalid context in load_tile_image\n");
         return;
     }
 
-    // If tile already has a loaded image (not just placeholder), skip
-    if (tile.img_obj != NULL && tile.has_png_file)
-    {
-        tile.last_used_ms = sys::millis_now();
-        GPS_LOG("[GPS] load_tile_image: Tile %d/%d/%d already loaded\n",
-                tile.z,
-                fmt_tile_coord(tile.x),
-                fmt_tile_coord(tile.y));
-        return;
-    }
-
-    char path[96];
-    build_base_tile_path(tile.z, tile.x, tile.y, g_active_map_source, path, sizeof(path));
-
-    bool file_exists = false;
-
-    GPS_LOG("[GPS] load_tile_image: Loading tile %d/%d/%d, path=%s\n",
-            tile.z,
-            fmt_tile_coord(tile.x),
-            fmt_tile_coord(tile.y),
-            path);
-
-    // Always recalculate screen position (don't use old placeholder position)
-    // This ensures correct position after panning/zooming
-    int screen_x, screen_y;
+    int screen_x = 0;
+    int screen_y = 0;
     if (!tile_screen_pos_xyz(ctx, tile.x, tile.y, tile.z, screen_x, screen_y))
     {
-        GPS_LOG("[GPS] ERROR: tile_screen_pos_xyz failed in load_tile_image\n");
         return;
     }
 
-    // Check visibility
-    lv_coord_t screen_width = lv_obj_get_width(ctx.map_container);
-    lv_coord_t screen_height = lv_obj_get_height(ctx.map_container);
+    if (tile.img_obj != NULL)
+    {
+        reset_tile_runtime(tile);
+    }
+    create_placeholder_tile_card(ctx.map_container, tile, screen_x, screen_y);
+    tile.base_missing = true;
+    tile.base_request_pending = false;
+    tile.base_retry_not_before_ms = 0;
+
+    if (!g_missing_tile_notice_emitted)
+    {
+        g_missing_tile_notice_emitted = true;
+        g_missing_tile_notice_pending = true;
+        g_missing_tile_notice_source = g_active_map_source;
+    }
+}
+
+static DecodedTileCache* decode_payload_to_cache(TileContext& ctx,
+                                                 const ui::map_tiles::MapTileRef& ref,
+                                                 const ui::map_tiles::MapTilePayload& payload)
+{
+    if (payload.data == nullptr || payload.size == 0)
+    {
+        return nullptr;
+    }
+
+    DecodedTileCache* cached = find_cached_tile_ref(ref);
+    if (cached != nullptr && cached->img_dsc != NULL)
+    {
+        return cached;
+    }
+
+    DecodedTileCache* cache_slot = get_lru_cache_slot(tile_decode_cache_limit(ctx));
+    if (cache_slot == NULL && evict_invisible_cached_tile_object(ctx))
+    {
+        cache_slot = get_lru_cache_slot(tile_decode_cache_limit(ctx));
+    }
+    if (cache_slot == NULL)
+    {
+        return nullptr;
+    }
+
+    const ui::map_tiles::MapTileFormat payload_format =
+        payload.format == ui::map_tiles::MapTileFormat::Unknown
+            ? ui::map_tiles::mapTileFormatForLayer(ref.layer)
+            : payload.format;
+    const lv_color_format_t source_format = lvgl_source_format_for_tile(payload_format);
+    if (source_format == LV_COLOR_FORMAT_UNKNOWN)
+    {
+        log_map_tile_decode_failure("unsupported_format",
+                                    ref,
+                                    payload_format,
+                                    payload.size,
+                                    static_cast<long>(payload_format));
+        return nullptr;
+    }
+
+    lv_image_dsc_t compressed{};
+    compressed.header.magic = LV_IMAGE_HEADER_MAGIC;
+    compressed.header.cf = source_format;
+    compressed.header.flags = 0;
+    compressed.data_size = static_cast<uint32_t>(payload.size);
+    compressed.data = payload.data;
+
+    lv_image_decoder_dsc_t decoder_dsc;
+    std::memset(&decoder_dsc, 0, sizeof(decoder_dsc));
+
+    const lv_result_t decode_res = lv_image_decoder_open(&decoder_dsc, &compressed, NULL);
+    if (decode_res != LV_RESULT_OK || decoder_dsc.decoded == NULL)
+    {
+        log_map_tile_decode_failure("open",
+                                    ref,
+                                    payload_format,
+                                    payload.size,
+                                    static_cast<long>(decode_res));
+        lv_image_decoder_close(&decoder_dsc);
+        return nullptr;
+    }
+
+    const lv_draw_buf_t* decoded_buf = decoder_dsc.decoded;
+    const uint32_t data_size = decoded_buf->data_size;
+    if (decoded_buf->data == nullptr || data_size == 0 || decoded_buf->header.w == 0 ||
+        decoded_buf->header.h == 0)
+    {
+        log_map_tile_decode_failure("decoded_buffer",
+                                    ref,
+                                    payload_format,
+                                    payload.size,
+                                    static_cast<long>(data_size));
+        lv_image_decoder_close(&decoder_dsc);
+        return nullptr;
+    }
+
+    cache_slot->img_dsc = static_cast<lv_image_dsc_t*>(lv_malloc(sizeof(lv_image_dsc_t)));
+    if (cache_slot->img_dsc == NULL)
+    {
+        log_map_tile_decode_failure("alloc_desc",
+                                    ref,
+                                    payload_format,
+                                    payload.size,
+                                    -12);
+        lv_image_decoder_close(&decoder_dsc);
+        return nullptr;
+    }
+
+    uint8_t* img_data = static_cast<uint8_t*>(lv_malloc(data_size));
+    if (img_data == NULL)
+    {
+        log_map_tile_decode_failure("alloc_pixels",
+                                    ref,
+                                    payload_format,
+                                    data_size,
+                                    -12);
+        lv_free(cache_slot->img_dsc);
+        cache_slot->img_dsc = NULL;
+        lv_image_decoder_close(&decoder_dsc);
+        return nullptr;
+    }
+
+    std::memcpy(img_data, decoded_buf->data, data_size);
+    cache_slot->img_dsc->header.magic = LV_IMAGE_HEADER_MAGIC;
+    cache_slot->img_dsc->header.w = decoded_buf->header.w;
+    cache_slot->img_dsc->header.h = decoded_buf->header.h;
+    cache_slot->img_dsc->header.cf = decoded_buf->header.cf;
+    cache_slot->img_dsc->header.flags = 0;
+    cache_slot->img_dsc->header.stride = decoded_buf->header.stride;
+    cache_slot->img_dsc->data_size = data_size;
+    cache_slot->img_dsc->data = img_data;
+
+    cache_slot->x = static_cast<int32_t>(ref.x);
+    cache_slot->y = static_cast<int32_t>(ref.y);
+    cache_slot->z = static_cast<int32_t>(ref.z);
+    cache_slot->layer = ref.layer;
+    cache_slot->map_source = map_source_for_layer(ref.layer);
+    cache_slot->last_used_ms = sys::millis_now();
+    cache_slot->bound_to_lvgl_object = false;
+
+    lv_image_decoder_close(&decoder_dsc);
+    return cache_slot;
+}
+
+static bool render_base_tile_from_cache(TileContext& ctx, MapTile& tile, DecodedTileCache& cache)
+{
+    if (!ctx.map_container || cache.img_dsc == NULL)
+    {
+        return false;
+    }
+
+    int screen_x = 0;
+    int screen_y = 0;
+    if (!tile_screen_pos_xyz(ctx, tile.x, tile.y, tile.z, screen_x, screen_y))
+    {
+        return false;
+    }
+
+    const lv_coord_t screen_width = lv_obj_get_width(ctx.map_container);
+    const lv_coord_t screen_height = lv_obj_get_height(ctx.map_container);
     tile.visible = tile_in_rect(screen_x, screen_y, screen_width, screen_height, 0);
-
-    // Check if tile file exists once for the current render state.
-    lv_fs_file_t f;
-    lv_fs_res_t res = lv_fs_open(&f, path, LV_FS_MODE_RD);
-    file_exists = (res == LV_FS_RES_OK);
-    if (file_exists)
+    if (!tile.visible)
     {
-        lv_fs_close(&f);
-        GPS_LOG("[GPS] Tile file EXISTS: %s (res=%d)\n", path, res);
-    }
-    else
-    {
-        GPS_LOG("[GPS] Tile file NOT found: %s (res=%d)\n", path, res);
+        return false;
     }
 
-    if (file_exists)
+    if (tile.img_obj != NULL)
     {
-        tile.base_missing = false;
-        // Check cache first
-        DecodedTileCache* cached = find_cached_tile(tile.x, tile.y, tile.z, g_active_map_source);
-        DecodedTileCache* cache_slot = nullptr;
-        if (cached == NULL)
-        {
-            // No cached image: prefer an available decoded slot. If all slots are
-            // still bound to LVGL objects, release one invisible object first.
-            cache_slot = get_lru_cache_slot(tile_decode_cache_limit(ctx));
-            if (cache_slot == NULL)
-            {
-                if (evict_invisible_cached_tile_object(ctx))
-                {
-                    cache_slot = get_lru_cache_slot(tile_decode_cache_limit(ctx));
-                }
-            }
-        }
-
-        // If tile has a placeholder label, delete it (but always recalculate position)
-        lv_obj_t* old_obj = tile.img_obj;
-        if (old_obj != NULL)
-        {
-            reset_tile_runtime(tile);
-        }
-
-        // File exists: use lv_image
-        tile.img_obj = lv_image_create(ctx.map_container);
-        lv_obj_set_size(tile.img_obj, TILE_SIZE, TILE_SIZE);
-        lv_obj_set_pos(tile.img_obj, screen_x, screen_y);
-        style_tile_obj(tile.img_obj);
-        lv_obj_move_background(tile.img_obj);
-        tile.map_source = g_active_map_source;
-
-        if (cached && cached->img_dsc != NULL)
-        {
-            // Use cached decoded image (no PNG decode needed)
-            GPS_LOG("[GPS] Using cached decoded image for tile %d/%d/%d\n",
-                    tile.z,
-                    fmt_tile_coord(tile.x),
-                    fmt_tile_coord(tile.y));
-            lv_image_set_src(tile.img_obj, cached->img_dsc);
-            bind_tile_decoded_cache(tile, *cached);
-        }
-        else if (cache_slot == NULL)
-        {
-            GPS_FLOW_LOG("[GPS][MAP][fallback] cache_full_file_src z=%d x=%d y=%d src=%u\n",
-                         tile.z,
-                         fmt_tile_coord(tile.x),
-                         fmt_tile_coord(tile.y),
-                         g_active_map_source);
-            lv_image_set_src(tile.img_obj, path);
-            release_tile_decoded_cache(tile);
-        }
-        else
-        {
-            // Decode PNG and cache it in RAM
-            GPS_LOG("[GPS] Decoding and caching tile %d/%d/%d\n",
-                    tile.z,
-                    fmt_tile_coord(tile.x),
-                    fmt_tile_coord(tile.y));
-
-            // Use LVGL's decoder to decode PNG
-            lv_image_decoder_dsc_t decoder_dsc;
-            memset(&decoder_dsc, 0, sizeof(decoder_dsc));
-
-            lv_result_t decode_res = lv_image_decoder_open(&decoder_dsc, path, NULL);
-            if (decode_res == LV_RESULT_OK && decoder_dsc.decoded != NULL)
-            {
-                // Decode successful - copy decoded data to our cache
-
-                // Get decoded image info (decoded is const)
-                const lv_draw_buf_t* decoded_buf = decoder_dsc.decoded;
-                uint32_t width = decoded_buf->header.w;
-                uint32_t height = decoded_buf->header.h;
-                lv_color_format_t cf = (lv_color_format_t)decoded_buf->header.cf;
-                uint32_t stride = decoded_buf->header.stride;
-                uint32_t data_size = decoded_buf->data_size;
-
-                GPS_LOG("[GPS] Decoded tile %d/%d/%d: %dx%d, cf=%d, stride=%d, size=%d\n",
-                        tile.z,
-                        fmt_tile_coord(tile.x),
-                        fmt_tile_coord(tile.y),
-                        width,
-                        height,
-                        cf,
-                        stride,
-                        data_size);
-
-                // Allocate image descriptor (cache_slot->img_dsc should be NULL after eviction)
-                cache_slot->img_dsc = (lv_image_dsc_t*)lv_malloc(sizeof(lv_image_dsc_t));
-                if (cache_slot->img_dsc == NULL)
-                {
-                    GPS_LOG("[GPS] ERROR: Failed to allocate memory for img_dsc\n");
-                    lv_image_decoder_close(&decoder_dsc);
-                    // Fall back to file path
-                    lv_image_set_src(tile.img_obj, path);
-                    release_tile_decoded_cache(tile);
-                }
-                else
-                {
-                    // Allocate memory for image data
-                    uint8_t* img_data = (uint8_t*)lv_malloc(data_size);
-                    if (img_data == NULL)
-                    {
-                        GPS_LOG("[GPS] ERROR: Failed to allocate memory for image data (%d bytes)\n", data_size);
-                        lv_free(cache_slot->img_dsc);
-                        cache_slot->img_dsc = NULL;
-                        lv_image_decoder_close(&decoder_dsc);
-                        // Fall back to file path
-                        lv_image_set_src(tile.img_obj, path);
-                        release_tile_decoded_cache(tile);
-                    }
-                    else
-                    {
-                        // Copy decoded data to our cache
-                        memcpy(img_data, decoded_buf->data, data_size);
-
-                        // Fill image descriptor (LVGL v9 structure)
-                        cache_slot->img_dsc->header.magic = LV_IMAGE_HEADER_MAGIC;
-                        cache_slot->img_dsc->header.w = width;
-                        cache_slot->img_dsc->header.h = height;
-                        cache_slot->img_dsc->header.cf = cf;
-                        cache_slot->img_dsc->header.flags = 0;
-                        cache_slot->img_dsc->header.stride = stride;
-                        cache_slot->img_dsc->data_size = data_size;
-                        cache_slot->img_dsc->data = (const uint8_t*)img_data;
-
-                        // Update cache entry
-                        cache_slot->x = tile.x;
-                        cache_slot->y = tile.y;
-                        cache_slot->z = tile.z;
-                        cache_slot->map_source = g_active_map_source;
-
-                        // Close decoder (we've copied the data)
-                        lv_image_decoder_close(&decoder_dsc);
-
-                        // Use cached decoded image
-                        lv_image_set_src(tile.img_obj, cache_slot->img_dsc);
-                        bind_tile_decoded_cache(tile, *cache_slot);
-                        GPS_LOG("[GPS] Tile %d/%d/%d decoded and cached successfully\n",
-                                tile.z,
-                                fmt_tile_coord(tile.x),
-                                fmt_tile_coord(tile.y));
-                    }
-                }
-            }
-            else
-            {
-                // Decode failed - fall back to file path
-                GPS_FLOW_LOG("[GPS][MAP][fallback] decode_path_fallback z=%d x=%d y=%d src=%u\n",
-                             tile.z,
-                             fmt_tile_coord(tile.x),
-                             fmt_tile_coord(tile.y),
-                             g_active_map_source);
-                GPS_LOG("[GPS] WARNING: Failed to decode tile %d/%d/%d, using file path\n",
-                        tile.z,
-                        fmt_tile_coord(tile.x),
-                        fmt_tile_coord(tile.y));
-                lv_image_decoder_close(&decoder_dsc);
-
-                lv_image_set_src(tile.img_obj, path);
-                release_tile_decoded_cache(tile);
-            }
-        }
-
-        tile.has_png_file = true;
-        tile.contour_checked = false;
-        tile.contour_loaded = false;
-        *ctx.has_map_data = true; // Global flag - any tile ever loaded
-        GPS_LOG("[GPS] Tile %d/%d/%d image loaded successfully\n",
-                tile.z,
-                fmt_tile_coord(tile.x),
-                fmt_tile_coord(tile.y));
-    }
-    else
-    {
-        // File missing: use unified placeholder card
-        GPS_LOG("[GPS] Creating placeholder card for missing tile %d/%d/%d\n",
-                tile.z,
-                fmt_tile_coord(tile.x),
-                fmt_tile_coord(tile.y));
-        if (tile.img_obj != NULL)
-        {
-            reset_tile_runtime(tile);
-        }
-        create_placeholder_tile_card(ctx.map_container, tile, screen_x, screen_y);
-        tile.base_missing = true;
-        GPS_FLOW_LOG("[GPS][MAP][fallback] base_missing_confirmed z=%d x=%d y=%d src=%u res=%d path=%s\n",
-                     tile.z,
-                     fmt_tile_coord(tile.x),
-                     fmt_tile_coord(tile.y),
-                     g_active_map_source,
-                     res,
-                     path);
-
-        if (!g_missing_tile_notice_emitted)
-        {
-            g_missing_tile_notice_emitted = true;
-            g_missing_tile_notice_pending = true;
-            g_missing_tile_notice_source = g_active_map_source;
-        }
-        GPS_LOG("[GPS] Created placeholder card for tile %d/%d/%d\n",
-                tile.z,
-                fmt_tile_coord(tile.x),
-                fmt_tile_coord(tile.y));
+        reset_tile_runtime(tile);
     }
 
+    tile.img_obj = lv_image_create(ctx.map_container);
+    lv_obj_set_size(tile.img_obj, TILE_SIZE, TILE_SIZE);
+    lv_obj_set_pos(tile.img_obj, screen_x, screen_y);
+    style_tile_obj(tile.img_obj);
+    lv_obj_move_background(tile.img_obj);
+    lv_image_set_src(tile.img_obj, cache.img_dsc);
+    bind_tile_decoded_cache(tile, cache);
+
+    tile.map_source = g_active_map_source;
+    tile.has_png_file = true;
+    tile.base_missing = false;
+    tile.base_request_pending = false;
+    tile.base_retry_not_before_ms = 0;
+    tile.contour_checked = false;
+    tile.contour_loaded = false;
+    if (ctx.has_map_data)
+    {
+        *ctx.has_map_data = true;
+    }
     tile.last_used_ms = sys::millis_now();
     tile.obj_evicted_ms = 0;
     tile.record_evicted = false;
-    rebuild_render_queue(ctx);
-    GPS_LOG("[GPS] Tile %d/%d/%d loaded, visible=%d\n",
-            tile.z,
-            fmt_tile_coord(tile.x),
-            fmt_tile_coord(tile.y),
-            tile.visible);
+    return true;
 }
 
-static void load_contour_overlay(MapTile& tile)
+static bool render_contour_from_cache(MapTile& tile, DecodedTileCache& cache)
 {
-    if (!g_active_contour_enabled)
+    if (!g_active_contour_enabled || tile.img_obj == NULL || cache.img_dsc == NULL)
     {
-        tile.contour_checked = false;
-        tile.contour_loaded = false;
-        if (tile.contour_obj != NULL)
-        {
-            lv_obj_del(tile.contour_obj);
-            tile.contour_obj = NULL;
-        }
-        return;
+        return false;
     }
 
-    if (tile.contour_obj != NULL)
+    if (tile.contour_obj == NULL)
     {
-        tile.contour_checked = true;
-        tile.contour_loaded = true;
-        lv_obj_clear_flag(tile.contour_obj, LV_OBJ_FLAG_HIDDEN);
-        return;
+        tile.contour_obj = lv_image_create(tile.img_obj);
+        lv_obj_set_size(tile.contour_obj, TILE_SIZE, TILE_SIZE);
+        lv_obj_set_pos(tile.contour_obj, 0, 0);
+        style_tile_obj(tile.contour_obj);
     }
-
-    if (tile.contour_checked)
-    {
-        return;
-    }
-
-    if (tile.img_obj == NULL || !tile.visible)
-    {
-        return;
-    }
-
-    char contour_path[96];
-    if (!build_contour_tile_path(tile.z, tile.x, tile.y, contour_path, sizeof(contour_path)))
-    {
-        tile.contour_checked = true;
-        tile.contour_loaded = false;
-        return;
-    }
-
-    lv_fs_file_t f;
-    lv_fs_res_t res = lv_fs_open(&f, contour_path, LV_FS_MODE_RD);
-    if (res != LV_FS_RES_OK)
-    {
-        tile.contour_checked = true;
-        tile.contour_loaded = false;
-        return;
-    }
-    lv_fs_close(&f);
-
-    tile.contour_obj = lv_image_create(tile.img_obj);
-    lv_obj_set_size(tile.contour_obj, TILE_SIZE, TILE_SIZE);
-    lv_obj_set_pos(tile.contour_obj, 0, 0);
-    style_tile_obj(tile.contour_obj);
-    lv_image_set_src(tile.contour_obj, contour_path);
+    lv_image_set_src(tile.contour_obj, cache.img_dsc);
+    lv_obj_clear_flag(tile.contour_obj, LV_OBJ_FLAG_HIDDEN);
+    bind_contour_decoded_cache(tile, cache);
     tile.contour_checked = true;
     tile.contour_loaded = true;
+    tile.contour_request_pending = false;
+    tile.contour_retry_not_before_ms = 0;
+    return true;
+}
+
+static bool request_base_tile_async(MapTile& tile)
+{
+    if (tile.base_request_pending)
+    {
+        return true;
+    }
+    const uint32_t now_ms = sys::millis_now();
+    if (tile.base_retry_not_before_ms != 0 &&
+        static_cast<int32_t>(tile.base_retry_not_before_ms - now_ms) > 0)
+    {
+        return false;
+    }
+
+    const ui::map_tiles::MapTileRef ref = base_tile_ref_for_tile(tile);
+    if (map_tile_async_host().request(ref,
+                                      g_map_tile_runtime_generation,
+                                      ui::map_tiles::MapTileInteractionMode::InteractiveDrag))
+    {
+        tile.base_request_pending = true;
+        tile.base_request_generation = g_map_tile_runtime_generation;
+        return true;
+    }
+    tile.base_retry_not_before_ms = now_ms + kMapTileLayerBusyBackoffMs;
+    return false;
+}
+
+static bool request_contour_tile_async(MapTile& tile)
+{
+    if (tile.contour_request_pending)
+    {
+        return true;
+    }
+    const uint32_t now_ms = sys::millis_now();
+    if (tile.contour_retry_not_before_ms != 0 &&
+        static_cast<int32_t>(tile.contour_retry_not_before_ms - now_ms) > 0)
+    {
+        return false;
+    }
+
+    ui::map_tiles::MapTileRef ref{};
+    if (!contour_tile_ref(tile.z, static_cast<int>(tile.x), static_cast<int>(tile.y), ref))
+    {
+        tile.contour_checked = true;
+        tile.contour_loaded = false;
+        return false;
+    }
+
+    if (DecodedTileCache* cached = find_cached_tile_ref(ref))
+    {
+        if (render_contour_from_cache(tile, *cached))
+        {
+            return true;
+        }
+    }
+
+    if (map_tile_async_host().request(ref,
+                                      g_map_tile_runtime_generation,
+                                      ui::map_tiles::MapTileInteractionMode::InteractiveDrag))
+    {
+        tile.contour_request_pending = true;
+        tile.contour_request_generation = g_map_tile_runtime_generation;
+        return true;
+    }
+    tile.contour_retry_not_before_ms = now_ms + kMapTileLayerBusyBackoffMs;
+    return false;
+}
+
+static bool apply_map_tile_event(TileContext& ctx, ui::map_tiles::MapTileAsyncEvent& event)
+{
+    if (event.generation != g_map_tile_runtime_generation)
+    {
+        log_map_tile_event_failure("stale_generation", event, 0);
+        release_tile_payload(event);
+        return false;
+    }
+
+    const bool is_contour = ui::map_tiles::mapTileLayerIsContour(event.tile.layer);
+    if (!is_contour && map_source_for_layer(event.tile.layer) != g_active_map_source)
+    {
+        log_map_tile_event_failure("source_mismatch", event, static_cast<long>(g_active_map_source));
+        release_tile_payload(event);
+        return false;
+    }
+    if (is_contour && !g_active_contour_enabled)
+    {
+        release_tile_payload(event);
+        return false;
+    }
+
+    MapTile* tile = find_tile(ctx,
+                              static_cast<int>(event.tile.x),
+                              static_cast<int>(event.tile.y),
+                              static_cast<int>(event.tile.z));
+    if (tile == nullptr)
+    {
+        log_map_tile_event_failure("tile_not_visible", event, 0);
+        release_tile_payload(event);
+        return false;
+    }
+
+    uint32_t& retry_not_before =
+        is_contour ? tile->contour_retry_not_before_ms : tile->base_retry_not_before_ms;
+    bool& pending = is_contour ? tile->contour_request_pending : tile->base_request_pending;
+    pending = false;
+
+    const uint32_t now_ms = sys::millis_now();
+    if (event.kind == ui::map_tiles::MapTileAsyncEventKind::ResourceBusy)
+    {
+        retry_not_before = now_ms + kMapTileLayerBusyBackoffMs;
+        log_map_tile_event_failure("resource_busy", event, event.error);
+        release_tile_payload(event);
+        return false;
+    }
+
+    if (event.kind != ui::map_tiles::MapTileAsyncEventKind::Ready)
+    {
+        log_map_tile_event_failure("worker", event, event.error);
+        if (is_contour)
+        {
+            tile->contour_checked = true;
+            tile->contour_loaded = false;
+        }
+        else
+        {
+            mark_missing_base_tile(ctx, *tile);
+        }
+        release_tile_payload(event);
+        update_visible_map_data_flag(ctx);
+        rebuild_render_queue(ctx);
+        return true;
+    }
+
+    DecodedTileCache* cache = decode_payload_to_cache(ctx, event.tile, event.payload);
+    if (cache == nullptr)
+    {
+        retry_not_before = now_ms + kMapTileLayerCacheBackoffMs;
+        log_map_tile_event_failure("decode", event, event.error);
+        release_tile_payload(event);
+        return false;
+    }
+
+    const bool rendered = is_contour ? render_contour_from_cache(*tile, *cache)
+                                     : render_base_tile_from_cache(ctx, *tile, *cache);
+    if (!rendered)
+    {
+        retry_not_before = now_ms + kMapTileLayerCacheBackoffMs;
+        log_map_tile_event_failure("render", event, 0);
+    }
+
+    release_tile_payload(event);
+    update_visible_map_data_flag(ctx);
+    rebuild_render_queue(ctx);
+    return rendered;
+}
+
+static void drain_map_tile_events(TileContext& ctx)
+{
+    ui::map_tiles::MapTileAsyncEvent event{};
+    int drained = 0;
+    while (drained < kMapTileEventsPerUiDrain && map_tile_async_host().popEvent(event))
+    {
+        const bool accepted = map_tile_async_host().acceptEvent(event, ctx.render_queue);
+        if (accepted)
+        {
+            (void)apply_map_tile_event(ctx, event);
+        }
+        else
+        {
+            release_tile_payload(event);
+        }
+        ++drained;
+        event = {};
+    }
 }
 
 /**
@@ -1945,6 +2907,8 @@ void tile_loader_step(TileContext& ctx)
     }
 
     sync_render_settings(ctx);
+    drain_map_tile_events(ctx);
+    update_visible_map_data_flag(ctx);
 
     const uint32_t start_ms = sys::millis_now();
     const uint32_t budget_ms = 6;
@@ -1963,7 +2927,10 @@ void tile_loader_step(TileContext& ctx)
             if (tile.visible &&
                 tile.map_source == g_active_map_source &&
                 !tile.has_png_file &&
-                !tile.base_missing)
+                !tile.base_missing &&
+                !tile.base_request_pending &&
+                (tile.base_retry_not_before_ms == 0 ||
+                 static_cast<int32_t>(tile.base_retry_not_before_ms - start_ms) <= 0))
             {
                 bool already_attempted = false;
                 for (int i = 0; i < attempted_count; i++)
@@ -2023,7 +2990,15 @@ void tile_loader_step(TileContext& ctx)
             old_screen_y = lv_obj_get_y(old_obj);
         }
 
-        load_tile_image(ctx, *best);
+        bool rendered_now = false;
+        if (DecodedTileCache* cached = find_cached_tile_ref(base_tile_ref_for_tile(*best)))
+        {
+            rendered_now = render_base_tile_from_cache(ctx, *best, *cached);
+        }
+        else
+        {
+            (void)request_base_tile_async(*best);
+        }
 
         int after_visible_total = 0;
         int after_visible_loaded = 0;
@@ -2046,7 +3021,7 @@ void tile_loader_step(TileContext& ctx)
                      after_visible_unloaded);
 
         // Invalidate only the tile area, not the entire container
-        if (best->img_obj != NULL)
+        if (rendered_now && best->img_obj != NULL)
         {
             int new_screen_x = lv_obj_get_x(best->img_obj);
             int new_screen_y = lv_obj_get_y(best->img_obj);
@@ -2070,23 +3045,16 @@ void tile_loader_step(TileContext& ctx)
         // This ensures the flag is updated immediately when tiles are loaded
         if (ctx.has_visible_map_data)
         {
-            bool visible_png_found = false;
-            for (auto& tile : *ctx.tiles)
-            {
-                if (tile.visible && tile.has_png_file)
-                {
-                    visible_png_found = true;
-                    break;
-                }
-            }
             bool old_value = *ctx.has_visible_map_data;
-            *ctx.has_visible_map_data = visible_png_found;
-            if (old_value != visible_png_found)
+            update_visible_map_data_flag(ctx);
+            if (old_value != *ctx.has_visible_map_data)
             {
                 GPS_LOG("[GPS] tile_loader_step: has_visible_map_data changed: %d -> %d\n",
-                        old_value, visible_png_found);
+                        old_value, *ctx.has_visible_map_data);
             }
         }
+
+        drain_map_tile_events(ctx);
 
         if ((int32_t)(sys::millis_now() - start_ms) >= (int32_t)budget_ms)
         {
@@ -2107,6 +3075,16 @@ void tile_loader_step(TileContext& ctx)
             {
                 continue;
             }
+            if (tile.contour_request_pending)
+            {
+                continue;
+            }
+            const uint32_t now_ms = sys::millis_now();
+            if (tile.contour_retry_not_before_ms != 0 &&
+                static_cast<int32_t>(tile.contour_retry_not_before_ms - now_ms) > 0)
+            {
+                continue;
+            }
             if (contour_target == nullptr ||
                 tile.priority < contour_target->priority ||
                 (tile.priority == contour_target->priority && tile.last_used_ms < contour_target->last_used_ms))
@@ -2116,13 +3094,35 @@ void tile_loader_step(TileContext& ctx)
         }
         if (contour_target != nullptr)
         {
-            load_contour_overlay(*contour_target);
-            if (contour_target->contour_obj != NULL)
+            ui::map_tiles::MapTileRef ref{};
+            bool rendered_now = false;
+            if (contour_tile_ref(contour_target->z,
+                                 static_cast<int>(contour_target->x),
+                                 static_cast<int>(contour_target->y),
+                                 ref))
+            {
+                if (DecodedTileCache* cached = find_cached_tile_ref(ref))
+                {
+                    rendered_now = render_contour_from_cache(*contour_target, *cached);
+                }
+                else
+                {
+                    (void)request_contour_tile_async(*contour_target);
+                }
+            }
+            else
+            {
+                contour_target->contour_checked = true;
+                contour_target->contour_loaded = false;
+            }
+            if (rendered_now && contour_target->contour_obj != NULL)
             {
                 lv_obj_invalidate(contour_target->contour_obj);
             }
         }
     }
+    drain_map_tile_events(ctx);
+    update_visible_map_data_flag(ctx);
     rebuild_render_queue(ctx);
 }
 
@@ -2169,6 +3169,15 @@ void cleanup_tiles(TileContext& ctx)
     }
     g_active_map_source = 0xFF;
     g_active_contour_enabled = false;
+    {
+        const uint32_t previous_generation = g_map_tile_runtime_generation;
+        ++g_map_tile_runtime_generation;
+        if (g_map_tile_runtime_generation == 0)
+        {
+            g_map_tile_runtime_generation = kMapTileGenerationInitial;
+        }
+        map_tile_async_host().cancelGeneration(previous_generation);
+    }
     g_missing_tile_notice_pending = false;
     g_missing_tile_notice_emitted = false;
     g_missing_tile_notice_source = 0;

@@ -52,6 +52,7 @@ class MapTileEvent
     uint32_t generation = 0;
     MapTileRef tile{};
     MapTileFormat format = MapTileFormat::Unknown;
+    MapTilePayload payload{};
     std::size_t payload_size = 0;
     int32_t error = 0;
 };
@@ -214,13 +215,18 @@ class MapTileRuntime
 
     bool handle(const MapTileEvent& event, MapTileRenderQueue& render_queue)
     {
-        state_machine_.transition(event);
         const bool accepted = runtime_.handleEvent(event, render_queue);
-        if (accepted && ui_sink_)
+        if (!accepted)
+        {
+            return false;
+        }
+
+        state_machine_.transition(event);
+        if (ui_sink_)
         {
             (void)ui_sink_->applyTile(event);
         }
-        return accepted;
+        return true;
     }
 
     MapTileStateSnapshot snapshot() const

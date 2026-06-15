@@ -137,6 +137,7 @@ MapTileWorker::MapTileWorker(IMapTileWorkerBackend& backend,
 bool MapTileWorker::execute(const LoadTileCommand& command, uint32_t now_ms)
 {
     sys::runtime::BusAcquireRequest request{};
+    request.resource = command.runtime.origin;
     request.policy = policy_->selectBusPolicy(command.runtime);
     request.command_id = command.runtime.command_id;
     request.deadline_ms = command.runtime.deadline_ms;
@@ -159,17 +160,6 @@ bool MapTileWorker::execute(const LoadTileCommand& command, uint32_t now_ms)
     event.generation = command.runtime.generation;
     event.tile = command.tile;
 
-    const auto lookup = backend_.lookup(command.tile);
-    if (lookup.status != MapTileStatus::Available)
-    {
-        event.kind = MapTileAsyncEventKind::Failed;
-        event.format = lookup.format;
-        event.error = static_cast<int32_t>(lookup.status);
-        bus_.release(acquired.token);
-        (void)events_.publish(event);
-        return false;
-    }
-
     std::size_t out_size = 0;
     MapTileFormat out_format = MapTileFormat::Unknown;
     const bool ok = backend_.read(command.tile, scratch_, scratch_size_, out_size, out_format);
@@ -178,6 +168,13 @@ bool MapTileWorker::execute(const LoadTileCommand& command, uint32_t now_ms)
     event.kind = ok ? MapTileAsyncEventKind::Ready : MapTileAsyncEventKind::Failed;
     event.format = out_format;
     event.payload_size = out_size;
+    if (ok)
+    {
+        event.payload.ref = command.tile;
+        event.payload.format = out_format;
+        event.payload.data = scratch_;
+        event.payload.size = out_size;
+    }
     event.error = ok ? 0 : -1;
     (void)events_.publish(event);
     (void)now_ms;
