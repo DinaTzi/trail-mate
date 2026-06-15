@@ -286,7 +286,7 @@ constexpr const char* kActionItems[] = {
 
 constexpr const char* kMessageMenuItems[] = {
     "INFO",
-    "REPLY",
+    "SEND",
     "RETRY",
 };
 

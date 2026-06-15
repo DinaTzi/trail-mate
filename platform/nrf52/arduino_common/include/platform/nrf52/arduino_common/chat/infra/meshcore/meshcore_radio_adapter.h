@@ -33,6 +33,13 @@ class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter,
     ::chat::MeshCapabilities getCapabilities() const override;
     bool sendText(::chat::ChannelId channel, const std::string& text,
                   ::chat::MessageId* out_msg_id, ::chat::NodeId peer = 0) override;
+    bool sendTextWithId(::chat::ChannelId channel, const std::string& text,
+                        ::chat::MessageId forced_msg_id,
+                        ::chat::MessageId* out_msg_id, ::chat::NodeId peer = 0) override;
+    ::chat::MeshSendResult sendTextDetailed(::chat::ChannelId channel,
+                                            const std::string& text,
+                                            ::chat::MessageId forced_msg_id = 0,
+                                            ::chat::NodeId peer = 0) override;
     bool pollIncomingText(::chat::MeshIncomingText* out) override;
     bool sendAppData(::chat::ChannelId channel, uint32_t portnum,
                      const uint8_t* payload, size_t len,
@@ -101,9 +108,15 @@ class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter,
     bool executeDiscoverRequestEffect(const ::chat::runtime::SendDiscoverRequestEffect& effect);
     bool executeDiscoverResponseEffect(const ::chat::runtime::SendDiscoverResponseEffect& effect);
     bool executeSelfAnnouncementEffect(const ::chat::runtime::SendSelfAnnouncementEffect& effect);
+    bool sendAppAck(uint32_t signature);
+    ::chat::MessageId allocateMessageId(::chat::MessageId forced_msg_id);
+    void rememberLocalTextAck(uint32_t signature);
+    bool isLocalTextAck(uint32_t signature) const;
+    void forgetLocalTextAck(uint32_t signature);
 
     ::chat::MeshConfig config_{};
     ::chat::NodeId node_id_ = 0;
+    ::chat::MessageId next_message_id_ = 1;
     std::string long_name_;
     std::string short_name_;
     const ::chat::runtime::SelfIdentityProvider* identity_provider_ = nullptr;
@@ -112,6 +125,8 @@ class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter,
     uint8_t public_key_[::chat::meshcore::kMeshCorePubKeySize] = {};
     uint8_t private_key_[::chat::meshcore::kMeshCorePrivKeySize] = {};
     std::array<uint8_t, 16> flood_scope_key_{};
+    std::array<uint32_t, 32> local_text_ack_signatures_{};
+    uint8_t local_text_ack_next_ = 0;
     std::queue<::chat::MeshIncomingText> text_queue_;
     std::queue<::chat::MeshIncomingData> data_queue_;
     ::chat::runtime::MeshCoreRuntime protocol_runtime_{};

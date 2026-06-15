@@ -108,22 +108,65 @@ MeshCoreRadioAdapter::MeshCoreRadioAdapter(const ::chat::runtime::SelfIdentityPr
 bool MeshCoreRadioAdapter::sendText(::chat::ChannelId channel, const std::string& text,
                                     ::chat::MessageId* out_msg_id, ::chat::NodeId peer)
 {
-    if (!out_msg_id)
+    const ::chat::MeshSendResult result = sendTextDetailed(channel, text, 0, peer);
+    if (out_msg_id)
     {
-        static ::chat::MessageId sink = 0;
-        out_msg_id = &sink;
+        *out_msg_id = result.msg_id;
     }
-    *out_msg_id = millis();
+    return result.ok;
+}
+
+bool MeshCoreRadioAdapter::sendTextWithId(::chat::ChannelId channel, const std::string& text,
+                                          ::chat::MessageId forced_msg_id,
+                                          ::chat::MessageId* out_msg_id, ::chat::NodeId peer)
+{
+    const ::chat::MeshSendResult result = sendTextDetailed(channel, text, forced_msg_id, peer);
+    if (out_msg_id)
+    {
+        *out_msg_id = result.msg_id;
+    }
+    return result.ok;
+}
+
+::chat::MeshSendResult MeshCoreRadioAdapter::sendTextDetailed(::chat::ChannelId channel,
+                                                              const std::string& text,
+                                                              ::chat::MessageId forced_msg_id,
+                                                              ::chat::NodeId peer)
+{
+    const ::chat::MessageId msg_id = allocateMessageId(forced_msg_id);
+    if (text.empty())
+    {
+        Serial.printf("[MESHCORE] TX text dropped reason=empty id=%08lX dest=%08lX\n",
+                      static_cast<unsigned long>(msg_id),
+                      static_cast<unsigned long>(peer));
+        return ::chat::MeshSendResult::fail(::chat::MeshOperationFailure::InvalidInput, msg_id);
+    }
+
+    const bool want_ack = peer != 0;
     const bool ok = sendAppData(channel,
                                 0x1001,
                                 reinterpret_cast<const uint8_t*>(text.data()),
                                 text.size(),
                                 peer,
-                                false,
-                                *out_msg_id,
+                                want_ack,
+                                msg_id,
                                 false);
-    sys::EventBus::publish(new sys::ChatSendResultEvent(*out_msg_id, ok), 0);
-    return ok;
+    Serial.printf("[MESHCORE] TX text id=%08lX dest=%08lX len=%u ack=%u ok=%u\n",
+                  static_cast<unsigned long>(msg_id),
+                  static_cast<unsigned long>(peer),
+                  static_cast<unsigned>(text.size()),
+                  want_ack ? 1U : 0U,
+                  ok ? 1U : 0U);
+    if (!ok)
+    {
+        return ::chat::MeshSendResult::fail(::chat::MeshOperationFailure::RadioTxFailed, msg_id);
+    }
+
+    if (!want_ack)
+    {
+        sys::EventBus::publish(new sys::ChatSendResultEvent(msg_id, true), 0);
+    }
+    return ::chat::MeshSendResult::success(msg_id);
 }
 
 bool MeshCoreRadioAdapter::pollIncomingText(::chat::MeshIncomingText* out)
@@ -144,10 +187,14 @@ bool MeshCoreRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t portn
                                        bool want_response)
 {
     (void)channel;
-    (void)packet_id;
     (void)want_response;
     if (!payload || len == 0 || !config_.tx_enabled)
     {
+        Serial.printf("[MESHCORE] TX app-data dropped port=%lu dest=%08lX len=%u tx=%u\n",
+                      static_cast<unsigned long>(portnum),
+                      static_cast<unsigned long>(dest),
+                      static_cast<unsigned>(len),
+                      config_.tx_enabled ? 1U : 0U);
         return false;
     }
 
@@ -177,6 +224,10 @@ bool MeshCoreRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t portn
                                                      sizeof(frame),
                                                      &frame_len))
         {
+            Serial.printf("[MESHCORE] TX app-data encode failed port=%lu dest=%08lX ack=%u\n",
+                          static_cast<unsigned long>(portnum),
+                          static_cast<unsigned long>(dest),
+                          want_ack ? 1U : 0U);
             return false;
         }
         const bool ok = transmitFrame(frame, frame_len);
@@ -192,9 +243,16 @@ bool MeshCoreRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t portn
                                                                   parsed.payload_len);
                 ack.peer = dest;
                 ack.portnum = portnum;
+                ack.message_id = packet_id;
                 ::chat::runtime::RuntimeContext context = buildRuntimeContext();
                 context.now_ms = millis();
                 executeProtocolEffects(protocol_runtime_.trackAppAck(ack, context));
+                rememberLocalTextAck(ack.signature);
+                Serial.printf("[MESHCORE] ACK watch sig=%08lX msg=%08lX dest=%08lX port=%lu\n",
+                              static_cast<unsigned long>(ack.signature),
+                              static_cast<unsigned long>(ack.message_id),
+                              static_cast<unsigned long>(ack.peer),
+                              static_cast<unsigned long>(ack.portnum));
             }
         }
         return ok;
@@ -222,6 +280,10 @@ bool MeshCoreRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t portn
                                                  sizeof(frame),
                                                  &frame_len))
     {
+        Serial.printf("[MESHCORE] TX app-data encode failed port=%lu dest=%08lX ack=%u\n",
+                      static_cast<unsigned long>(portnum),
+                      static_cast<unsigned long>(dest),
+                      want_ack ? 1U : 0U);
         return false;
     }
     return transmitFrame(frame, frame_len);
@@ -409,9 +471,42 @@ bool MeshCoreRadioAdapter::executeProtocolEffect(const ::chat::runtime::Protocol
             }
             else if constexpr (std::is_same_v<Effect, ::chat::runtime::EmitActionResultEffect>)
             {
-                ok = item.protocol == ::chat::MeshProtocol::MeshCore &&
-                     item.state != ::chat::runtime::ProtocolActionState::Failed &&
-                     item.state != ::chat::runtime::ProtocolActionState::TimedOut;
+                if (item.protocol == ::chat::MeshProtocol::MeshCore)
+                {
+                    const bool is_text_ack =
+                        item.action == ::chat::runtime::ProtocolActionKind::SendText &&
+                        item.message_id != 0;
+                    if (is_text_ack &&
+                        item.state == ::chat::runtime::ProtocolActionState::Completed)
+                    {
+                        Serial.printf("[MESHCORE] ACK complete sig=%08lX msg=%08lX dest=%08lX trip=%ld\n",
+                                      static_cast<unsigned long>(item.request_id),
+                                      static_cast<unsigned long>(item.message_id),
+                                      static_cast<unsigned long>(item.peer),
+                                      static_cast<long>(item.detail));
+                        forgetLocalTextAck(item.request_id);
+                        sys::EventBus::publish(
+                            new sys::ChatSendResultEvent(item.message_id, true),
+                            0);
+                    }
+                    else if (is_text_ack &&
+                             (item.state == ::chat::runtime::ProtocolActionState::Failed ||
+                              item.state == ::chat::runtime::ProtocolActionState::TimedOut))
+                    {
+                        Serial.printf("[MESHCORE] ACK failed sig=%08lX msg=%08lX dest=%08lX state=%u age=%ld\n",
+                                      static_cast<unsigned long>(item.request_id),
+                                      static_cast<unsigned long>(item.message_id),
+                                      static_cast<unsigned long>(item.peer),
+                                      static_cast<unsigned>(item.state),
+                                      static_cast<long>(item.detail));
+                        forgetLocalTextAck(item.request_id);
+                        sys::EventBus::publish(
+                            new sys::ChatSendResultEvent(item.message_id, false),
+                            0);
+                    }
+                    ok = item.state != ::chat::runtime::ProtocolActionState::Failed &&
+                         item.state != ::chat::runtime::ProtocolActionState::TimedOut;
+                }
             }
         });
     return ok;
@@ -669,14 +764,25 @@ void MeshCoreRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
     ::chat::meshcore::ParsedPacket parsed{};
     if (!::chat::meshcore::parsePacket(data, size, &parsed))
     {
+        Serial.printf("[MESHCORE] RX parse failed len=%u\n",
+                      static_cast<unsigned>(size));
         return;
     }
+
+    Serial.printf("[MESHCORE] RX frame route=%u type=%u path=%u payload=%u len=%u\n",
+                  static_cast<unsigned>(parsed.route_type),
+                  static_cast<unsigned>(parsed.payload_type),
+                  static_cast<unsigned>(parsed.path_len),
+                  static_cast<unsigned>(parsed.payload_len),
+                  static_cast<unsigned>(size));
 
     if (parsed.payload_type == kPayloadTypeAck &&
         parsed.payload_len >= sizeof(uint32_t))
     {
         uint32_t ack_sig = 0;
         std::memcpy(&ack_sig, parsed.payload, sizeof(ack_sig));
+        Serial.printf("[MESHCORE] RX ACK sig=%08lX\n",
+                      static_cast<unsigned long>(ack_sig));
         executeProtocolEffects(protocol_runtime_.handleAppAck(ack_sig, buildRuntimeContext()));
         return;
     }
@@ -777,6 +883,26 @@ void MeshCoreRadioAdapter::handleRawPacket(const uint8_t* data, size_t size)
     if (::chat::meshcore::decodeDirectAppPayload(parsed.payload, parsed.payload_len, &direct_payload) &&
         direct_payload.payload && direct_payload.payload_len > 0)
     {
+        const uint32_t packet_sig = ::chat::meshcore::packetSignature(parsed.payload_type,
+                                                                      parsed.path_len,
+                                                                      parsed.payload,
+                                                                      parsed.payload_len);
+        if (direct_payload.want_ack && packet_sig != 0)
+        {
+            if (isLocalTextAck(packet_sig))
+            {
+                Serial.printf("[MESHCORE] RX direct self echo skip ACK sig=%08lX\n",
+                              static_cast<unsigned long>(packet_sig));
+            }
+            else
+            {
+                const bool ack_ok = sendAppAck(packet_sig);
+                Serial.printf("[MESHCORE] TX ACK sig=%08lX ok=%u\n",
+                              static_cast<unsigned long>(packet_sig),
+                              ack_ok ? 1U : 0U);
+            }
+        }
+
         ::chat::MeshIncomingData incoming{};
         incoming.from = node_id_;
         incoming.to = 0;
@@ -1270,6 +1396,106 @@ bool MeshCoreRadioAdapter::sendRawData(const uint8_t* path, size_t path_len,
     return true;
 }
 
+bool MeshCoreRadioAdapter::sendAppAck(uint32_t signature)
+{
+    if (signature == 0 || !config_.tx_enabled)
+    {
+        return false;
+    }
+
+    uint8_t payload[sizeof(uint32_t)] = {};
+    std::memcpy(payload, &signature, sizeof(payload));
+
+    uint8_t frame[kMeshcoreMaxFrameSize] = {};
+    size_t frame_len = 0;
+    if (!::chat::meshcore::buildFrameNoTransport(kRouteTypeFlood,
+                                                 kPayloadTypeAck,
+                                                 nullptr,
+                                                 0,
+                                                 payload,
+                                                 sizeof(payload),
+                                                 frame,
+                                                 sizeof(frame),
+                                                 &frame_len))
+    {
+        return false;
+    }
+    return transmitFrame(frame, frame_len);
+}
+
+::chat::MessageId MeshCoreRadioAdapter::allocateMessageId(::chat::MessageId forced_msg_id)
+{
+    if (forced_msg_id != 0)
+    {
+        if (forced_msg_id >= next_message_id_)
+        {
+            next_message_id_ = forced_msg_id + 1;
+            if (next_message_id_ == 0)
+            {
+                next_message_id_ = 1;
+            }
+        }
+        return forced_msg_id;
+    }
+
+    ::chat::MessageId id = next_message_id_++;
+    if (id == 0)
+    {
+        id = next_message_id_++;
+    }
+    if (next_message_id_ == 0)
+    {
+        next_message_id_ = 1;
+    }
+    return id;
+}
+
+void MeshCoreRadioAdapter::rememberLocalTextAck(uint32_t signature)
+{
+    if (signature == 0)
+    {
+        return;
+    }
+    if (isLocalTextAck(signature))
+    {
+        return;
+    }
+    local_text_ack_signatures_[local_text_ack_next_ % local_text_ack_signatures_.size()] = signature;
+    local_text_ack_next_ = static_cast<uint8_t>((local_text_ack_next_ + 1U) %
+                                                local_text_ack_signatures_.size());
+}
+
+bool MeshCoreRadioAdapter::isLocalTextAck(uint32_t signature) const
+{
+    if (signature == 0)
+    {
+        return false;
+    }
+    for (const uint32_t local_signature : local_text_ack_signatures_)
+    {
+        if (local_signature == signature)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void MeshCoreRadioAdapter::forgetLocalTextAck(uint32_t signature)
+{
+    if (signature == 0)
+    {
+        return;
+    }
+    for (uint32_t& local_signature : local_text_ack_signatures_)
+    {
+        if (local_signature == signature)
+        {
+            local_signature = 0;
+        }
+    }
+}
+
 void MeshCoreRadioAdapter::setFloodScopeKey(const uint8_t* key, size_t len)
 {
     flood_scope_key_.fill(0);
@@ -1335,7 +1561,11 @@ void MeshCoreRadioAdapter::ensureIdentityKeys()
 bool MeshCoreRadioAdapter::transmitFrame(const uint8_t* data, size_t size)
 {
     auto* io = ::platform::nrf52::arduino_common::chat::infra::radioPacketIo();
-    return io && io->transmit(data, size);
+    const bool ok = io && io->transmit(data, size);
+    Serial.printf("[MESHCORE] TX raw len=%u ok=%u\n",
+                  static_cast<unsigned>(size),
+                  ok ? 1U : 0U);
+    return ok;
 }
 
 bool MeshCoreRadioAdapter::sendAdvert(bool broadcast)
