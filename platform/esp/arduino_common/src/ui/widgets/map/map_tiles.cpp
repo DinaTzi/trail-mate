@@ -194,8 +194,9 @@ constexpr std::size_t kMapTileCommandQueueCapacity = 48;
 constexpr std::size_t kMapTileEventQueueCapacity = 48;
 constexpr std::size_t kMapTileWorkerScratchBytes = 192U * 1024U;
 constexpr int kMapTileEventsPerUiDrain = 1;
-constexpr uint32_t kMapTileLayerBusyBackoffMs = 250;
+constexpr uint32_t kMapTileLayerBusyBackoffMs = 1500;
 constexpr uint32_t kMapTileLayerCacheBackoffMs = 350;
+constexpr uint32_t kMapTileMissingCacheTtlMs = 5U * 60U * 1000U;
 constexpr uint32_t kMapTileGenerationInitial = 1;
 constexpr uint32_t kMapTileBusResource = 1;
 constexpr uint32_t kMapTileDiagnosticLogIntervalMs = 1000;
@@ -425,6 +426,111 @@ bool same_tile_ref(const ui::map_tiles::MapTileRef& lhs,
            lhs.z == rhs.z &&
            lhs.x == rhs.x &&
            lhs.y == rhs.y;
+}
+
+class MapTileAvailabilityMemory final
+{
+  public:
+    MapTileAvailabilityMemory()
+        : mutex_(xSemaphoreCreateMutex())
+    {
+    }
+
+    bool knownMissing(const ui::map_tiles::MapTileRef& ref)
+    {
+        if (!ensureMutex() || xSemaphoreTake(mutex_, 0) != pdTRUE)
+        {
+            return false;
+        }
+
+        const uint32_t now_ms = sys::millis_now();
+        bool missing = false;
+        for (const Entry& entry : entries_)
+        {
+            if (!entry.used || !same_tile_ref(entry.ref, ref))
+            {
+                continue;
+            }
+            missing = static_cast<int32_t>(entry.expires_ms - now_ms) > 0;
+            break;
+        }
+        xSemaphoreGive(mutex_);
+        return missing;
+    }
+
+    void markMissing(const ui::map_tiles::MapTileRef& ref)
+    {
+        if (!ensureMutex() || xSemaphoreTake(mutex_, 0) != pdTRUE)
+        {
+            return;
+        }
+
+        const uint32_t now_ms = sys::millis_now();
+        Entry* slot = nullptr;
+        for (Entry& entry : entries_)
+        {
+            if (entry.used && same_tile_ref(entry.ref, ref))
+            {
+                slot = &entry;
+                break;
+            }
+            if (!slot && (!entry.used || static_cast<int32_t>(entry.expires_ms - now_ms) <= 0))
+            {
+                slot = &entry;
+            }
+        }
+
+        if (slot == nullptr)
+        {
+            slot = &entries_[next_replace_++ % kCapacity];
+        }
+        slot->used = true;
+        slot->ref = ref;
+        slot->expires_ms = now_ms + kMapTileMissingCacheTtlMs;
+        xSemaphoreGive(mutex_);
+    }
+
+    void markAvailable(const ui::map_tiles::MapTileRef& ref)
+    {
+        if (!ensureMutex() || xSemaphoreTake(mutex_, 0) != pdTRUE)
+        {
+            return;
+        }
+
+        for (Entry& entry : entries_)
+        {
+            if (entry.used && same_tile_ref(entry.ref, ref))
+            {
+                entry.used = false;
+                break;
+            }
+        }
+        xSemaphoreGive(mutex_);
+    }
+
+  private:
+    struct Entry
+    {
+        bool used = false;
+        ui::map_tiles::MapTileRef ref{};
+        uint32_t expires_ms = 0;
+    };
+
+    bool ensureMutex()
+    {
+        return mutex_ != nullptr;
+    }
+
+    static constexpr std::size_t kCapacity = 192;
+    Entry entries_[kCapacity]{};
+    std::size_t next_replace_ = 0;
+    SemaphoreHandle_t mutex_ = nullptr;
+};
+
+MapTileAvailabilityMemory& map_tile_availability_memory()
+{
+    static MapTileAvailabilityMemory memory;
+    return memory;
 }
 
 class MapTileCommandQueue final : public ui::map_tiles::IMapTileCommandSink
@@ -781,22 +887,41 @@ class EspMapTileWorkerBackend final : public ui::map_tiles::IMapTileWorkerBacken
               std::size_t& out_size,
               ui::map_tiles::MapTileFormat& out_format) override
     {
+        if (map_tile_availability_memory().knownMissing(ref))
+        {
+            out_size = 0;
+            out_format = ui::map_tiles::mapTileFormatForLayer(ref.layer);
+            return false;
+        }
+
         if (source_.read(ref, buffer, capacity, out_size, out_format))
         {
+            map_tile_availability_memory().markAvailable(ref);
             return true;
         }
 
         ui::map_tiles::MapTileRef fallback{};
         if (!fallback_base_ref_to_osm(ref, fallback))
         {
+            map_tile_availability_memory().markMissing(ref);
+            return false;
+        }
+
+        if (map_tile_availability_memory().knownMissing(fallback))
+        {
+            map_tile_availability_memory().markMissing(ref);
             return false;
         }
 
         if (source_.read(fallback, buffer, capacity, out_size, out_format))
         {
             log_map_tile_source_fallback("read", ref, fallback);
+            map_tile_availability_memory().markAvailable(ref);
+            map_tile_availability_memory().markAvailable(fallback);
             return true;
         }
+        map_tile_availability_memory().markMissing(ref);
+        map_tile_availability_memory().markMissing(fallback);
         return false;
     }
 
@@ -1405,12 +1530,8 @@ bool build_base_tile_path(int z, int x, int y, uint8_t map_source, char* out_pat
 
 bool base_tile_available(int z, int x, int y, uint8_t map_source)
 {
-    // ESP availability checks are non-blocking hints; the async tile worker owns the real SD result.
-    (void)z;
-    (void)x;
-    (void)y;
-    (void)map_source;
-    return true;
+    const ui::map_tiles::MapTileRef ref = base_tile_ref(z, x, y, map_source);
+    return !map_tile_availability_memory().knownMissing(ref);
 }
 
 bool build_contour_tile_path(int z, int x, int y, char* out_path, size_t out_size)
@@ -2262,6 +2383,15 @@ static bool request_base_tile_async(MapTile& tile)
     }
 
     const ui::map_tiles::MapTileRef ref = base_tile_ref_for_tile(tile);
+    if (map_tile_availability_memory().knownMissing(ref))
+    {
+        tile.base_missing = true;
+        tile.base_request_pending = false;
+        tile.base_request_generation = 0;
+        tile.base_retry_not_before_ms = 0;
+        return false;
+    }
+
     if (map_tile_async_host().request(ref,
                                       g_map_tile_runtime_generation,
                                       ui::map_tiles::MapTileInteractionMode::InteractiveDrag))
@@ -2337,6 +2467,11 @@ static bool apply_map_tile_event(TileContext& ctx, ui::map_tiles::MapTileAsyncEv
         return false;
     }
 
+    if (!is_contour && event.kind == ui::map_tiles::MapTileAsyncEventKind::Failed)
+    {
+        map_tile_availability_memory().markMissing(event.tile);
+    }
+
     MapTile* tile = find_tile(ctx,
                               static_cast<int>(event.tile.x),
                               static_cast<int>(event.tile.y),
@@ -2372,6 +2507,7 @@ static bool apply_map_tile_event(TileContext& ctx, ui::map_tiles::MapTileAsyncEv
         }
         else
         {
+            map_tile_availability_memory().markMissing(event.tile);
             mark_missing_base_tile(ctx, *tile);
         }
         release_tile_payload(event);

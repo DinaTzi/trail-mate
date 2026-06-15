@@ -518,6 +518,8 @@
 #define LV_FONT_DEJAVU_16_PERSIAN_HEBREW 0  /*Hebrew, Arabic, Persian letters and all their forms*/
 #define LV_FONT_SIMSUN_14_CJK            0  /*1000 most common CJK radicals*/
 #define LV_FONT_SIMSUN_16_CJK            0  /*1000 most common CJK radicals*/
+#define LV_FONT_SOURCE_HAN_SANS_SC_14_CJK 1 /*Built-in ESP content fallback; no SD/font.bin IO*/
+#define LV_FONT_SOURCE_HAN_SANS_SC_16_CJK 0
 
 /*Pixel perfect monospace fonts*/
 #define LV_FONT_UNSCII_8  0

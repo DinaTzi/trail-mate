@@ -134,6 +134,10 @@ Mandatory behavior:
   probes. When called from shared UI code such as node-detail mini map zoom
   selection, they must not open SD files; they may only answer whether rendering
   should be attempted and let the async tile result settle actual availability.
+- ESP UI helpers may consult an in-memory missing-tile cache. They must not
+  return unconditional availability for tiles that the worker has already
+  reported missing, because that causes sparse map regions to requeue the same
+  nonexistent SD paths and starve the display SPI bus.
 - The ESP worker must read a tile payload in one source operation. It must not
   perform a separate existence lookup followed by a read for the same tile in
   the active map path.

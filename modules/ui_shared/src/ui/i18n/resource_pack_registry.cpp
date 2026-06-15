@@ -27,6 +27,13 @@
 #define UI_I18N_HAVE_BINFONT 0
 #endif
 
+#if (defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)) && !defined(GAT562_NO_CJK)
+#define UI_I18N_HAS_BUILTIN_CJK_CONTENT_FONT 1
+LV_FONT_DECLARE(lv_font_source_han_sans_sc_14_cjk)
+#else
+#define UI_I18N_HAS_BUILTIN_CJK_CONTENT_FONT 0
+#endif
+
 namespace ui::i18n
 {
 namespace
@@ -40,6 +47,7 @@ constexpr const char* kLegacyDisplayLanguageKey = "display_language";
 constexpr const char* kDefaultLocaleId = "en";
 constexpr const char* kBuiltinEnglishName = "English";
 constexpr const char* kBuiltinLatinFontPackId = "builtin-latin-ui";
+constexpr const char* kBuiltinCjkContentFontPackId = "builtin-cjk-content";
 #if UI_FS_HAS_FLASH_PACK_STORAGE
 constexpr const char* kFlashPackRoot = "/fs/trailmate/packs";
 constexpr const char* kFlashFontPackRoot = "/fs/trailmate/packs/fonts";
@@ -848,6 +856,18 @@ bool font_pack_covers_codepoint(const FontPackRecord& pack, uint32_t codepoint)
     return false;
 }
 
+bool loaded_font_has_codepoint(const FontPackRecord& pack, uint32_t codepoint)
+{
+    const lv_font_t* font = resolved_font(&pack);
+    if (!font)
+    {
+        return false;
+    }
+
+    lv_font_glyph_dsc_t glyph{};
+    return lv_font_get_glyph_dsc(font, &glyph, codepoint, 0);
+}
+
 bool decode_next_utf8(const unsigned char*& ptr, uint32_t& out_codepoint)
 {
     if (!ptr || *ptr == 0)
@@ -943,6 +963,23 @@ std::size_t coverage_hit_count(const FontPackRecord& pack, const std::vector<uin
         }
     }
     return hits;
+}
+
+bool content_supplement_contains(const FontPackRecord* pack)
+{
+    if (!pack)
+    {
+        return false;
+    }
+
+    for (const FontPackRecord* existing : s_content_supplement_packs)
+    {
+        if (existing == pack)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 void append_unique_pack(std::vector<FontPackRecord*>& packs, FontPackRecord* pack)
@@ -1275,7 +1312,8 @@ bool codepoint_covered_by_loaded_packs(const std::vector<FontPackRecord*>& packs
         {
             continue;
         }
-        if (font_pack_covers_codepoint(*pack, codepoint))
+        if (font_pack_covers_codepoint(*pack, codepoint) &&
+            loaded_font_has_codepoint(*pack, codepoint))
         {
             return true;
         }
@@ -1361,6 +1399,10 @@ FontPackRecord* choose_content_supplement(const std::vector<uint32_t>& missing)
         for (FontPackRecord* pack : candidates)
         {
             if (!pack || pack == s_active_content_font_pack || pack == s_active_ui_font_pack)
+            {
+                continue;
+            }
+            if (content_supplement_contains(pack))
             {
                 continue;
             }
@@ -1506,6 +1548,24 @@ void add_builtin_font_packs()
     latin_pack.builtin_font = nullptr;
     latin_pack.estimated_ram_bytes = 0;
     s_font_packs.push_back(std::move(latin_pack));
+
+#if UI_I18N_HAS_BUILTIN_CJK_CONTENT_FONT
+    FontPackRecord cjk_pack{};
+    cjk_pack.id = kBuiltinCjkContentFontPackId;
+    cjk_pack.display_name = "Built-in CJK Content";
+    cjk_pack.usage = FontPackUsage::ContentOnly;
+    cjk_pack.builtin = true;
+    cjk_pack.builtin_font = &::lv_font_source_han_sans_sc_14_cjk;
+    cjk_pack.estimated_ram_bytes = 0;
+    cjk_pack.source_path = "lv_font_source_han_sans_sc_14_cjk";
+    cjk_pack.coverage.push_back({0x3000U, 0x30FFU});
+    cjk_pack.coverage.push_back({0x3400U, 0x4DBFU});
+    cjk_pack.coverage.push_back({0x4E00U, 0x9FFFU});
+    cjk_pack.coverage.push_back({0xF900U, 0xFAFFU});
+    cjk_pack.coverage.push_back({0xFF00U, 0xFFEFU});
+    normalize_ranges(cjk_pack.coverage);
+    s_font_packs.push_back(std::move(cjk_pack));
+#endif
 }
 
 void add_builtin_locale_packs()
