@@ -7,6 +7,7 @@
 #include "chat/runtime/meshcore_self_announcement_core.h"
 #include "chat/runtime/self_identity_policy.h"
 #include "chat/time_utils.h"
+#include "chat/usecase/contact_service.h"
 #include "platform/nrf52/arduino_common/chat/infra/radio_packet_io.h"
 #include "platform/nrf52/arduino_common/device_identity.h"
 #include "platform/nrf52/arduino_common/sys/event_bus.h"
@@ -17,6 +18,7 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <type_traits>
 
 namespace platform::nrf52::arduino_common::chat::meshcore
@@ -77,9 +79,11 @@ bool isPrintableTextPayload(const uint8_t* data, size_t len)
 
 } // namespace
 
-MeshCoreRadioAdapter::MeshCoreRadioAdapter(const ::chat::runtime::SelfIdentityProvider* identity_provider)
+MeshCoreRadioAdapter::MeshCoreRadioAdapter(const ::chat::runtime::SelfIdentityProvider* identity_provider,
+                                           ::chat::contacts::ContactService* contact_service)
     : node_id_(device_identity::getSelfNodeId()),
-      identity_provider_(identity_provider)
+      identity_provider_(identity_provider),
+      contact_service_(contact_service)
 {
 }
 
@@ -354,7 +358,50 @@ bool MeshCoreRadioAdapter::executeProtocolEffect(const ::chat::runtime::Protocol
             }
             else if constexpr (std::is_same_v<Effect, ::chat::runtime::PublishNodeInfoEffect>)
             {
-                ok = item.protocol == ::chat::MeshProtocol::MeshCore;
+                if (item.protocol == ::chat::MeshProtocol::MeshCore &&
+                    item.node_id != 0 &&
+                    contact_service_)
+                {
+                    float snr = 0.0f;
+                    if (item.rx_meta.snr_db_x10 != std::numeric_limits<int16_t>::min())
+                    {
+                        snr = static_cast<float>(item.rx_meta.snr_db_x10) / 10.0f;
+                    }
+
+                    float rssi = 0.0f;
+                    if (item.rx_meta.rssi_dbm_x10 != std::numeric_limits<int16_t>::min())
+                    {
+                        rssi = static_cast<float>(item.rx_meta.rssi_dbm_x10) / 10.0f;
+                    }
+
+                    const uint32_t timestamp = item.timestamp != 0
+                                                   ? item.timestamp
+                                                   : ::chat::now_epoch_seconds();
+                    contact_service_->updateNodeInfo(
+                        item.node_id,
+                        item.short_name.c_str(),
+                        item.long_name.c_str(),
+                        snr,
+                        rssi,
+                        timestamp,
+                        static_cast<uint8_t>(::chat::contacts::NodeProtocolType::MeshCore),
+                        item.role,
+                        item.hops,
+                        0,
+                        static_cast<uint8_t>(item.channel));
+
+                    if (item.has_public_key || item.key_manually_verified)
+                    {
+                        ::chat::contacts::NodeUpdate update{};
+                        update.has_public_key = item.has_public_key;
+                        update.public_key_present = item.has_public_key;
+                        update.has_key_manually_verified = item.key_manually_verified;
+                        update.key_manually_verified = item.key_manually_verified;
+                        contact_service_->applyNodeUpdate(item.node_id, update);
+                    }
+
+                    ok = true;
+                }
             }
             else if constexpr (std::is_same_v<Effect, ::chat::runtime::UpdatePeerRouteEffect>)
             {
@@ -441,6 +488,8 @@ bool MeshCoreRadioAdapter::executeDiscoverRequestEffect(const ::chat::runtime::S
 {
     if (effect.protocol != ::chat::MeshProtocol::MeshCore || !config_.tx_enabled)
     {
+        Serial.printf("[MESHCORE] TX DISCOVER_REQ blocked mode=local reason=%s\n",
+                      effect.protocol != ::chat::MeshProtocol::MeshCore ? "protocol" : "tx_disabled");
         return false;
     }
 
@@ -452,11 +501,27 @@ bool MeshCoreRadioAdapter::executeDiscoverRequestEffect(const ::chat::runtime::S
 
     uint8_t payload[10] = {};
     size_t payload_len = 0;
-    return ::chat::meshcore::buildDiscoverRequestControlPayload(request,
-                                                                payload,
-                                                                sizeof(payload),
-                                                                &payload_len) &&
-           sendControlData(payload, payload_len);
+    if (!::chat::meshcore::buildDiscoverRequestControlPayload(request,
+                                                              payload,
+                                                              sizeof(payload),
+                                                              &payload_len))
+    {
+        Serial.printf("[MESHCORE] TX DISCOVER_REQ mode=local tag=%08lX filter=%02X prefix=%u ok=0 reason=encode\n",
+                      static_cast<unsigned long>(request.tag),
+                      static_cast<unsigned>(request.type_filter),
+                      request.prefix_only ? 1U : 0U);
+        return false;
+    }
+
+    const bool ok = sendControlData(payload, payload_len);
+    Serial.printf("[MESHCORE] TX DISCOVER_REQ mode=local tag=%08lX filter=%02X prefix=%u since=%lu len=%u ok=%u\n",
+                  static_cast<unsigned long>(request.tag),
+                  static_cast<unsigned>(request.type_filter),
+                  request.prefix_only ? 1U : 0U,
+                  static_cast<unsigned long>(request.since),
+                  static_cast<unsigned>(payload_len),
+                  ok ? 1U : 0U);
+    return ok;
 }
 
 bool MeshCoreRadioAdapter::executeDiscoverResponseEffect(const ::chat::runtime::SendDiscoverResponseEffect& effect)
@@ -498,28 +563,60 @@ bool MeshCoreRadioAdapter::executeSelfAnnouncementEffect(const ::chat::runtime::
 {
     if (effect.protocol != ::chat::MeshProtocol::MeshCore || !config_.tx_enabled)
     {
+        Serial.printf("[MESHCORE] TX ADVERT blocked mode=%s reason=%s\n",
+                      effect.broadcast ? "broadcast" : "local",
+                      effect.protocol != ::chat::MeshProtocol::MeshCore ? "protocol" : "tx_disabled");
         return false;
     }
     (void)effect.include_location;
     (void)effect.lat_i6;
     (void)effect.lon_i6;
-    return sendAdvert(effect.broadcast);
+    const bool ok = sendAdvert(effect.broadcast);
+    Serial.printf("[MESHCORE] TX ADVERT mode=%s ok=%u\n",
+                  effect.broadcast ? "broadcast" : "local",
+                  ok ? 1U : 0U);
+    return ok;
 }
 
 bool MeshCoreRadioAdapter::triggerDiscoveryAction(::chat::MeshDiscoveryAction action)
 {
+    return triggerDiscoveryActionDetailed(action).ok;
+}
+
+::chat::MeshActionResult MeshCoreRadioAdapter::triggerDiscoveryActionDetailed(::chat::MeshDiscoveryAction action)
+{
     ::chat::runtime::DiscoverIntent intent{};
     intent.action = action;
     intent.type_filter = ::chat::meshcore::kMeshCoreDiscoverTypeFilterAll;
+
+    if (!config_.tx_enabled)
+    {
+        return ::chat::MeshActionResult::fail(::chat::MeshOperationFailure::TxDisabled);
+    }
+    if (!isReady())
+    {
+        return ::chat::MeshActionResult::fail(::chat::MeshOperationFailure::RadioOffline);
+    }
+
     ::chat::runtime::FixedProtocolRuntimeContextProvider context_provider(buildRuntimeContext());
     const auto bundle = protocolRuntimeBundle(context_provider);
     if (!bundle.valid())
     {
-        return false;
+        return ::chat::MeshActionResult::fail(::chat::MeshOperationFailure::NotReady);
     }
     auto facade = bundle.createFacade(
         ::chat::runtime::ProtocolProjectionPolicy::ExecuteAppFacing);
-    return facade.discover(intent).ok();
+    const auto result = facade.discover(intent);
+    if (result.ok())
+    {
+        return ::chat::MeshActionResult::success();
+    }
+    if (result.effect_count == 0)
+    {
+        return ::chat::MeshActionResult::fail(::chat::MeshOperationFailure::Unsupported);
+    }
+    return ::chat::MeshActionResult::fail(::chat::MeshOperationFailure::RadioTxFailed,
+                                          static_cast<int>(result.failed_effect_count));
 }
 
 void MeshCoreRadioAdapter::applyConfig(const ::chat::MeshConfig& config)

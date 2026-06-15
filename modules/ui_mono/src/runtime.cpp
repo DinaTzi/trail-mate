@@ -108,6 +108,22 @@ constexpr const char* kMainMenuItems[] = {
     "INFO",
 };
 
+constexpr const char* kMeshCoreMainMenuItems[] = {
+    "CHATS",
+    "NODES",
+    "GPS",
+    "DISCOVER",
+    "SETTINGS",
+    "INFO",
+};
+
+constexpr const char* kDiscoverItems[] = {
+    "SCAN LOCAL",
+    "ID LOCAL",
+    "ID BROADCAST",
+    "CANCEL",
+};
+
 constexpr const char* kSettingsMenuItems[] = {
     "LORA",
     "DEVICE",
@@ -469,6 +485,44 @@ constexpr size_t arrayCount(const T (&)[N])
 static_assert(arrayCount(kRadioItems) > 0, "radio settings must not be empty");
 static_assert(arrayCount(kDeviceItems) == arrayCount(kDeviceItemIds),
               "device settings labels and ids must stay aligned");
+
+const char* meshOperationFailureLabel(chat::MeshOperationFailure failure)
+{
+    switch (failure)
+    {
+    case chat::MeshOperationFailure::None:
+        return "OK";
+    case chat::MeshOperationFailure::InvalidInput:
+        return "INVALID INPUT";
+    case chat::MeshOperationFailure::Unsupported:
+        return "UNSUPPORTED";
+    case chat::MeshOperationFailure::NotReady:
+        return "NOT READY";
+    case chat::MeshOperationFailure::TxDisabled:
+        return "TX DISABLED";
+    case chat::MeshOperationFailure::RadioOffline:
+        return "RADIO OFFLINE";
+    case chat::MeshOperationFailure::DutyCycleLimited:
+        return "DUTY LIMITED";
+    case chat::MeshOperationFailure::LocalIdentityMissing:
+        return "NO IDENTITY";
+    case chat::MeshOperationFailure::PeerKeyMissing:
+        return "NO PEER KEY";
+    case chat::MeshOperationFailure::ChannelKeyMissing:
+        return "NO CHANNEL KEY";
+    case chat::MeshOperationFailure::EncodeFailed:
+        return "ENCODE FAILED";
+    case chat::MeshOperationFailure::CryptoFailed:
+        return "CRYPTO FAILED";
+    case chat::MeshOperationFailure::RadioTxFailed:
+        return "RADIO TX FAILED";
+    case chat::MeshOperationFailure::Busy:
+        return "BUSY";
+    case chat::MeshOperationFailure::Unknown:
+    default:
+        return "FAILED";
+    }
+}
 
 struct VirtualKeyboardRows
 {
@@ -2469,11 +2523,21 @@ void Runtime::handleInput(InputAction action)
     switch (page_)
     {
     case Page::MainMenu:
+    {
+        const size_t item_count = mainMenuItemCount();
+        if (item_count == 0)
+        {
+            break;
+        }
+        if (main_menu_index_ >= item_count)
+        {
+            main_menu_index_ = item_count - 1U;
+        }
         if (action == InputAction::Up && main_menu_index_ > 0)
         {
             --main_menu_index_;
         }
-        else if (action == InputAction::Down && main_menu_index_ + 1 < arrayCount(kMainMenuItems))
+        else if (action == InputAction::Down && main_menu_index_ + 1 < item_count)
         {
             ++main_menu_index_;
         }
@@ -2483,28 +2547,10 @@ void Runtime::handleInput(InputAction action)
         }
         else if (action == InputAction::Right || action == InputAction::Select || action == InputAction::Primary)
         {
-            switch (main_menu_index_)
-            {
-            case 0:
-                enterPage(Page::ChatList);
-                break;
-            case 1:
-                enterPage(Page::NodeList);
-                break;
-            case 2:
-                enterPage(Page::GnssPage);
-                break;
-            case 3:
-                enterPage(Page::SettingsMenu);
-                break;
-            case 4:
-                enterPage(Page::InfoPage);
-                break;
-            default:
-                break;
-            }
+            enterPage(mainMenuPageForIndex(main_menu_index_));
         }
         break;
+    }
 
     case Page::ChatList:
         if (action == InputAction::Up && chat_list_index_ > 0)
@@ -2907,6 +2953,25 @@ void Runtime::handleInput(InputAction action)
         }
         break;
 
+    case Page::DiscoverPage:
+        if (action == InputAction::Up && discover_index_ > 0)
+        {
+            --discover_index_;
+        }
+        else if (action == InputAction::Down && discover_index_ + 1 < arrayCount(kDiscoverItems))
+        {
+            ++discover_index_;
+        }
+        else if (action == InputAction::Left || action == InputAction::Back)
+        {
+            enterPage(Page::MainMenu);
+        }
+        else if (action == InputAction::Right || action == InputAction::Select || action == InputAction::Primary)
+        {
+            executeDiscoverPageItem(discover_index_);
+        }
+        break;
+
     case Page::SettingsMenu:
         if (action == InputAction::Up && settings_menu_index_ > 0)
         {
@@ -3116,6 +3181,9 @@ void Runtime::render()
         break;
     case Page::Compose:
         renderCompose();
+        break;
+    case Page::DiscoverPage:
+        renderDiscoverPage();
         break;
     case Page::SettingsMenu:
         renderSettingsMenu();
@@ -3331,9 +3399,71 @@ void Runtime::renderSleep()
     text_renderer_.drawText(display_, 0, 24, "SLEEP");
 }
 
+bool Runtime::mainMenuShowsDiscover() const
+{
+    return app() && app()->getConfig().mesh_protocol == chat::MeshProtocol::MeshCore;
+}
+
+size_t Runtime::mainMenuItemCount() const
+{
+    return mainMenuShowsDiscover()
+               ? arrayCount(kMeshCoreMainMenuItems)
+               : arrayCount(kMainMenuItems);
+}
+
+const char* const* Runtime::mainMenuItems() const
+{
+    return mainMenuShowsDiscover() ? kMeshCoreMainMenuItems : kMainMenuItems;
+}
+
+Runtime::Page Runtime::mainMenuPageForIndex(size_t index) const
+{
+    if (mainMenuShowsDiscover())
+    {
+        switch (index)
+        {
+        case 0:
+            return Page::ChatList;
+        case 1:
+            return Page::NodeList;
+        case 2:
+            return Page::GnssPage;
+        case 3:
+            return Page::DiscoverPage;
+        case 4:
+            return Page::SettingsMenu;
+        case 5:
+            return Page::InfoPage;
+        default:
+            return Page::MainMenu;
+        }
+    }
+
+    switch (index)
+    {
+    case 0:
+        return Page::ChatList;
+    case 1:
+        return Page::NodeList;
+    case 2:
+        return Page::GnssPage;
+    case 3:
+        return Page::SettingsMenu;
+    case 4:
+        return Page::InfoPage;
+    default:
+        return Page::MainMenu;
+    }
+}
+
 void Runtime::renderMainMenu()
 {
-    drawMenuList("MENU", kMainMenuItems, arrayCount(kMainMenuItems), main_menu_index_);
+    const size_t item_count = mainMenuItemCount();
+    if (main_menu_index_ >= item_count && item_count > 0)
+    {
+        main_menu_index_ = item_count - 1U;
+    }
+    drawMenuList("MENU", mainMenuItems(), item_count, main_menu_index_);
 }
 
 void Runtime::renderChatList()
@@ -4265,6 +4395,22 @@ void Runtime::renderCompose()
     }
 }
 
+void Runtime::renderDiscoverPage()
+{
+    if (!mainMenuShowsDiscover())
+    {
+        drawTitleBar("DISCOVER", nullptr);
+        text_renderer_.drawText(display_, 0, 18, "MESHCORE ONLY");
+        return;
+    }
+
+    if (discover_index_ >= arrayCount(kDiscoverItems))
+    {
+        discover_index_ = arrayCount(kDiscoverItems) - 1U;
+    }
+    drawMenuList("DISCOVER", kDiscoverItems, arrayCount(kDiscoverItems), discover_index_);
+}
+
 void Runtime::renderSettingsMenu()
 {
     drawMenuList("SETTINGS", kSettingsMenuItems, arrayCount(kSettingsMenuItems), settings_menu_index_);
@@ -4944,6 +5090,10 @@ void Runtime::enterPage(Page page)
         message_info_scroll_ = 0;
         buildMessageInfo();
     }
+    else if (page == Page::DiscoverPage)
+    {
+        discover_index_ = 0;
+    }
     else if (page == Page::InfoPage)
     {
         info_scroll_ = 0;
@@ -5571,6 +5721,61 @@ void Runtime::retrySelectedMessage()
     showTransientPopup("MESSAGE", "RETRY QUEUED", 1600U);
     rebuildMessages();
     enterPage(Page::Conversation);
+}
+
+void Runtime::executeDiscoverPageItem(size_t index)
+{
+    if (index >= arrayCount(kDiscoverItems) - 1U)
+    {
+        enterPage(Page::MainMenu);
+        return;
+    }
+    if (!app())
+    {
+        showTransientPopup("DISCOVER", "APP NOT READY");
+        return;
+    }
+    if (app()->getConfig().mesh_protocol != chat::MeshProtocol::MeshCore)
+    {
+        showTransientPopup("DISCOVER", "MESHCORE ONLY");
+        return;
+    }
+
+    chat::MeshDiscoveryAction action = chat::MeshDiscoveryAction::ScanLocal;
+    const char* success = "SENT";
+    const char* boot_log = "discover sent";
+    switch (index)
+    {
+    case 0:
+        action = chat::MeshDiscoveryAction::ScanLocal;
+        success = "SCANNING 5S";
+        boot_log = "discover scan";
+        break;
+    case 1:
+        action = chat::MeshDiscoveryAction::SendIdLocal;
+        success = "ID SENT LOCAL";
+        boot_log = "discover id local";
+        break;
+    case 2:
+        action = chat::MeshDiscoveryAction::SendIdBroadcast;
+        success = "ID SENT BROADCAST";
+        boot_log = "discover id bcast";
+        break;
+    default:
+        break;
+    }
+
+    const chat::MeshActionResult result =
+        app()->getChatService().triggerDiscoveryActionDetailed(action);
+    if (result.ok)
+    {
+        appendBootLog(boot_log);
+        showTransientPopup("DISCOVER", success, index == 0 ? 2200U : 1800U);
+        return;
+    }
+
+    appendBootLog("discover failed");
+    showTransientPopup("DISCOVER", meshOperationFailureLabel(result.failure));
 }
 
 void Runtime::commitConfig()

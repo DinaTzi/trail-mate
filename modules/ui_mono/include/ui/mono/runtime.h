@@ -156,6 +156,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
         MessageMenu,
         MessageInfo,
         Compose,
+        DiscoverPage,
         SettingsMenu,
         RadioSettings,
         DeviceSettings,
@@ -189,6 +190,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
     void renderMessageMenu();
     void renderMessageInfo();
     void renderCompose();
+    void renderDiscoverPage();
     void renderSettingsMenu();
     void renderRadioSettings();
     void renderDeviceSettings();
@@ -208,6 +210,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
     void buildMessageInfo();
     void sendComposeMessage();
     void retrySelectedMessage();
+    void executeDiscoverPageItem(size_t index);
     void commitConfig();
     void ensureBootExit();
     void ensureSleepTimeout(InputAction action);
@@ -260,6 +263,10 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
     bool usesLargeScreensaverLayout() const;
     bool shouldRenderForTick(InputAction action);
     void executeActionPageItem(size_t index);
+    bool mainMenuShowsDiscover() const;
+    size_t mainMenuItemCount() const;
+    const char* const* mainMenuItems() const;
+    Page mainMenuPageForIndex(size_t index) const;
     size_t nodeActionCount() const;
     const char* nodeActionLabel(size_t index) const;
 
@@ -293,6 +300,7 @@ class Runtime : public chat::ChatService::IncomingTextObserver,
     size_t boot_log_count_ = 0;
 
     size_t main_menu_index_ = 0;
+    size_t discover_index_ = 0;
     size_t settings_menu_index_ = 0;
     size_t radio_index_ = 0;
     size_t device_index_ = 0;

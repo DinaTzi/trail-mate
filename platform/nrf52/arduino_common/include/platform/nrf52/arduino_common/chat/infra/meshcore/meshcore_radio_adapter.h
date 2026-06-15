@@ -12,15 +12,23 @@
 #include <queue>
 #include <string>
 
+namespace chat::contacts
+{
+class ContactService;
+} // namespace chat::contacts
+
 namespace platform::nrf52::arduino_common::chat::meshcore
 {
+
+namespace chat_contacts = ::chat::contacts;
 
 class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter,
                                    public ::chat::meshcore::IMeshCoreBleBackend,
                                    public ::chat::runtime::IProtocolEffectExecutor
 {
   public:
-    explicit MeshCoreRadioAdapter(const ::chat::runtime::SelfIdentityProvider* identity_provider = nullptr);
+    explicit MeshCoreRadioAdapter(const ::chat::runtime::SelfIdentityProvider* identity_provider = nullptr,
+                                  chat_contacts::ContactService* contact_service = nullptr);
 
     ::chat::MeshCapabilities getCapabilities() const override;
     bool sendText(::chat::ChannelId channel, const std::string& text,
@@ -34,6 +42,7 @@ class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter,
     bool pollIncomingData(::chat::MeshIncomingData* out) override;
     bool requestNodeInfo(::chat::NodeId dest, bool want_response) override;
     bool triggerDiscoveryAction(::chat::MeshDiscoveryAction action) override;
+    ::chat::MeshActionResult triggerDiscoveryActionDetailed(::chat::MeshDiscoveryAction action) override;
     void applyConfig(const ::chat::MeshConfig& config) override;
     void setUserInfo(const char* long_name, const char* short_name) override;
     void setNetworkLimits(bool duty_cycle_enabled, uint8_t util_percent) override;
@@ -98,6 +107,7 @@ class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter,
     std::string long_name_;
     std::string short_name_;
     const ::chat::runtime::SelfIdentityProvider* identity_provider_ = nullptr;
+    chat_contacts::ContactService* contact_service_ = nullptr;
     bool keys_ready_ = false;
     uint8_t public_key_[::chat::meshcore::kMeshCorePubKeySize] = {};
     uint8_t private_key_[::chat::meshcore::kMeshCorePrivKeySize] = {};
