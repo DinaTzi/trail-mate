@@ -7729,7 +7729,7 @@ const char* Runtime::nodeActionLabel(size_t index) const
     case 0:
         return "DETAIL";
     case 1:
-        return can_reply ? "REPLY" : "VIEW ONLY";
+        return can_reply ? "SEND" : "VIEW ONLY";
     case 2:
         return "ADD CONTACT";
     case 3:

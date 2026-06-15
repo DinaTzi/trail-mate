@@ -299,8 +299,8 @@ ChatConversationScreen::ChatConversationScreen(lv_obj_t* parent, chat::Conversat
     chat::ui::conversation::styles::apply_action_bar(action_bar_);
     chat::ui::conversation::styles::apply_reply_btn(reply_btn_);
 
-    // Reply label text + style
-    ::ui::i18n::set_label_text(w.reply_label, "Reply");
+    // Primary compose entry label.
+    ::ui::i18n::set_label_text(w.reply_label, "Send");
     chat::ui::conversation::styles::apply_reply_label(w.reply_label);
     ::ui::fonts::apply_localized_font(w.reply_label, lv_label_get_text(w.reply_label), ::ui::fonts::ui_chrome_font());
 

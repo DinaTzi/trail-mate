@@ -164,7 +164,8 @@ bool MeshCoreRadioAdapter::sendTextWithId(::chat::ChannelId channel, const std::
 
     if (!want_ack)
     {
-        sys::EventBus::publish(new sys::ChatSendResultEvent(msg_id, true), 0);
+        Serial.printf("[MESHCORE] TX text id=%08lX no delivery ACK for broadcast\n",
+                      static_cast<unsigned long>(msg_id));
     }
     return ::chat::MeshSendResult::success(msg_id);
 }
