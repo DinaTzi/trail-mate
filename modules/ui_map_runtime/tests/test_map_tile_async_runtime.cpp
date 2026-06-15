@@ -271,6 +271,31 @@ void test_interactive_plan_uses_interactive_priority()
     assert(sink.commands[0].runtime.priority == sys::runtime::RuntimePriority::Interactive);
 }
 
+void test_tile_dedupe_key_uses_full_tile_identity()
+{
+    FakeCommandSink sink;
+    ui::map_tiles::MapTileAsyncRuntime runtime(sink);
+
+    ui::map_tiles::MapViewportPlan plan{};
+    plan.generation = 9;
+    plan.tile_count = 3;
+    plan.tiles[0] = make_tile(4096);
+    plan.tiles[1] = plan.tiles[0];
+    plan.tiles[1].x += 4096;
+    plan.tiles[1].y += 4096;
+    plan.tiles[2] = plan.tiles[0];
+    plan.tiles[2].layer = ui::map_tiles::MapTileLayer::Terrain;
+
+    assert(runtime.requestVisibleTiles(plan, 900) == 3);
+    assert(sink.count == 3);
+    assert(sink.commands[0].runtime.dedupe_key != 0);
+    assert(sink.commands[1].runtime.dedupe_key != 0);
+    assert(sink.commands[2].runtime.dedupe_key != 0);
+    assert(sink.commands[0].runtime.dedupe_key != sink.commands[1].runtime.dedupe_key);
+    assert(sink.commands[0].runtime.dedupe_key != sink.commands[2].runtime.dedupe_key);
+    assert(sink.commands[1].runtime.dedupe_key != sink.commands[2].runtime.dedupe_key);
+}
+
 void test_worker_busy_does_not_read_storage()
 {
     FakeBackend backend;
@@ -384,6 +409,7 @@ int main()
     test_stale_event_is_ignored();
     test_map_tile_runtime_does_not_transition_state_for_stale_event();
     test_interactive_plan_uses_interactive_priority();
+    test_tile_dedupe_key_uses_full_tile_identity();
     test_worker_busy_does_not_read_storage();
     test_worker_success_publishes_ready();
     test_worker_missing_reads_once_without_lookup_probe();

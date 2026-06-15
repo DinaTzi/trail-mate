@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "platform/ui/settings_store.h"
+#include "sys/clock.h"
 #include "ui/assets/fonts/font_utils.h"
 #include "ui/runtime/memory_profile.h"
 #include "ui/support/lvgl_fs_utils.h"
@@ -52,6 +53,7 @@ constexpr const char* kImePackRoot = "/trailmate/packs/ime";
 constexpr const char* kDisabledImeSentinel = "__none__";
 constexpr std::size_t kFontLoadOverlayThresholdBytes = 64U * 1024U;
 constexpr unsigned kMaxMissingFontDiagnostics = 20;
+constexpr uint32_t kFontLoadFailureBackoffMs = 5U * 60U * 1000U;
 
 #if defined(LV_USE_FS_POSIX) && LV_USE_FS_POSIX
 constexpr bool kLvFsPosixEnabled = true;
@@ -63,6 +65,12 @@ constexpr bool kLvFsPosixEnabled = false;
 constexpr bool kFlashPackStorageEnabled = true;
 #else
 constexpr bool kFlashPackStorageEnabled = false;
+#endif
+
+#if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
+constexpr bool kAllowSynchronousContentSupplementFontLoad = false;
+#else
+constexpr bool kAllowSynchronousContentSupplementFontLoad = true;
 #endif
 
 enum class FontPackUsage : uint8_t
@@ -89,6 +97,9 @@ struct FontPackRecord
     std::string source_path;
     std::size_t estimated_ram_bytes = 0;
     std::vector<CodepointRange> coverage;
+    uint32_t load_retry_not_before_ms = 0;
+    uint8_t load_failure_count = 0;
+    bool content_load_deferred_logged = false;
 };
 
 struct ImePackRecord
@@ -786,6 +797,27 @@ bool is_font_runtime_loaded(const FontPackRecord& pack)
     return pack.builtin || resolved_font(&pack) != nullptr;
 }
 
+bool font_load_backoff_active(const FontPackRecord& pack, uint32_t now_ms)
+{
+    return pack.load_retry_not_before_ms != 0 &&
+           static_cast<int32_t>(pack.load_retry_not_before_ms - now_ms) > 0;
+}
+
+void record_font_load_failure(FontPackRecord& pack, uint32_t now_ms)
+{
+    if (pack.load_failure_count < UINT8_MAX)
+    {
+        ++pack.load_failure_count;
+    }
+    pack.load_retry_not_before_ms = now_ms + kFontLoadFailureBackoffMs;
+}
+
+void clear_font_load_failure(FontPackRecord& pack)
+{
+    pack.load_retry_not_before_ms = 0;
+    pack.load_failure_count = 0;
+}
+
 bool font_pack_covers_codepoint(const FontPackRecord& pack, uint32_t codepoint)
 {
     if (pack.coverage.empty())
@@ -1093,6 +1125,12 @@ bool load_font_pack(FontPackRecord& pack)
         return false;
     }
 
+    const uint32_t now_ms = sys::millis_now();
+    if (font_load_backoff_active(pack, now_ms))
+    {
+        return false;
+    }
+
 #if UI_I18N_HAVE_BINFONT
     std::printf("%s font load begin id=%s source=%s est_ram=%lu\n",
                 kLogTag,
@@ -1103,6 +1141,7 @@ bool load_font_pack(FontPackRecord& pack)
     pack.owned_font = lv_binfont_create(pack.source_path.c_str());
     if (pack.owned_font == nullptr)
     {
+        record_font_load_failure(pack, now_ms);
         std::printf("%s font load failed id=%s source=%s\n",
                     kLogTag,
                     pack.id.c_str(),
@@ -1115,6 +1154,7 @@ bool load_font_pack(FontPackRecord& pack)
                 pack.id.c_str(),
                 pack.source_path.c_str(),
                 static_cast<unsigned long>(pack.estimated_ram_bytes));
+    clear_font_load_failure(pack);
     return true;
 #else
     std::printf("%s font load skipped id=%s reason=binfont_unavailable\n",
@@ -1219,7 +1259,7 @@ bool ensure_active_content_pack_loaded()
         s_logged_once = true;
     }
 
-    return true;
+    return changed;
 }
 
 bool codepoint_covered_by_loaded_packs(const std::vector<FontPackRecord*>& packs, uint32_t codepoint)
@@ -2483,6 +2523,19 @@ const lv_font_t* locale_preview_font(const char* locale_id, const lv_font_t* asc
                                                     ::ui::fonts::FontScope::Ui);
 }
 
+void log_content_font_load_deferred(FontPackRecord& pack)
+{
+    if (pack.content_load_deferred_logged)
+    {
+        return;
+    }
+    pack.content_load_deferred_logged = true;
+    std::printf("%s content font load deferred id=%s reason=ui_hot_path active_locale=%s\n",
+                kLogTag,
+                pack.id.c_str(),
+                s_active_locale ? s_active_locale->id.c_str() : "<none>");
+}
+
 bool ensure_content_font_for_text(const char* text)
 {
     ensure_registry();
@@ -2500,6 +2553,11 @@ bool ensure_content_font_for_text(const char* text)
         FontPackRecord* candidate = choose_content_supplement(missing);
         if (candidate == nullptr)
         {
+            break;
+        }
+        if (!kAllowSynchronousContentSupplementFontLoad && !is_font_runtime_loaded(*candidate))
+        {
+            log_content_font_load_deferred(*candidate);
             break;
         }
         if (!ensure_font_pack_loaded(candidate))

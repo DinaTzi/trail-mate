@@ -418,6 +418,15 @@ void release_tile_payload(ui::map_tiles::MapTileAsyncEvent& event)
     event.payload_size = 0;
 }
 
+bool same_tile_ref(const ui::map_tiles::MapTileRef& lhs,
+                   const ui::map_tiles::MapTileRef& rhs)
+{
+    return lhs.layer == rhs.layer &&
+           lhs.z == rhs.z &&
+           lhs.x == rhs.x &&
+           lhs.y == rhs.y;
+}
+
 class MapTileCommandQueue final : public ui::map_tiles::IMapTileCommandSink
 {
   public:
@@ -434,8 +443,7 @@ class MapTileCommandQueue final : public ui::map_tiles::IMapTileCommandSink
             auto* existing = queue_.at(i);
             if (existing &&
                 existing->runtime.generation == command.runtime.generation &&
-                existing->runtime.dedupe_key == command.runtime.dedupe_key &&
-                command.runtime.dedupe_key != 0)
+                same_tile_ref(existing->tile, command.tile))
             {
                 *existing = command;
                 ok = true;
@@ -942,6 +950,7 @@ class LvglDecodedTileCache final : public ui::map_tiles::IMapTileDecoderCache
     {
         if (slot.img_dsc != NULL)
         {
+            lv_image_cache_drop(slot.img_dsc);
             if (slot.img_dsc->data != NULL)
             {
                 lv_free((void*)slot.img_dsc->data);
@@ -1871,6 +1880,19 @@ static void touch_tile_decoded_cache(MapTile& tile)
     }
 }
 
+static void refresh_live_tile_decode_cache_usage(TileContext& ctx)
+{
+    if (!ctx.tiles)
+    {
+        return;
+    }
+
+    for (auto& tile : *ctx.tiles)
+    {
+        touch_tile_decoded_cache(tile);
+    }
+}
+
 static void reset_tile_runtime(MapTile& tile)
 {
     if (tile.img_obj != NULL)
@@ -2038,9 +2060,11 @@ static DecodedTileCache* decode_payload_to_cache(TileContext& ctx,
         return cached;
     }
 
+    refresh_live_tile_decode_cache_usage(ctx);
     DecodedTileCache* cache_slot = get_lru_cache_slot(tile_decode_cache_limit(ctx));
     if (cache_slot == NULL && evict_invisible_cached_tile_object(ctx))
     {
+        refresh_live_tile_decode_cache_usage(ctx);
         cache_slot = get_lru_cache_slot(tile_decode_cache_limit(ctx));
     }
     if (cache_slot == NULL)
@@ -2110,6 +2134,7 @@ static DecodedTileCache* decode_payload_to_cache(TileContext& ctx,
         lv_image_decoder_close(&decoder_dsc);
         return nullptr;
     }
+    std::memset(cache_slot->img_dsc, 0, sizeof(lv_image_dsc_t));
 
     uint8_t* img_data = static_cast<uint8_t*>(lv_malloc(data_size));
     if (img_data == NULL)

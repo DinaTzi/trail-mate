@@ -4,6 +4,27 @@ namespace ui
 {
 namespace map_tiles
 {
+namespace
+{
+
+uint32_t mixTileDedupe(uint32_t hash, uint32_t value)
+{
+    hash ^= value;
+    hash *= 16777619u;
+    return hash;
+}
+
+uint32_t dedupeKeyForTile(const MapTileRef& ref)
+{
+    uint32_t hash = 2166136261u;
+    hash = mixTileDedupe(hash, static_cast<uint32_t>(ref.layer));
+    hash = mixTileDedupe(hash, static_cast<uint32_t>(ref.z));
+    hash = mixTileDedupe(hash, ref.x);
+    hash = mixTileDedupe(hash, ref.y);
+    return hash == 0 ? 1u : hash;
+}
+
+} // namespace
 
 MapTileAsyncRuntime::MapTileAsyncRuntime(IMapTileCommandSink& commands,
                                          sys::runtime::RuntimePolicyStrategy* policy)
@@ -39,11 +60,7 @@ std::size_t MapTileAsyncRuntime::requestVisibleTiles(const MapViewportPlan& plan
         intent.submitted_at_ms = now_ms;
         intent.generation = plan.generation;
         intent.origin = static_cast<uint32_t>(plan.interaction_mode);
-        intent.dedupe_key =
-            (static_cast<uint32_t>(plan.tiles[i].z & 0xFF) << 24) ^
-            ((plan.tiles[i].x & 0xFFFu) << 12) ^
-            (plan.tiles[i].y & 0xFFFu) ^
-            (static_cast<uint32_t>(plan.tiles[i].layer) << 28);
+        intent.dedupe_key = dedupeKeyForTile(plan.tiles[i]);
 
         LoadTileCommand command{};
         command.tile = plan.tiles[i];

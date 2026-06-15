@@ -351,6 +351,18 @@ English 必须在没有任何外部 pack 的情况下仍可工作。
 
 这两条链不能被简化成“只要非 ASCII 就统一切换某个 CJK 字体”的旁路实现。
 
+### 4.5.1 Content Font Load Is Not A Render-Side Blocking Operation
+
+内容文本缺字检测与外部字体加载是两个不同动作。
+
+1. `ensure_content_font_for_text()` 可以发现当前内容字体链缺少某些 codepoint。
+2. 它不能在 ESP / display-shared SD-SPI 设备的页面渲染、列表构建、LVGL 事件或 timer 路径里同步加载外部 `font.bin`。
+3. ESP 上的内容补充字体加载必须被视为后台/显式动作；在后台 runtime 完成前，页面使用当前已加载字体链并记录缺字诊断。
+4. 外部 `font.bin` 加载失败后必须进入 backoff，不能因为多条联系人名、聊天消息或节点名重复触发同一个失败文件读取。
+5. 显式切换 locale 时加载 UI 字体属于 locale 激活流程；这不能被内容文本缺字路径复用成隐式 SD 读。
+
+这条规则的目标是保护 UI 实时域：联系人页、聊天页、地图 overlay、节点详情页等内容页面不得因为遇到中文/日文/韩文/阿拉伯文本而把 UI 线程拖入 SD 阻塞 IO。
+
 ### 4.6 Persistence Contract
 
 当前 locale 的持久化 key 是：

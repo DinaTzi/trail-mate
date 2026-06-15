@@ -43,6 +43,18 @@ When asynchronous tile workers are introduced, render queue updates must carry a
 viewport generation. Results for stale generations must not mutate the current
 renderer state.
 
+Tile command dedupe must use full tile identity:
+
+- layer
+- zoom
+- x
+- y
+
+Compressed identities that discard high coordinate bits are not valid for
+replacement decisions. A hash may be carried as a runtime hint, but platform
+queues must compare the full `MapTileRef` before replacing an existing tile
+command.
+
 ## Decoded Cache Contract
 
 `IMapTileDecoderCache` exposes only portable cache operations:
@@ -51,6 +63,18 @@ renderer state.
 - `hasDecoded(ref)`
 
 LVGL-specific decoded handles stay in `LvglDecodedTileCache` or other platform-specific adapters.
+
+For LVGL adapters, decoded descriptor lifetime and LVGL object lifetime are the
+same ownership problem:
+
+- a decoded descriptor must remain owned while any live `lv_image` object uses it
+- eviction must refresh live object bindings before selecting an LRU slot
+- freeing a descriptor must drop the matching LVGL image cache entry first
+- reusing a descriptor slot must reset descriptor memory before publishing it to LVGL
+
+Renderer visibility is not a sufficient lifetime boundary. Hidden LVGL image
+objects can still redraw when moved or unhidden, so their decoded cache slots
+remain protected until the object is deleted or its source is replaced.
 
 ## Phase 7.11 First Slice
 
