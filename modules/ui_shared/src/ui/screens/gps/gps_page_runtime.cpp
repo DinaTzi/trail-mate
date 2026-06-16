@@ -1632,7 +1632,7 @@ void open_map_help_modal()
     };
 
     add_help_row("WASD", nullptr, "Move map");
-    add_help_row("-", "+", "Zoom map");
+    add_help_row("Q", "E", "Zoom map");
     add_help_row("P", "Pos", "Center current position");
     add_help_row("L", nullptr, "Change base layer");
     add_help_row("O", "Contour", "Toggle contour overlay");
@@ -1980,14 +1980,14 @@ bool handle_map_key(uint32_t key, lv_event_t* e)
     case LV_KEY_DOWN:
         s_map_pan_y -= gps_ui::kMapPanStep;
         break;
-    case '+':
-    case '=':
-        adjust_map_zoom(1);
+    case 'q':
+    case 'Q':
+        adjust_map_zoom(-1);
         consume_key_event(e);
         return true;
-    case '-':
-    case '_':
-        adjust_map_zoom(-1);
+    case 'e':
+    case 'E':
+        adjust_map_zoom(1);
         consume_key_event(e);
         return true;
     case 'c':
