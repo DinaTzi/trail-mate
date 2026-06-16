@@ -234,11 +234,13 @@ constexpr uint32_t kMapTileDisplaySpiSlowHoldMs = 8;
 constexpr uint32_t kMapTileDisplaySpiNormalCooldownMs = 160;
 constexpr uint32_t kMapTileDisplaySpiSlowCooldownMs = 1500;
 constexpr uint32_t kMapTileDisplayPressureCooldownMs = 1500;
+constexpr uint32_t kMapTileDisplayPressureTileBackoffMs = 3000;
 
 uint32_t g_map_tile_decode_log_ms = 0;
 uint32_t g_map_tile_event_log_ms = 0;
 uint32_t g_map_tile_next_event_drain_ms = 0;
 uint32_t g_map_tile_chunk_yield_log_ms = 0;
+uint32_t g_map_tile_display_pressure_log_ms = 0;
 
 bool should_log_map_tile_diagnostic(uint32_t& last_ms, uint32_t now_ms)
 {
@@ -248,6 +250,27 @@ bool should_log_map_tile_diagnostic(uint32_t& last_ms, uint32_t now_ms)
         return true;
     }
     return false;
+}
+
+bool map_tile_display_under_pressure(uint32_t now_ms)
+{
+    return ::platform::esp::common::display_spi_recently_timed_out(
+        now_ms,
+        kMapTileDisplayPressureCooldownMs);
+}
+
+void log_map_tile_display_pressure_pause(uint32_t now_ms, const char* stage)
+{
+    if (!should_log_map_tile_diagnostic(g_map_tile_display_pressure_log_ms, now_ms))
+    {
+        return;
+    }
+    const uint32_t last_timeout_ms = ::platform::esp::common::last_display_spi_timeout_ms();
+    std::printf("[GPS][MAP][bus] display_pressure_pause stage=%s last_timeout_age_ms=%lu backoff_ms=%lu\n",
+                stage ? stage : "",
+                static_cast<unsigned long>(now_ms - last_timeout_ms),
+                static_cast<unsigned long>(kMapTileDisplayPressureTileBackoffMs));
+    std::fflush(stdout);
 }
 
 bool yield_map_tile_sd_bus_between_chunks(const char* path,
@@ -2572,6 +2595,13 @@ static bool request_base_tile_async(MapTile& tile)
     }
 
     const ui::map_tiles::MapTileRef ref = base_tile_ref_for_tile(tile);
+    if (map_tile_display_under_pressure(now_ms))
+    {
+        log_map_tile_display_pressure_pause(now_ms, "base_request");
+        tile.base_retry_not_before_ms = now_ms + kMapTileDisplayPressureTileBackoffMs;
+        return false;
+    }
+
     if (map_tile_availability_memory().knownMissing(ref))
     {
         tile.base_missing = true;
@@ -2611,6 +2641,13 @@ static bool request_contour_tile_async(MapTile& tile)
     {
         tile.contour_checked = true;
         tile.contour_loaded = false;
+        return false;
+    }
+
+    if (map_tile_display_under_pressure(now_ms))
+    {
+        log_map_tile_display_pressure_pause(now_ms, "contour_request");
+        tile.contour_retry_not_before_ms = now_ms + kMapTileDisplayPressureTileBackoffMs;
         return false;
     }
 
@@ -3275,6 +3312,11 @@ void tile_loader_step(TileContext& ctx)
     update_visible_map_data_flag(ctx);
     if (static_cast<uint32_t>(sys::millis_now() - start_ms) >= budget_ms)
     {
+        return;
+    }
+    if (map_tile_display_under_pressure(sys::millis_now()))
+    {
+        log_map_tile_display_pressure_pause(sys::millis_now(), "loader");
         return;
     }
 
