@@ -172,6 +172,7 @@ class LilyGoDispArduinoSPI
     void unlock();
     const char* lockOwnerLabel() const;
     const char* lockOwnerTaskName() const;
+    const char* nativeLockHolderTaskName() const;
     uint32_t lockHeldMs(uint32_t now_ms) const;
     uint32_t lockDepth() const;
     const char* lastLockOwnerLabel() const;

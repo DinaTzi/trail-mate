@@ -34,11 +34,12 @@ bool lock_or_log(LilyGoDispArduinoSPI& spi, TickType_t wait_ticks, const char* o
     if (s_last_display_lock_timeout_log_ms == 0 ||
         now_ms - s_last_display_lock_timeout_log_ms >= kDisplayLockTimeoutLogIntervalMs)
     {
-        Serial.printf("[SPI][DISPLAY] lock_timeout op=%s wait_ticks=%lu owner=%s task=%s held_ms=%lu depth=%lu last_owner=%s last_task=%s last_held_ms=%lu last_release_age_ms=%lu suppressed=%lu\n",
+        Serial.printf("[SPI][DISPLAY] lock_timeout op=%s wait_ticks=%lu owner=%s task=%s native_holder=%s held_ms=%lu depth=%lu last_owner=%s last_task=%s last_held_ms=%lu last_release_age_ms=%lu suppressed=%lu\n",
                       op ? op : "",
                       static_cast<unsigned long>(wait_ticks),
                       spi.lockOwnerLabel(),
                       spi.lockOwnerTaskName(),
+                      spi.nativeLockHolderTaskName(),
                       static_cast<unsigned long>(spi.lockHeldMs(now_ms)),
                       static_cast<unsigned long>(spi.lockDepth()),
                       spi.lastLockOwnerLabel(),
@@ -100,24 +101,23 @@ bool LilyGoDispArduinoSPI::lock(TickType_t xTicksToWait, const char* owner)
         return false;
     }
 
-    if (xSemaphoreTakeRecursive(_lock, xTicksToWait) != pdTRUE)
+    TaskHandle_t current = xTaskGetCurrentTaskHandle();
+    TaskHandle_t native_holder = xSemaphoreGetMutexHolder(_lock);
+    if (native_holder == current)
     {
         return false;
     }
 
-    TaskHandle_t current = xTaskGetCurrentTaskHandle();
-    if (_lock_owner == current)
+    if (xSemaphoreTake(_lock, xTicksToWait) != pdTRUE)
     {
-        _lock_depth++;
+        return false;
     }
-    else
-    {
-        _lock_owner = current;
-        _lock_depth = 1;
-        _lock_owner_label = (owner && owner[0] != '\0') ? owner : "direct";
-        _lock_owner_task_name = pcTaskGetName(current);
-        _lock_acquired_ms = millis();
-    }
+
+    _lock_owner = current;
+    _lock_depth = 1;
+    _lock_owner_label = (owner && owner[0] != '\0') ? owner : "direct";
+    _lock_owner_task_name = pcTaskGetName(current);
+    _lock_acquired_ms = millis();
     return true;
 }
 
@@ -129,29 +129,34 @@ void LilyGoDispArduinoSPI::unlock()
     }
 
     TaskHandle_t current = xTaskGetCurrentTaskHandle();
-    if (_lock_owner != current || _lock_depth == 0)
+    TaskHandle_t native_holder = xSemaphoreGetMutexHolder(_lock);
+    if (native_holder != current)
+    {
+        Serial.printf("[SPI][LOCK] unlock_skip task=%s owner=%s owner_task=%s native_holder=%s depth=%lu\n",
+                      pcTaskGetName(current),
+                      lockOwnerLabel(),
+                      lockOwnerTaskName(),
+                      nativeLockHolderTaskName(),
+                      static_cast<unsigned long>(_lock_depth));
+        return;
+    }
+
+    const uint32_t now_ms = millis();
+    _last_lock_owner_label = _lock_owner_label;
+    _last_lock_owner_task_name = _lock_owner_task_name;
+    _last_lock_held_ms = _lock_acquired_ms == 0 ? 0 : static_cast<uint32_t>(now_ms - _lock_acquired_ms);
+    _last_lock_released_ms = now_ms;
+
+    if (xSemaphoreGive(_lock) != pdTRUE)
     {
         return;
     }
 
-    if (xSemaphoreGiveRecursive(_lock) != pdTRUE)
-    {
-        return;
-    }
-
-    _lock_depth--;
-    if (_lock_depth == 0)
-    {
-        const uint32_t now_ms = millis();
-        _last_lock_owner_label = _lock_owner_label;
-        _last_lock_owner_task_name = _lock_owner_task_name;
-        _last_lock_held_ms = _lock_acquired_ms == 0 ? 0 : static_cast<uint32_t>(now_ms - _lock_acquired_ms);
-        _last_lock_released_ms = now_ms;
-        _lock_owner = nullptr;
-        _lock_owner_label = nullptr;
-        _lock_owner_task_name = nullptr;
-        _lock_acquired_ms = 0;
-    }
+    _lock_depth = 0;
+    _lock_owner = nullptr;
+    _lock_owner_label = nullptr;
+    _lock_owner_task_name = nullptr;
+    _lock_acquired_ms = 0;
 }
 
 const char* LilyGoDispArduinoSPI::lockOwnerLabel() const
@@ -162,6 +167,12 @@ const char* LilyGoDispArduinoSPI::lockOwnerLabel() const
 const char* LilyGoDispArduinoSPI::lockOwnerTaskName() const
 {
     return _lock_owner_task_name ? _lock_owner_task_name : "-";
+}
+
+const char* LilyGoDispArduinoSPI::nativeLockHolderTaskName() const
+{
+    TaskHandle_t holder = _lock ? xSemaphoreGetMutexHolder(_lock) : nullptr;
+    return holder ? pcTaskGetName(holder) : "-";
 }
 
 uint32_t LilyGoDispArduinoSPI::lockHeldMs(uint32_t now_ms) const
@@ -209,7 +220,7 @@ bool LilyGoDispArduinoSPI::init(int sck,
                                 uint32_t freq_Mhz,
                                 SPIClass& spi)
 {
-    _lock = xSemaphoreCreateRecursiveMutex();
+    _lock = xSemaphoreCreateMutex();
     if (_lock == nullptr)
     {
         return false;
