@@ -305,15 +305,15 @@ bool commit_pending_map_pan_from_screen()
 
     ::ui::widgets::map::Model model{};
     const bool has_viewport_center = has_valid_viewport_center(snapshot.viewport);
-    model.focus_point.valid = has_viewport_center || snapshot.self.valid;
+    model.focus_point.valid = true;
     model.focus_point.lat = has_viewport_center
                                 ? snapshot.viewport.center_lat
                                 : (snapshot.self.valid ? snapshot.self.lat
-                                                       : 0.0);
+                                                       : gps_ui::kDefaultLat);
     model.focus_point.lon = has_viewport_center
                                 ? snapshot.viewport.center_lon
                                 : (snapshot.self.valid ? snapshot.self.lon
-                                                       : 0.0);
+                                                       : gps_ui::kDefaultLng);
     model.zoom = snapshot.viewport.zoom == 0 ? s_map_zoom : snapshot.viewport.zoom;
     model.pan_x = s_map_pan_x;
     model.pan_y = s_map_pan_y;

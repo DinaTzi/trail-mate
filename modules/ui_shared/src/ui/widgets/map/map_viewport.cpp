@@ -1115,7 +1115,7 @@ bool set_layer_map_source(uint8_t map_source, LayerNotice* out_notice)
     if (changed)
     {
         config_api.getConfig().map_source = normalized;
-        config_api.saveConfig();
+        config_api.requestSaveConfig();
     }
 
     if (!platform::ui::device::sd_ready())
@@ -1147,7 +1147,7 @@ bool toggle_layer_contour(LayerNotice* out_notice)
                      static_cast<unsigned>(sanitize_map_source(config_api.getConfig().map_source)));
 
     config_api.getConfig().map_contour_enabled = enabled;
-    config_api.saveConfig();
+    config_api.requestSaveConfig();
 
     if (enabled)
     {
