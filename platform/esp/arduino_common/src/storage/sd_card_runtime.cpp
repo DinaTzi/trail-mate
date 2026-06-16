@@ -21,6 +21,8 @@ namespace
 
 constexpr uint8_t kRuntimeCardNone = 0;
 constexpr uint32_t kSdSectorSize = 512;
+constexpr uint32_t kDefaultSharedSpiSdHz = 4000000U;
+constexpr uint32_t kMaxSharedSpiSdHz = 10000000U;
 
 #ifndef TRAIL_MATE_SD_IO_LOG_ENABLE
 #define TRAIL_MATE_SD_IO_LOG_ENABLE 1
@@ -34,9 +36,15 @@ constexpr uint32_t kSdSectorSize = 512;
 #define TRAIL_MATE_SD_IO_SLOW_MS 20
 #endif
 
+#ifndef TRAIL_MATE_SD_IO_LOG_INTERVAL_MS
+#define TRAIL_MATE_SD_IO_LOG_INTERVAL_MS 1000
+#endif
+
 SdFs s_sdfat;
 SdCardInfo s_info{};
 bool s_sdfat_mounted = false;
+uint32_t s_last_sd_io_log_ms = 0;
+uint32_t s_suppressed_sd_io_logs = 0;
 
 const char* backend_name_from_info()
 {
@@ -96,14 +104,22 @@ void sd_io_end(const char* op,
 #if TRAIL_MATE_SD_IO_LOG_ENABLE
     if (TRAIL_MATE_SD_IO_TRACE_LOG || !ok || elapsed_ms >= TRAIL_MATE_SD_IO_SLOW_MS)
     {
-        Serial.printf("[SD][IO] end op=%s backend=%s path=%s ok=%d bytes=%u result=%ld elapsed_ms=%lu\n",
-                      op,
-                      backend_name_from_info(),
-                      safe_path(path),
-                      ok ? 1 : 0,
-                      static_cast<unsigned>(bytes),
-                      static_cast<long>(result),
-                      static_cast<unsigned long>(elapsed_ms));
+        ++s_suppressed_sd_io_logs;
+        if (TRAIL_MATE_SD_IO_TRACE_LOG || s_last_sd_io_log_ms == 0 ||
+            end_ms - s_last_sd_io_log_ms >= TRAIL_MATE_SD_IO_LOG_INTERVAL_MS)
+        {
+            Serial.printf("[SD][IO] end op=%s backend=%s path=%s ok=%d bytes=%u result=%ld elapsed_ms=%lu suppressed=%lu\n",
+                          op,
+                          backend_name_from_info(),
+                          safe_path(path),
+                          ok ? 1 : 0,
+                          static_cast<unsigned>(bytes),
+                          static_cast<long>(result),
+                          static_cast<unsigned long>(elapsed_ms),
+                          static_cast<unsigned long>(s_suppressed_sd_io_logs - 1));
+            s_suppressed_sd_io_logs = 0;
+            s_last_sd_io_log_ms = end_ms;
+        }
     }
 #else
     (void)op;
@@ -113,6 +129,15 @@ void sd_io_end(const char* op,
     (void)result;
     (void)elapsed_ms;
 #endif
+}
+
+uint32_t sanitize_sd_spi_hz(uint32_t requested_hz)
+{
+    if (requested_hz == 0 || requested_hz > kMaxSharedSpiSdHz)
+    {
+        return kDefaultSharedSpiSdHz;
+    }
+    return requested_hz;
 }
 
 uint8_t card_type_from_sdfat(SdFs& fs)
@@ -261,8 +286,18 @@ bool mount_sd_card(int sd_cs,
     SD.end();
     reset_info();
 
-    const bool arduino_ok = SD.begin(sd_cs, spi, spi_hz, mount_point, max_files, false);
-    Serial.printf("[SD] Arduino SD.begin -> %d\n", arduino_ok ? 1 : 0);
+    const uint32_t effective_hz = sanitize_sd_spi_hz(spi_hz);
+    if (effective_hz != spi_hz)
+    {
+        Serial.printf("[SD] clamp shared SPI hz requested=%lu effective=%lu\n",
+                      static_cast<unsigned long>(spi_hz),
+                      static_cast<unsigned long>(effective_hz));
+    }
+
+    const bool arduino_ok = SD.begin(sd_cs, spi, effective_hz, mount_point, max_files, false);
+    Serial.printf("[SD] Arduino SD.begin hz=%lu -> %d\n",
+                  static_cast<unsigned long>(effective_hz),
+                  arduino_ok ? 1 : 0);
     if (arduino_ok && SD.cardType() != CARD_NONE && SD.sectorSize() != 0)
     {
         record_arduino_info();
@@ -277,8 +312,10 @@ bool mount_sd_card(int sd_cs,
     SD.end();
     delay(10);
 
-    const bool sdfat_ok = s_sdfat.begin(SdSpiConfig(sd_cs, SHARED_SPI, spi_hz, &spi));
-    Serial.printf("[SD] SdFat.begin -> %d\n", sdfat_ok ? 1 : 0);
+    const bool sdfat_ok = s_sdfat.begin(SdSpiConfig(sd_cs, SHARED_SPI, effective_hz, &spi));
+    Serial.printf("[SD] SdFat.begin hz=%lu -> %d\n",
+                  static_cast<unsigned long>(effective_hz),
+                  sdfat_ok ? 1 : 0);
     if (!sdfat_ok || s_sdfat.fatType() == 0)
     {
         s_sdfat.initErrorPrint(&Serial);

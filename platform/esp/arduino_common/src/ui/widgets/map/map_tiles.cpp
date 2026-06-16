@@ -118,12 +118,22 @@ class LvglMapTileFileSystem final : public ui::map_tiles::IMapTileFileSystem
   public:
     bool exists(const char* path) const override
     {
+#if defined(ARDUINO) || defined(ARDUINO_ARCH_ESP32)
+        (void)path;
+        return false;
+#else
         return ui::fs::file_exists(path);
+#endif
     }
 
     bool isDirectory(const char* path) const override
     {
+#if defined(ARDUINO) || defined(ARDUINO_ARCH_ESP32)
+        (void)path;
+        return false;
+#else
         return ui::fs::dir_exists(path);
+#endif
     }
 
     bool readFile(const char* path,
@@ -131,15 +141,57 @@ class LvglMapTileFileSystem final : public ui::map_tiles::IMapTileFileSystem
                   std::size_t capacity,
                   std::size_t& out_size) const override
     {
-        // ESP UI code may resolve paths, but tile payload reads belong to the worker-side SD source.
         out_size = 0;
+#if defined(ARDUINO) || defined(ARDUINO_ARCH_ESP32)
         (void)path;
         (void)buffer;
         (void)capacity;
         return false;
+#else
+        if (!path || !buffer || capacity == 0)
+        {
+            return false;
+        }
+
+        const std::string normalized = ui::fs::normalize_path(path);
+        if (normalized.empty())
+        {
+            return false;
+        }
+
+        lv_fs_file_t file;
+        if (lv_fs_open(&file, normalized.c_str(), LV_FS_MODE_RD) != LV_FS_RES_OK)
+        {
+            return false;
+        }
+
+        uint32_t file_size = 0;
+        if (lv_fs_seek(&file, 0, LV_FS_SEEK_END) != LV_FS_RES_OK ||
+            lv_fs_tell(&file, &file_size) != LV_FS_RES_OK ||
+            lv_fs_seek(&file, 0, LV_FS_SEEK_SET) != LV_FS_RES_OK ||
+            file_size == 0 ||
+            file_size > capacity)
+        {
+            lv_fs_close(&file);
+            return false;
+        }
+
+        uint32_t bytes_read = 0;
+        const lv_fs_res_t res = lv_fs_read(&file, buffer, file_size, &bytes_read);
+        lv_fs_close(&file);
+        if (res != LV_FS_RES_OK || bytes_read != file_size)
+        {
+            out_size = bytes_read;
+            return false;
+        }
+
+        out_size = bytes_read;
+        return true;
+#endif
     }
 };
 
+#if defined(ARDUINO) || defined(ARDUINO_ARCH_ESP32)
 class SdMapTileFileSystem final : public ui::map_tiles::IMapTileFileSystem
 {
   public:
@@ -189,24 +241,28 @@ class SdMapTileFileSystem final : public ui::map_tiles::IMapTileFileSystem
         return true;
     }
 };
+#endif
 
 constexpr std::size_t kMapTileCommandQueueCapacity = 48;
 constexpr std::size_t kMapTileEventQueueCapacity = 48;
 constexpr std::size_t kMapTileWorkerScratchBytes = 192U * 1024U;
 constexpr int kMapTileEventsPerUiDrain = 1;
+constexpr uint32_t kMapTileUiDrainBudgetMs = 4;
+constexpr uint32_t kMapTileUiEventCooldownMs = 120;
 constexpr uint32_t kMapTileLayerBusyBackoffMs = 1500;
 constexpr uint32_t kMapTileLayerCacheBackoffMs = 350;
 constexpr uint32_t kMapTileMissingCacheTtlMs = 5U * 60U * 1000U;
 constexpr uint32_t kMapTileGenerationInitial = 1;
 constexpr uint32_t kMapTileBusResource = 1;
 constexpr uint32_t kMapTileDiagnosticLogIntervalMs = 1000;
-constexpr TickType_t kMapTileWorkerPostCommandYieldTicks = pdMS_TO_TICKS(16);
-constexpr uint32_t kMapTileDisplaySpiSlowHoldMs = 16;
-constexpr uint32_t kMapTileDisplaySpiNormalCooldownMs = 64;
-constexpr uint32_t kMapTileDisplaySpiSlowCooldownMs = 250;
+constexpr TickType_t kMapTileWorkerPostCommandYieldTicks = pdMS_TO_TICKS(32);
+constexpr uint32_t kMapTileDisplaySpiSlowHoldMs = 8;
+constexpr uint32_t kMapTileDisplaySpiNormalCooldownMs = 160;
+constexpr uint32_t kMapTileDisplaySpiSlowCooldownMs = 600;
 
 uint32_t g_map_tile_decode_log_ms = 0;
 uint32_t g_map_tile_event_log_ms = 0;
+uint32_t g_map_tile_next_event_drain_ms = 0;
 
 bool should_log_map_tile_diagnostic(uint32_t& last_ms, uint32_t now_ms)
 {
@@ -826,7 +882,14 @@ class EspMapTileBusArbiter final : public sys::runtime::IBusArbiter
   private:
     static uint32_t timeoutFor(sys::runtime::BusAccessPolicy policy)
     {
-        (void)policy;
+        if (policy == sys::runtime::BusAccessPolicy::InteractiveWorkerBounded)
+        {
+            return 1;
+        }
+        if (policy == sys::runtime::BusAccessPolicy::BackgroundWorkerBounded)
+        {
+            return 4;
+        }
         return 0;
     }
 
@@ -847,6 +910,36 @@ class EspMapTileBusArbiter final : public sys::runtime::IBusArbiter
     uint8_t consecutive_timeouts_ = 0;
     uint32_t cooldown_until_ms_ = 0;
     uint32_t last_slow_hold_log_ms_ = 0;
+};
+
+class EspMapTilePolicyStrategy final : public sys::runtime::RuntimePolicyStrategy
+{
+  public:
+    sys::runtime::RuntimePriority selectPriority(
+        const sys::runtime::RuntimeIntent& intent) const override
+    {
+        return intent.priority_hint;
+    }
+
+    sys::runtime::BusAccessPolicy selectBusPolicy(
+        const sys::runtime::RuntimeCommand& command) const override
+    {
+        if (command.priority == sys::runtime::RuntimePriority::Interactive ||
+            command.priority == sys::runtime::RuntimePriority::Realtime)
+        {
+            return sys::runtime::BusAccessPolicy::InteractiveWorkerBounded;
+        }
+        return sys::runtime::BusAccessPolicy::BackgroundWorkerBounded;
+    }
+
+    sys::runtime::RuntimeRetryDecision selectRetry(
+        const sys::runtime::RuntimeCommand& command,
+        const sys::runtime::PlatformStorageResult& result) const override
+    {
+        (void)command;
+        (void)result;
+        return {};
+    }
 };
 
 class EspMapTileWorkerBackend final : public ui::map_tiles::IMapTileWorkerBackend
@@ -1121,8 +1214,13 @@ ui::map_tiles::FilesystemMapTileSource& tile_source()
 
 ui::map_tiles::FilesystemMapTileSource& worker_tile_source()
 {
+#if defined(ARDUINO) || defined(ARDUINO_ARCH_ESP32)
     static SdMapTileFileSystem fs;
     static ui::map_tiles::FilesystemMapTileSource source(fs, "/");
+#else
+    static LvglMapTileFileSystem fs;
+    static ui::map_tiles::FilesystemMapTileSource source(fs, "A:");
+#endif
     return source;
 }
 
@@ -1218,7 +1316,8 @@ class MapTileAsyncHost final
                                              bus_,
                                              events_,
                                              scratch_,
-                                             kMapTileWorkerScratchBytes);
+                                             kMapTileWorkerScratchBytes,
+                                             &policy_);
             if (worker_ == nullptr)
             {
                 if (!task_start_failed_logged_)
@@ -1253,6 +1352,7 @@ class MapTileAsyncHost final
     MapTileCommandQueue commands_{};
     MapTileEventQueue events_{};
     EspMapTileBusArbiter bus_{};
+    EspMapTilePolicyStrategy policy_{};
     EspMapTileWorkerBackend backend_{worker_tile_source()};
     uint8_t* scratch_ = nullptr;
     ui::map_tiles::MapTileWorker* worker_ = nullptr;
@@ -1546,13 +1646,22 @@ bool build_contour_tile_path(int z, int x, int y, char* out_path, size_t out_siz
 
 bool map_source_directory_available(uint8_t map_source)
 {
+#if defined(ARDUINO) || defined(ARDUINO_ARCH_ESP32)
+    (void)map_source;
+    return true;
+#else
     return tile_source().layerDirectoryAvailable(
         ui::map_tiles::mapTileLayerFromBaseSource(sanitize_map_source(map_source)));
+#endif
 }
 
 bool contour_directory_available()
 {
+#if defined(ARDUINO) || defined(ARDUINO_ARCH_ESP32)
+    return true;
+#else
     return tile_source().anyContourDirectoryAvailable();
+#endif
 }
 
 bool take_missing_tile_notice(uint8_t* out_map_source)
@@ -2539,8 +2648,15 @@ static bool apply_map_tile_event(TileContext& ctx, ui::map_tiles::MapTileAsyncEv
     return rendered;
 }
 
-static void drain_map_tile_events(TileContext& ctx)
+static void drain_map_tile_events(TileContext& ctx, uint32_t start_ms, uint32_t budget_ms)
 {
+    const uint32_t now_ms = sys::millis_now();
+    if (g_map_tile_next_event_drain_ms != 0 &&
+        static_cast<int32_t>(g_map_tile_next_event_drain_ms - now_ms) > 0)
+    {
+        return;
+    }
+
     ui::map_tiles::MapTileAsyncEvent event{};
     int drained = 0;
     while (drained < kMapTileEventsPerUiDrain && map_tile_async_host().popEvent(event))
@@ -2556,6 +2672,11 @@ static void drain_map_tile_events(TileContext& ctx)
         }
         ++drained;
         event = {};
+        g_map_tile_next_event_drain_ms = sys::millis_now() + kMapTileUiEventCooldownMs;
+        if (static_cast<uint32_t>(sys::millis_now() - start_ms) >= budget_ms)
+        {
+            break;
+        }
     }
 }
 
@@ -3067,12 +3188,16 @@ void tile_loader_step(TileContext& ctx)
         return;
     }
 
-    sync_render_settings(ctx);
-    drain_map_tile_events(ctx);
-    update_visible_map_data_flag(ctx);
-
     const uint32_t start_ms = sys::millis_now();
-    const uint32_t budget_ms = 6;
+    const uint32_t budget_ms = kMapTileUiDrainBudgetMs;
+    sync_render_settings(ctx);
+    drain_map_tile_events(ctx, start_ms, budget_ms);
+    update_visible_map_data_flag(ctx);
+    if (static_cast<uint32_t>(sys::millis_now() - start_ms) >= budget_ms)
+    {
+        return;
+    }
+
     const int max_tiles_per_step = 1;
     MapTile* attempted[max_tiles_per_step] = {NULL};
     int attempted_count = 0;
@@ -3215,8 +3340,6 @@ void tile_loader_step(TileContext& ctx)
             }
         }
 
-        drain_map_tile_events(ctx);
-
         if ((int32_t)(sys::millis_now() - start_ms) >= (int32_t)budget_ms)
         {
             break;
@@ -3282,7 +3405,6 @@ void tile_loader_step(TileContext& ctx)
             }
         }
     }
-    drain_map_tile_events(ctx);
     update_visible_map_data_flag(ctx);
     rebuild_render_queue(ctx);
 }

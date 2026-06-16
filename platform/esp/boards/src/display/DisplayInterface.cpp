@@ -13,8 +13,12 @@ static LilyGoDispArduinoSPI* g_display_spi = nullptr;
 
 namespace
 {
-constexpr TickType_t kDisplayFrameLockWait = pdMS_TO_TICKS(8);
-constexpr TickType_t kDisplayControlLockWait = pdMS_TO_TICKS(50);
+constexpr TickType_t kDisplayFrameLockWait = 0;
+constexpr TickType_t kDisplayControlLockWait = pdMS_TO_TICKS(80);
+constexpr uint32_t kDisplayLockTimeoutLogIntervalMs = 1000;
+
+uint32_t s_last_display_lock_timeout_log_ms = 0;
+uint32_t s_suppressed_display_lock_timeout_logs = 0;
 
 bool lock_or_log(LilyGoDispArduinoSPI& spi, TickType_t wait_ticks, const char* op)
 {
@@ -22,9 +26,19 @@ bool lock_or_log(LilyGoDispArduinoSPI& spi, TickType_t wait_ticks, const char* o
     {
         return true;
     }
-    Serial.printf("[SPI][DISPLAY] lock_timeout op=%s wait_ticks=%lu\n",
-                  op ? op : "",
-                  static_cast<unsigned long>(wait_ticks));
+
+    const uint32_t now_ms = millis();
+    ++s_suppressed_display_lock_timeout_logs;
+    if (s_last_display_lock_timeout_log_ms == 0 ||
+        now_ms - s_last_display_lock_timeout_log_ms >= kDisplayLockTimeoutLogIntervalMs)
+    {
+        Serial.printf("[SPI][DISPLAY] lock_timeout op=%s wait_ticks=%lu suppressed=%lu\n",
+                      op ? op : "",
+                      static_cast<unsigned long>(wait_ticks),
+                      static_cast<unsigned long>(s_suppressed_display_lock_timeout_logs - 1));
+        s_suppressed_display_lock_timeout_logs = 0;
+        s_last_display_lock_timeout_log_ms = now_ms;
+    }
     return false;
 }
 } // namespace

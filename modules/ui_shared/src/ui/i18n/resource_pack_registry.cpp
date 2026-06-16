@@ -27,13 +27,6 @@
 #define UI_I18N_HAVE_BINFONT 0
 #endif
 
-#if (defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)) && !defined(GAT562_NO_CJK)
-#define UI_I18N_HAS_BUILTIN_CJK_CONTENT_FONT 1
-LV_FONT_DECLARE(lv_font_source_han_sans_sc_14_cjk)
-#else
-#define UI_I18N_HAS_BUILTIN_CJK_CONTENT_FONT 0
-#endif
-
 namespace ui::i18n
 {
 namespace
@@ -47,7 +40,6 @@ constexpr const char* kLegacyDisplayLanguageKey = "display_language";
 constexpr const char* kDefaultLocaleId = "en";
 constexpr const char* kBuiltinEnglishName = "English";
 constexpr const char* kBuiltinLatinFontPackId = "builtin-latin-ui";
-constexpr const char* kBuiltinCjkContentFontPackId = "builtin-cjk-content";
 #if UI_FS_HAS_FLASH_PACK_STORAGE
 constexpr const char* kFlashPackRoot = "/fs/trailmate/packs";
 constexpr const char* kFlashFontPackRoot = "/fs/trailmate/packs/fonts";
@@ -1214,6 +1206,16 @@ bool ensure_font_pack_loaded(FontPackRecord* pack)
     return load_font_pack(*pack);
 }
 
+bool can_load_font_from_content_hot_path(const FontPackRecord& pack)
+{
+#if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
+    return pack.builtin;
+#else
+    (void)pack;
+    return true;
+#endif
+}
+
 std::vector<FontPackRecord*> current_content_pack_sequence()
 {
     std::vector<FontPackRecord*> packs;
@@ -1242,7 +1244,8 @@ bool ensure_active_content_pack_loaded()
 
     if (s_active_content_font_pack && !is_font_runtime_loaded(*s_active_content_font_pack))
     {
-        if (ensure_font_pack_loaded(s_active_content_font_pack))
+        if (can_load_font_from_content_hot_path(*s_active_content_font_pack) &&
+            ensure_font_pack_loaded(s_active_content_font_pack))
         {
             changed = true;
         }
@@ -1250,7 +1253,8 @@ bool ensure_active_content_pack_loaded()
 
     if (s_active_ui_font_pack && !is_font_runtime_loaded(*s_active_ui_font_pack))
     {
-        if (ensure_font_pack_loaded(s_active_ui_font_pack))
+        if (can_load_font_from_content_hot_path(*s_active_ui_font_pack) &&
+            ensure_font_pack_loaded(s_active_ui_font_pack))
         {
             changed = true;
         }
@@ -1548,24 +1552,6 @@ void add_builtin_font_packs()
     latin_pack.builtin_font = nullptr;
     latin_pack.estimated_ram_bytes = 0;
     s_font_packs.push_back(std::move(latin_pack));
-
-#if UI_I18N_HAS_BUILTIN_CJK_CONTENT_FONT
-    FontPackRecord cjk_pack{};
-    cjk_pack.id = kBuiltinCjkContentFontPackId;
-    cjk_pack.display_name = "Built-in CJK Content";
-    cjk_pack.usage = FontPackUsage::ContentOnly;
-    cjk_pack.builtin = true;
-    cjk_pack.builtin_font = &::lv_font_source_han_sans_sc_14_cjk;
-    cjk_pack.estimated_ram_bytes = 0;
-    cjk_pack.source_path = "lv_font_source_han_sans_sc_14_cjk";
-    cjk_pack.coverage.push_back({0x3000U, 0x30FFU});
-    cjk_pack.coverage.push_back({0x3400U, 0x4DBFU});
-    cjk_pack.coverage.push_back({0x4E00U, 0x9FFFU});
-    cjk_pack.coverage.push_back({0xF900U, 0xFAFFU});
-    cjk_pack.coverage.push_back({0xFF00U, 0xFFEFU});
-    normalize_ranges(cjk_pack.coverage);
-    s_font_packs.push_back(std::move(cjk_pack));
-#endif
 }
 
 void add_builtin_locale_packs()
@@ -1645,6 +1631,12 @@ bool catalog_external_font_pack(const std::string& pack_dir)
     }
     else
     {
+#if !UI_I18N_HAVE_BINFONT
+        std::printf("%s skip font pack id=%s reason=binfont_unavailable\n",
+                    kLogTag,
+                    pack.id.c_str());
+        return false;
+#else
         const char* file_value = manifest_value(manifest, "file");
         const std::string font_path = resolve_pack_file_path(pack_dir, file_value);
         if (font_path.empty())
@@ -1653,6 +1645,23 @@ bool catalog_external_font_pack(const std::string& pack_dir)
             return false;
         }
         pack.source_path = ::ui::fs::normalize_path(font_path.c_str());
+        if (pack.source_path.empty())
+        {
+            std::printf("%s skip font pack id=%s reason=normalize_failed file=%s\n",
+                        kLogTag,
+                        pack.id.c_str(),
+                        font_path.c_str());
+            return false;
+        }
+        if (!::ui::fs::file_exists(pack.source_path.c_str()))
+        {
+            std::printf("%s skip font pack id=%s reason=font_bin_missing source=%s\n",
+                        kLogTag,
+                        pack.id.c_str(),
+                        pack.source_path.c_str());
+            return false;
+        }
+#endif
     }
 
     std::string ranges_path;
@@ -2583,17 +2592,26 @@ const lv_font_t* locale_preview_font(const char* locale_id, const lv_font_t* asc
                                                     ::ui::fonts::FontScope::Ui);
 }
 
-void log_content_font_load_deferred(FontPackRecord& pack)
+void log_font_load_deferred(FontPackRecord& pack, const char* role, const char* reason)
 {
     if (pack.content_load_deferred_logged)
     {
         return;
     }
     pack.content_load_deferred_logged = true;
-    std::printf("%s content font load deferred id=%s reason=ui_hot_path active_locale=%s\n",
+    const uint32_t now_ms = sys::millis_now();
+    const uint32_t retry_ms = pack.load_retry_not_before_ms > now_ms
+                                  ? pack.load_retry_not_before_ms - now_ms
+                                  : 0U;
+    std::printf("%s font load deferred id=%s role=%s reason=%s active_locale=%s source=%s failures=%u retry_ms=%lu\n",
                 kLogTag,
                 pack.id.c_str(),
-                s_active_locale ? s_active_locale->id.c_str() : "<none>");
+                safe_text(role),
+                safe_text(reason),
+                s_active_locale ? s_active_locale->id.c_str() : "<none>",
+                pack.source_path.empty() ? "<none>" : pack.source_path.c_str(),
+                static_cast<unsigned>(pack.load_failure_count),
+                static_cast<unsigned long>(retry_ms));
 }
 
 bool ensure_content_font_for_text(const char* text)
@@ -2606,6 +2624,16 @@ bool ensure_content_font_for_text(const char* text)
 
     bool changed = false;
     changed |= ensure_active_content_pack_loaded();
+    if (s_active_content_font_pack && !is_font_runtime_loaded(*s_active_content_font_pack) &&
+        !can_load_font_from_content_hot_path(*s_active_content_font_pack))
+    {
+        log_font_load_deferred(*s_active_content_font_pack, "active_content", "ui_hot_path");
+    }
+    if (s_active_ui_font_pack && !is_font_runtime_loaded(*s_active_ui_font_pack) &&
+        !can_load_font_from_content_hot_path(*s_active_ui_font_pack))
+    {
+        log_font_load_deferred(*s_active_ui_font_pack, "active_ui", "ui_hot_path");
+    }
 
     std::vector<uint32_t> missing = missing_content_codepoints(text);
     while (!missing.empty())
@@ -2617,7 +2645,7 @@ bool ensure_content_font_for_text(const char* text)
         }
         if (!kAllowSynchronousContentSupplementFontLoad && !is_font_runtime_loaded(*candidate))
         {
-            log_content_font_load_deferred(*candidate);
+            log_font_load_deferred(*candidate, "content_supplement", "ui_hot_path");
             break;
         }
         if (!ensure_font_pack_loaded(candidate))

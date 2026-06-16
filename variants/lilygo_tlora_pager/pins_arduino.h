@@ -12,7 +12,7 @@
 #define DISP_WIDTH (222)
 #define DISP_HEIGHT (480)
 #define SD_CS (21)
-#define SD_SPI_FREQUENCY (75000000U)
+#define SD_SPI_FREQUENCY (4000000U)
 
 static const uint8_t TX = 43;
 static const uint8_t RX = 44;

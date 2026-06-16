@@ -358,10 +358,11 @@ English 必须在没有任何外部 pack 的情况下仍可工作。
 1. `ensure_content_font_for_text()` 可以发现当前内容字体链缺少某些 codepoint。
 2. 它不能在 ESP / display-shared SD-SPI 设备的页面渲染、列表构建、LVGL 事件或 timer 路径里同步加载外部 `font.bin`。
 3. ESP 上的内容补充字体加载必须被视为后台/显式动作；在后台 runtime 完成前，页面使用当前已加载字体链并记录缺字诊断。
-4. 固件内置字体已经是运行时 loaded 状态，不经过 SD / Flash pack IO；ESP 可以把这类内置字体追加到 content chain 作为热路径兜底。
+4. 固件内置字体只有在 runtime pack manifest 以 `source=builtin` 显式声明时才算运行时 loaded 状态；ESP 不得隐式注册 CJK 内置字体来替代外部 `zh-hans-core/font.bin`。
 5. 已加载字体是否覆盖某个 codepoint 必须以实际 glyph lookup 为准；manifest/range 只能用于选择候选 pack，不能替代渲染能力判断。
 6. 外部 `font.bin` 加载失败后必须进入 backoff，不能因为多条联系人名、聊天消息或节点名重复触发同一个失败文件读取。
 7. 显式切换 locale 时加载 UI 字体属于 locale 激活流程；这不能被内容文本缺字路径复用成隐式 SD 读。
+8. 外部 `source=binfont` 字体 pack 必须在 catalog 阶段验证 `font.bin` 路径可规范化且可打开；缺少 payload 的 locale 不能进入可选 locale 列表。
 
 这条规则的目标是保护 UI 实时域：联系人页、聊天页、地图 overlay、节点详情页等内容页面不得因为遇到中文/日文/韩文/阿拉伯文本而把 UI 线程拖入 SD 阻塞 IO。
 

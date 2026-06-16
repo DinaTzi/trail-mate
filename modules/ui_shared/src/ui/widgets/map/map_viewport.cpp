@@ -333,15 +333,6 @@ void prime_visible_tiles(RuntimeImpl& impl, const char* reason)
                      impl.has_map_data ? 1 : 0,
                      impl.has_visible_map_data ? 1 : 0);
 
-    for (int attempt = 0; attempt < 2 && !impl.has_visible_map_data; ++attempt)
-    {
-        tile_loader_step(impl.tile_ctx);
-        MAP_VIEWPORT_LOG("prime_visible_tiles step=%d visible_map=%d map_data=%d\n",
-                         attempt + 1,
-                         impl.has_visible_map_data ? 1 : 0,
-                         impl.has_map_data ? 1 : 0);
-    }
-
     MAP_VIEWPORT_LOG("prime_visible_tiles end reason=%s map_data=%d visible_map=%d\n",
                      reason ? reason : "<none>",
                      impl.has_map_data ? 1 : 0,
@@ -627,7 +618,8 @@ void render_overlay(RuntimeImpl& impl)
 void loader_timer_cb(lv_timer_t* timer)
 {
     auto* impl = static_cast<RuntimeImpl*>(lv_timer_get_user_data(timer));
-    if (!impl || !is_runtime_alive(*impl) || !impl->model.focus_point.valid || impl->drag_preview_active)
+    if (!impl || !is_runtime_alive(*impl) || !impl->model.focus_point.valid ||
+        impl->gesture_pressed || impl->gesture_dragging || impl->drag_preview_active)
     {
         return;
     }

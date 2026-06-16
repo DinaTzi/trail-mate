@@ -1,8 +1,9 @@
 #pragma once
 
-#include <SPI.h>
 #include <cstddef>
 #include <cstdint>
+
+class SPIClass;
 
 namespace platform::esp::arduino_common::storage
 {
