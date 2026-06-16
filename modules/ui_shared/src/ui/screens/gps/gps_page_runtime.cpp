@@ -229,6 +229,13 @@ uint8_t current_map_zoom()
                  std::min(s_map_zoom, ::ui::widgets::map::kMaxZoom)));
 }
 
+bool has_valid_viewport_center(const ::ui::map::MapViewport& viewport)
+{
+    return std::isfinite(viewport.center_lat) &&
+           std::isfinite(viewport.center_lon) &&
+           (viewport.center_lat != 0.0 || viewport.center_lon != 0.0);
+}
+
 void sync_workspace_layers_from_renderer()
 {
     auto& state = ::ui::presentation_sources::runtime_map_workspace_state();
@@ -244,13 +251,10 @@ void sync_workspace_viewport_from_renderer()
     auto& model = map_workspace_model();
     auto viewport = model.viewport();
     viewport.zoom = current_map_zoom();
-    if (!std::isfinite(viewport.center_lat) || !std::isfinite(viewport.center_lon) ||
-        (viewport.center_lat == 0.0 && viewport.center_lon == 0.0))
+    if (has_valid_viewport_center(viewport))
     {
-        viewport.center_lat = gps_ui::kDefaultLat;
-        viewport.center_lon = gps_ui::kDefaultLng;
+        (void)model.setViewport(viewport);
     }
-    (void)model.setViewport(viewport);
     (void)model.setActiveTool(::ui::map::MapToolKind::Pan);
 }
 
@@ -300,19 +304,16 @@ bool commit_pending_map_pan_from_screen()
     const auto& config = app::configFacade().getConfig();
 
     ::ui::widgets::map::Model model{};
-    const bool has_viewport_center =
-        std::isfinite(snapshot.viewport.center_lat) &&
-        std::isfinite(snapshot.viewport.center_lon) &&
-        (snapshot.viewport.center_lat != 0.0 || snapshot.viewport.center_lon != 0.0);
+    const bool has_viewport_center = has_valid_viewport_center(snapshot.viewport);
     model.focus_point.valid = has_viewport_center || snapshot.self.valid;
     model.focus_point.lat = has_viewport_center
                                 ? snapshot.viewport.center_lat
                                 : (snapshot.self.valid ? snapshot.self.lat
-                                                       : gps_ui::kDefaultLat);
+                                                       : 0.0);
     model.focus_point.lon = has_viewport_center
                                 ? snapshot.viewport.center_lon
                                 : (snapshot.self.valid ? snapshot.self.lon
-                                                       : gps_ui::kDefaultLng);
+                                                       : 0.0);
     model.zoom = snapshot.viewport.zoom == 0 ? s_map_zoom : snapshot.viewport.zoom;
     model.pan_x = s_map_pan_x;
     model.pan_y = s_map_pan_y;

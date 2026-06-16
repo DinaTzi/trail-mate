@@ -160,6 +160,22 @@ int main()
     assert(snapshot.team.visible_members == 2);
     assert(snapshot.team.stale_members == 1);
 
+    state.has_viewport = false;
+    state.last_viewport = {};
+    gps.snapshot.fix_valid = false;
+    request.requested_viewport = viewport(0.0, 0.0, 12);
+    assert(source.buildMapWorkspaceSnapshot(request, snapshot));
+    assert(snapshot.header.valid);
+    assert(!snapshot.self.valid);
+    assert(!snapshot.can_center_on_self);
+    assert(snapshot.viewport.center_lat == 0.0);
+    assert(snapshot.viewport.center_lon == 0.0);
+    assert(snapshot.viewport.zoom == 12);
+
+    gps.snapshot.fix_valid = true;
+    gps.snapshot.latitude = 52.4068;
+    gps.snapshot.longitude = -1.5197;
+
     const auto center = sink.centerOnSelf();
     assert(center.ok);
     assert(state.has_viewport);

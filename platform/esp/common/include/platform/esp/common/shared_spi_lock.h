@@ -1,6 +1,7 @@
 #pragma once
 
 #include "freertos/FreeRTOS.h"
+#include <stdint.h>
 
 namespace platform::esp::common
 {
@@ -10,6 +11,9 @@ namespace platform::esp::common
 // share one controller. It is not display-specific.
 bool shared_spi_lock(TickType_t xTicksToWait);
 void shared_spi_unlock();
+void note_display_spi_timeout(uint32_t now_ms);
+uint32_t last_display_spi_timeout_ms();
+bool display_spi_recently_timed_out(uint32_t now_ms, uint32_t window_ms);
 
 class SharedSpiLockGuard
 {

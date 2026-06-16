@@ -19,6 +19,7 @@ constexpr uint32_t kDisplayLockTimeoutLogIntervalMs = 1000;
 
 uint32_t s_last_display_lock_timeout_log_ms = 0;
 uint32_t s_suppressed_display_lock_timeout_logs = 0;
+volatile uint32_t s_last_display_spi_timeout_ms = 0;
 
 bool lock_or_log(LilyGoDispArduinoSPI& spi, TickType_t wait_ticks, const char* op)
 {
@@ -28,6 +29,7 @@ bool lock_or_log(LilyGoDispArduinoSPI& spi, TickType_t wait_ticks, const char* o
     }
 
     const uint32_t now_ms = millis();
+    ::platform::esp::common::note_display_spi_timeout(now_ms);
     ++s_suppressed_display_lock_timeout_logs;
     if (s_last_display_lock_timeout_log_ms == 0 ||
         now_ms - s_last_display_lock_timeout_log_ms >= kDisplayLockTimeoutLogIntervalMs)
@@ -57,6 +59,23 @@ void shared_spi_unlock()
     {
         g_display_spi->unlock();
     }
+}
+
+void note_display_spi_timeout(uint32_t now_ms)
+{
+    s_last_display_spi_timeout_ms = now_ms;
+}
+
+uint32_t last_display_spi_timeout_ms()
+{
+    return s_last_display_spi_timeout_ms;
+}
+
+bool display_spi_recently_timed_out(uint32_t now_ms, uint32_t window_ms)
+{
+    const uint32_t last_timeout_ms = s_last_display_spi_timeout_ms;
+    return last_timeout_ms != 0 &&
+           static_cast<uint32_t>(now_ms - last_timeout_ms) < window_ms;
 }
 
 } // namespace platform::esp::common

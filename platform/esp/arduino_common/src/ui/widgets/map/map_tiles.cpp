@@ -207,7 +207,8 @@ constexpr uint32_t kMapTileDiagnosticLogIntervalMs = 1000;
 constexpr TickType_t kMapTileWorkerPostCommandYieldTicks = pdMS_TO_TICKS(32);
 constexpr uint32_t kMapTileDisplaySpiSlowHoldMs = 8;
 constexpr uint32_t kMapTileDisplaySpiNormalCooldownMs = 160;
-constexpr uint32_t kMapTileDisplaySpiSlowCooldownMs = 600;
+constexpr uint32_t kMapTileDisplaySpiSlowCooldownMs = 1500;
+constexpr uint32_t kMapTileDisplayPressureCooldownMs = 1500;
 
 uint32_t g_map_tile_decode_log_ms = 0;
 uint32_t g_map_tile_event_log_ms = 0;
@@ -860,6 +861,19 @@ class EspMapTileBusArbiter final : public sys::runtime::IBusArbiter
         const sys::runtime::BusAcquireRequest& request) override
     {
         const uint32_t start_ms = sys::millis_now();
+        if (::platform::esp::common::display_spi_recently_timed_out(
+                start_ms,
+                kMapTileDisplayPressureCooldownMs))
+        {
+            sys::runtime::BusAcquireResult result{};
+            result.status = sys::runtime::BusAcquireStatus::Busy;
+            result.diagnostics.resource = request.resource;
+            result.diagnostics.command_id = request.command_id;
+            result.diagnostics.policy = sys::runtime::BusAccessPolicy::DisplayFrameCritical;
+            updateHealth(result.status, start_ms);
+            return result;
+        }
+
         if (static_cast<int32_t>(cooldown_until_ms_ - start_ms) > 0)
         {
             sys::runtime::BusAcquireResult result{};
@@ -1844,11 +1858,11 @@ void tileToLatLng(int tile_x, int tile_y, int zoom, double& lat, double& lng)
  */
 void get_screen_center_lat_lng(const TileContext& ctx, double& lat, double& lng)
 {
+    lat = 0.0;
+    lng = 0.0;
+
     if (!ctx.map_container || !ctx.anchor || !ctx.anchor->valid)
     {
-        // If anchor is invalid, return default London coordinates
-        lat = gps_ui::kDefaultLat;
-        lng = gps_ui::kDefaultLng;
         return;
     }
 
