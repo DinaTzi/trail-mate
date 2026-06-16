@@ -251,6 +251,8 @@ void Gat562Board::playMessageTone()
     pinMode(buzzer_pin, OUTPUT);
     digitalWrite(buzzer_pin, kBoardProfile.buzzer.active_high ? LOW : HIGH);
 
+    const bool idle_level = kBoardProfile.buzzer.active_high ? LOW : HIGH;
+
     struct ToneStep
     {
         unsigned frequency_hz;
@@ -259,8 +261,8 @@ void Gat562Board::playMessageTone()
     };
 
     static constexpr ToneStep kMessageTone[] = {
-        {1760U, 70U, 25U},
-        {2093U, 110U, 0U},
+        {1760U, 90U, 45U},
+        {2093U, 140U, 0U},
     };
 
     for (const ToneStep& step : kMessageTone)
@@ -274,7 +276,7 @@ void Gat562Board::playMessageTone()
         }
     }
 
-    digitalWrite(buzzer_pin, kBoardProfile.buzzer.active_high ? LOW : HIGH);
+    digitalWrite(buzzer_pin, idle_level);
 }
 
 void Gat562Board::setMessageToneVolume(uint8_t volume_percent)

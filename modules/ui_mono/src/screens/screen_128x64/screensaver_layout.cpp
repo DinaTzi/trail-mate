@@ -1,5 +1,11 @@
 #include "ui/mono/screens/screen_128x64/screensaver_layout.h"
 
+#ifndef TRAIL_MATE_NRF_MONO_SCREEN_192X176_ONLY
+#define TRAIL_MATE_NRF_MONO_SCREEN_192X176_ONLY 0
+#endif
+
+#if !TRAIL_MATE_NRF_MONO_SCREEN_192X176_ONLY
+
 #include "../screen_layout_primitives.h"
 
 #include <algorithm>
@@ -80,3 +86,5 @@ void renderScreensaverLayout(MonoDisplay& display, const TextRenderer& text_rend
 }
 
 } // namespace ui::mono::screen_128x64
+
+#endif

@@ -23,12 +23,12 @@
       "-I../../modules/ui_shared/include",
       "-I../../platform/nrf52/arduino_common/include",
       "-I../../variants/t_echo_lite_nrf52840",
-      "-I../../.pio/libdeps/t_echo_lite/RadioLib/src",
-      "-I../../.pio/libdeps/t_echo_lite/TinyGPSPlus/src",
-      "-I../../.pio/libdeps/t_echo_lite/Adafruit\\ GFX\\ Library",
-      "-I../../.pio/libdeps/t_echo_lite/Adafruit\\ EPD",
-      "-I../../.pio/libdeps/t_echo_lite/Adafruit\\ TCA8418",
-      "-I../../.pio/libdeps/t_echo_lite/Adafruit\\ BusIO"
+      "-I../../.pio/libdeps/t-echo-lite/RadioLib/src",
+      "-I../../.pio/libdeps/t-echo-lite/TinyGPSPlus/src",
+      "-I../../.pio/libdeps/t-echo-lite/Adafruit\\ GFX\\ Library",
+      "-I../../.pio/libdeps/t-echo-lite/lilygo_adafruit_epd/src",
+      "-I../../.pio/libdeps/t-echo-lite/Adafruit\\ TCA8418",
+      "-I../../.pio/libdeps/t-echo-lite/Adafruit\\ BusIO"
     ]
   }
 }

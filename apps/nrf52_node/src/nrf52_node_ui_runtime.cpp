@@ -27,9 +27,7 @@ using Adafruit_LittleFS_Namespace::File;
 using target_board::BoardInputEvent;
 using target_board::BoardInputKey;
 constexpr uint32_t kProbeHoldMs = 900;
-#if defined(TRAILMATE_TARGET_T_ECHO_LITE)
 constexpr uint32_t kIdleUiTickIntervalMs = 500;
-#endif
 const char kProbeAscii[] = "ABC123";
 const char kProbeCjk[] = "\xE4\xB8\xAD\xE6\x96\x87";
 const char kProbeSymbols[] = "\xE2\x94\x80\xE2\x96\x88\xE2\x96\xA0";
@@ -143,12 +141,12 @@ void set_message_tone_volume(uint8_t volume_percent)
     platform::ui::device::set_message_tone_volume(volume_percent);
 }
 
-#if defined(TRAILMATE_TARGET_T_ECHO_LITE)
 void play_message_tone()
 {
     platform::ui::device::play_message_tone();
 }
 
+#if defined(TRAILMATE_TARGET_T_ECHO_LITE)
 bool message_light_enabled()
 {
     return target_board::instance().messageKeyboardLightEnabled();
@@ -243,9 +241,7 @@ ui::mono::InputAction to_input_action(
 bool s_initialized = false;
 ui::mono::Runtime* s_runtime = nullptr;
 bool s_probe_drawn = false;
-#if defined(TRAILMATE_TARGET_T_ECHO_LITE)
 uint32_t s_last_idle_ui_tick_ms = 0;
-#endif
 
 void drawProbePattern(::ui::mono::MonoDisplay& display, const ::ui::mono::MonoFont& font)
 {
@@ -331,9 +327,9 @@ bool initialize()
     callbacks.flash_usage_fn = flash_usage;
     callbacks.message_tone_volume_fn = message_tone_volume;
     callbacks.set_message_tone_volume_fn = set_message_tone_volume;
+    callbacks.play_message_tone_fn = play_message_tone;
     callbacks.virtual_keyboard_layout = ui::mono::HostCallbacks::VirtualKeyboardLayout::FullKeyboard;
 #if defined(TRAILMATE_TARGET_T_ECHO_LITE)
-    callbacks.play_message_tone_fn = play_message_tone;
     callbacks.message_light_enabled_fn = message_light_enabled;
     callbacks.set_message_light_enabled_fn = set_message_light_enabled;
     callbacks.play_message_light_fn = play_message_light;
@@ -377,9 +373,10 @@ void tick(const BoardInputEvent* event)
     {
         showPendingRuntimeFeedback();
         const auto action = to_input_action(event);
+        bool has_pressed_input = event && event->pressed && event->key != BoardInputKey::None;
 #if defined(TRAILMATE_TARGET_T_ECHO_LITE)
-        const bool has_pressed_input = event && event->pressed &&
-                                       (event->key != BoardInputKey::None || event->text != '\0');
+        has_pressed_input = has_pressed_input || (event && event->pressed && event->text != '\0');
+#endif
         const uint32_t now = millis();
         if (!has_pressed_input && action == ui::mono::InputAction::None)
         {
@@ -394,6 +391,7 @@ void tick(const BoardInputEvent* event)
             s_last_idle_ui_tick_ms = now;
         }
 
+#if defined(TRAILMATE_TARGET_T_ECHO_LITE)
         if (event && event->pressed && event->text != '\0')
         {
             s_runtime->typeText(event->text);

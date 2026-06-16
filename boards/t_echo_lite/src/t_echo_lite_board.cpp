@@ -13,6 +13,7 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <hal/nrf_i2s.h>
+#include <hal/nrf_gpio.h>
 
 #include <algorithm>
 #include <cmath>
@@ -73,6 +74,8 @@ constexpr uint8_t kEs8311ClkReg03 = 0x03;
 constexpr uint8_t kEs8311ClkReg04 = 0x04;
 constexpr uint8_t kEs8311ClkReg05 = 0x05;
 constexpr uint8_t kEs8311ClkReg06 = 0x06;
+constexpr uint8_t kEs8311ClkReg07 = 0x07;
+constexpr uint8_t kEs8311ClkReg08 = 0x08;
 constexpr uint8_t kEs8311SdpInReg09 = 0x09;
 constexpr uint8_t kEs8311SdpOutReg0A = 0x0A;
 constexpr uint8_t kEs8311SystemReg0B = 0x0B;
@@ -103,13 +106,13 @@ constexpr uint8_t kAw21009GlobalCurrent = 0x58;
 constexpr uint8_t kAw21009Reset = 0x70;
 constexpr uint8_t kAw21009ChannelCount = 9;
 
-constexpr uint32_t kMessageToneSampleRateHz = 16129;
-constexpr uint16_t kMessageToneI2sWords = 2048;
+constexpr uint32_t kMessageToneSampleRateHz = 44100;
+constexpr uint16_t kMessageToneMaxI2sWords = 14336;
 constexpr uint32_t kEpaperPresentMinIntervalMs = 250UL;
 constexpr int kEpaperMirrorPixels = ::boards::t_echo_lite::kBoardProfile.epaper.width *
                                     ::boards::t_echo_lite::kBoardProfile.epaper.height;
 constexpr size_t kEpaperMirrorBytes = static_cast<size_t>((kEpaperMirrorPixels + 7) / 8);
-uint32_t s_message_tone_i2s_buffer[kMessageToneI2sWords] = {};
+uint32_t s_message_tone_i2s_buffer[kMessageToneMaxI2sWords] = {};
 
 void writeLedColor(uint8_t color_index, bool on)
 {
@@ -127,7 +130,8 @@ uint8_t es8311VolumeRegister(uint8_t volume_percent)
     {
         return 0U;
     }
-    return static_cast<uint8_t>(80U + ((static_cast<uint16_t>(volume) * 111U) / 100U));
+    const uint8_t effective_volume = std::max<uint8_t>(volume, 100U);
+    return static_cast<uint8_t>(80U + ((static_cast<uint16_t>(effective_volume) * 111U) / 100U));
 }
 
 bool writeI2cRegister(TEchoLiteBoard& board, uint8_t address, uint8_t reg, uint8_t value)
@@ -157,39 +161,40 @@ bool writeAw21009(TEchoLiteBoard& board, uint8_t reg, uint8_t value)
 bool configureEs8311ForMessageTone(TEchoLiteBoard& board, uint8_t volume_percent)
 {
     const uint8_t dac_volume = es8311VolumeRegister(volume_percent);
+    if (!writeEs8311(board, kEs8311ResetReg00, 0x1F))
+    {
+        return false;
+    }
+    delay(20);
+    if (!writeEs8311(board, kEs8311ResetReg00, 0x00) ||
+        !writeEs8311(board, kEs8311ResetReg00, 0x80))
+    {
+        return false;
+    }
+
     const RegWrite sequence[] = {
-        {kEs8311GpioReg44, 0x08},
-        {kEs8311GpioReg44, 0x08},
-        {kEs8311ClkReg01, 0x30},
-        {kEs8311ClkReg02, 0x00},
+        {kEs8311ClkReg01, 0x3F},
+        {kEs8311ResetReg00, 0x84},
+        {kEs8311ClkReg02, 0x18},
         {kEs8311ClkReg03, 0x10},
-        {kEs8311AdcReg16, 0x24},
         {kEs8311ClkReg04, 0x10},
         {kEs8311ClkReg05, 0x00},
-        {kEs8311SystemReg0B, 0x00},
-        {kEs8311SystemReg0C, 0x00},
-        {kEs8311SystemReg10, 0x1F},
-        {kEs8311SystemReg11, 0x7F},
-        {kEs8311ResetReg00, 0x80},
-        {kEs8311ResetReg00, 0x80},
-        {kEs8311ClkReg01, 0x3F},
-        {kEs8311ClkReg06, 0x00},
-        {kEs8311SystemReg13, 0x10},
-        {kEs8311AdcReg1B, 0x0A},
-        {kEs8311AdcReg1C, 0x6A},
-        {kEs8311GpioReg44, 0x58},
-        {kEs8311SdpInReg09, 0x00},
-        {kEs8311SdpOutReg0A, 0x40},
-        {kEs8311AdcReg17, 0xBF},
+        {kEs8311ClkReg06, 0x03},
+        {kEs8311ClkReg07, 0x00},
+        {kEs8311ClkReg08, 0xFF},
+        {kEs8311SdpInReg09, 0x0C},
+        {kEs8311SdpOutReg0A, 0x0C},
+        {kEs8311SystemReg0D, 0x01},
         {kEs8311SystemReg0E, 0x02},
         {kEs8311SystemReg12, 0x00},
+        {kEs8311SystemReg13, 0x10},
         {kEs8311SystemReg14, 0x1A},
-        {kEs8311SystemReg0D, 0x01},
-        {kEs8311AdcReg15, 0x40},
+        {kEs8311AdcReg16, 0x03},
+        {kEs8311AdcReg17, 0xBF},
+        {kEs8311AdcReg1C, 0x2A},
         {kEs8311DacReg31, 0x00},
         {kEs8311DacReg32, dac_volume},
         {kEs8311DacReg37, 0x08},
-        {kEs8311GpReg45, 0x00},
     };
 
     for (const RegWrite& write : sequence)
@@ -235,33 +240,52 @@ bool applyAw21009Brightness(TEchoLiteBoard& board, uint16_t brightness)
     return ok;
 }
 
-void fillCooToneBuffer(unsigned start_frequency_hz, unsigned end_frequency_hz, uint8_t volume_percent)
+uint16_t fillCooToneBuffer(unsigned start_frequency_hz,
+                           unsigned end_frequency_hz,
+                           uint8_t volume_percent,
+                           uint16_t duration_ms)
 {
     const uint8_t volume = volume_percent > 100U ? 100U : volume_percent;
-    const double amplitude = 500.0 + (static_cast<double>(volume) * 80.0);
+    const uint8_t effective_volume = volume == 0U ? 0U : std::max<uint8_t>(volume, 100U);
+    const double amplitude = 1700.0 + (static_cast<double>(effective_volume) * 140.0);
+    const uint32_t requested_words =
+        (static_cast<uint32_t>(kMessageToneSampleRateHz) * static_cast<uint32_t>(duration_ms) + 999U) / 1000U;
+    const uint16_t word_count =
+        static_cast<uint16_t>(std::min<uint32_t>(std::max<uint32_t>(requested_words, 1U), kMessageToneMaxI2sWords));
     constexpr double kPi = 3.14159265358979323846;
     const unsigned safe_start = start_frequency_hz == 0U ? 1U : start_frequency_hz;
     const unsigned safe_end = end_frequency_hz == 0U ? safe_start : end_frequency_hz;
+    auto smoothStep = [](double value) {
+        const double x = std::max(0.0, std::min(1.0, value));
+        return x * x * (3.0 - (2.0 * x));
+    };
     double phase = 0.0;
+    double low_phase = 0.0;
 
-    for (uint16_t index = 0; index < kMessageToneI2sWords; ++index)
+    for (uint16_t index = 0; index < word_count; ++index)
     {
         const double t = static_cast<double>(index) /
-                         static_cast<double>(kMessageToneI2sWords > 1U ? kMessageToneI2sWords - 1U : 1U);
+                         static_cast<double>(word_count > 1U ? word_count - 1U : 1U);
         const double glide = static_cast<double>(safe_start) +
                              (static_cast<double>(safe_end) - static_cast<double>(safe_start)) * t;
-        const double vibrato = std::sin(2.0 * kPi * 5.0 * t) * 7.0;
+        const double vibrato = std::sin(2.0 * kPi * 4.2 * t) * 9.0;
         const double frequency = std::max(1.0, glide + vibrato);
-        const double attack = std::min(1.0, t / 0.12);
-        const double release = std::min(1.0, (1.0 - t) / 0.18);
+        const double attack = smoothStep(t / 0.20);
+        const double release = smoothStep((1.0 - t) / 0.24);
         const double envelope = std::max(0.0, std::min(attack, release));
         phase += (2.0 * kPi * frequency) / static_cast<double>(kMessageToneSampleRateHz);
-        const double voice = std::sin(phase) + 0.22 * std::sin(phase * 2.0);
+        low_phase += (2.0 * kPi * frequency * 0.5) / static_cast<double>(kMessageToneSampleRateHz);
+        const double breath = 0.86 + (0.14 * std::sin(2.0 * kPi * 5.0 * t));
+        const double voice = ((0.78 * std::sin(phase)) +
+                              (0.16 * std::sin(low_phase)) +
+                              (0.06 * std::sin(phase * 2.0))) *
+                             breath;
         const int16_t sample = static_cast<int16_t>(voice * amplitude * envelope);
         const uint16_t packed_sample = static_cast<uint16_t>(sample);
         s_message_tone_i2s_buffer[index] =
             static_cast<uint32_t>(packed_sample) | (static_cast<uint32_t>(packed_sample) << 16);
     }
+    return word_count;
 }
 
 void stopI2s()
@@ -602,17 +626,31 @@ bool TEchoLiteBoard::playMessageToneStep(unsigned start_frequency_hz,
         return false;
     }
 
-    fillCooToneBuffer(start_frequency_hz, end_frequency_hz, message_tone_volume_);
+    const uint16_t word_count = fillCooToneBuffer(start_frequency_hz,
+                                                 end_frequency_hz,
+                                                 message_tone_volume_,
+                                                 duration_ms);
 
     nrf_i2s_disable(NRF_I2S);
     nrf_i2s_event_clear(NRF_I2S, NRF_I2S_EVENT_TXPTRUPD);
     nrf_i2s_event_clear(NRF_I2S, NRF_I2S_EVENT_STOPPED);
+    nrf_gpio_cfg_output(static_cast<uint32_t>(audio.bit_clock));
+    nrf_gpio_cfg_output(static_cast<uint32_t>(audio.word_select));
+    if (audio.master_clock >= 0)
+    {
+        nrf_gpio_cfg_output(static_cast<uint32_t>(audio.master_clock));
+    }
+    nrf_gpio_cfg_output(static_cast<uint32_t>(audio.dac_data));
+    if (audio.adc_data >= 0)
+    {
+        nrf_gpio_cfg_input(static_cast<uint32_t>(audio.adc_data), NRF_GPIO_PIN_NOPULL);
+    }
     nrf_i2s_pins_set(NRF_I2S,
                      static_cast<uint32_t>(audio.bit_clock),
                      static_cast<uint32_t>(audio.word_select),
                      audio.master_clock >= 0 ? static_cast<uint32_t>(audio.master_clock) : NRF_I2S_PIN_NOT_CONNECTED,
                      static_cast<uint32_t>(audio.dac_data),
-                     NRF_I2S_PIN_NOT_CONNECTED);
+                     audio.adc_data >= 0 ? static_cast<uint32_t>(audio.adc_data) : NRF_I2S_PIN_NOT_CONNECTED);
 #if NRF_I2S_HAS_CLKCONFIG
     nrf_i2s_clk_configure(NRF_I2S, NRF_I2S_CLKSRC_PCLK32M, false);
 #endif
@@ -622,16 +660,16 @@ bool TEchoLiteBoard::playMessageToneStep(unsigned start_frequency_hz,
                            NRF_I2S_ALIGN_LEFT,
                            NRF_I2S_SWIDTH_16BIT,
                            NRF_I2S_CHANNELS_STEREO,
-                           NRF_I2S_MCK_32MDIV31,
-                           NRF_I2S_RATIO_64X))
+                           NRF_I2S_MCK_32MDIV23,
+                           NRF_I2S_RATIO_32X))
     {
         return false;
     }
 
-    nrf_i2s_transfer_set(NRF_I2S, kMessageToneI2sWords, nullptr, s_message_tone_i2s_buffer);
+    nrf_i2s_transfer_set(NRF_I2S, word_count, nullptr, s_message_tone_i2s_buffer);
     nrf_i2s_enable(NRF_I2S);
     nrf_i2s_task_trigger(NRF_I2S, NRF_I2S_TASK_START);
-    delay(duration_ms);
+    delay(static_cast<uint32_t>(duration_ms) + 8U);
     stopI2s();
     return true;
 }
@@ -653,8 +691,8 @@ void TEchoLiteBoard::playMessageTone()
 
     const bool audio_ready = ensureMessageAudioReady();
     static constexpr ToneStep kMessageTone[] = {
-        {430U, 340U, 135U, 45U},
-        {360U, 295U, 150U, 0U},
+        {780U, 570U, 205U, 70U},
+        {720U, 520U, 235U, 0U},
     };
 
     for (const ToneStep& step : kMessageTone)

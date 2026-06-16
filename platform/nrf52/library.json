@@ -20,7 +20,6 @@
       "-std=gnu++17",
       "-I.",
       "-I../..",
-      "-I../../boards/gat562_mesh_evb_pro/include",
       "-I../../modules/core_chat/include",
       "-I../../modules/core_chat/generated",
       "-I../../modules/core_chat/third_party/nanopb",
@@ -42,9 +41,6 @@
     },
     {
       "name": "platform_nrf52_arduino_common"
-    },
-    {
-      "name": "boards_gat562_mesh_evb_pro"
     }
   ]
 }

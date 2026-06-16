@@ -11,7 +11,8 @@ project_dir = env.get("PROJECT_DIR")
 pio_platform = (env.get("PIOPLATFORM") or "").lower()
 is_esp32_env = "espressif32" in pio_platform
 is_nrf52_env = "nordicnrf52" in pio_platform
-is_gat562_env = env.get("PIOENV") == "gat562_mesh_evb_pro"
+pio_env = env.get("PIOENV")
+is_nrf52_node_env = pio_env in ("gat562_mesh_evb_pro", "t-echo-lite")
 
 
 def read_text_best_effort(path):
@@ -96,11 +97,11 @@ def update_library_build_metadata(library_json_path, desired_updates, descriptio
 
 
 def configure_radiolib_for_gat562():
-    if not is_gat562_env:
+    if not is_nrf52_node_env:
         return
 
     project_dir = env.get("PROJECT_DIR")
-    radiolib_dir = os.path.join(project_dir, ".pio", "libdeps", env.get("PIOENV"), "RadioLib")
+    radiolib_dir = os.path.join(project_dir, ".pio", "libdeps", pio_env, "RadioLib")
     library_json_path = os.path.join(radiolib_dir, "library.json")
     desired_src_filter = [
         "-<*>",
@@ -119,15 +120,15 @@ def configure_radiolib_for_gat562():
     update_library_build_metadata(
         library_json_path,
         {"srcFilter": desired_src_filter},
-        "RadioLib for gat562_mesh_evb_pro",
+        f"RadioLib for {pio_env}",
     )
 
 
 def configure_crypto_for_gat562():
-    if not is_gat562_env:
+    if not is_nrf52_node_env:
         return
 
-    crypto_dir = os.path.join(project_dir, ".pio", "libdeps", env.get("PIOENV"), "Crypto")
+    crypto_dir = os.path.join(project_dir, ".pio", "libdeps", pio_env, "Crypto")
     library_json_path = os.path.join(crypto_dir, "library.json")
     desired_src_filter = [
         "-<*>",
@@ -148,12 +149,12 @@ def configure_crypto_for_gat562():
     update_library_build_metadata(
         library_json_path,
         {"srcFilter": desired_src_filter},
-        "Crypto for gat562_mesh_evb_pro",
+        f"Crypto for {pio_env}",
     )
 
 
 def configure_nrf52_framework_libraries():
-    if not is_gat562_env or not is_nrf52_env:
+    if not is_nrf52_node_env or not is_nrf52_env:
         return
 
     platform = env.PioPlatform()
@@ -171,7 +172,7 @@ def configure_nrf52_framework_libraries():
         ("CFG_TUD_VIDEO_STREAMING", 0),
     ]
     env.AppendUnique(CPPDEFINES=tinyusb_cppdefines)
-    print("[pio] pre: Restricted TinyUSB device classes for gat562_mesh_evb_pro")
+    print(f"[pio] pre: Restricted TinyUSB device classes for {pio_env}")
 
     bluefruit_json_path = os.path.join(framework_dir, "libraries", "Bluefruit52Lib", "library.json")
     bluefruit_src_filter = [
@@ -195,7 +196,7 @@ def configure_nrf52_framework_libraries():
     update_library_build_metadata(
         bluefruit_json_path,
         {"srcFilter": bluefruit_src_filter},
-        "Bluefruit52Lib for gat562_mesh_evb_pro",
+        f"Bluefruit52Lib for {pio_env}",
     )
 
     tinyusb_json_path = os.path.join(framework_dir, "libraries", "Adafruit_TinyUSB_Arduino", "library.json")
@@ -216,7 +217,7 @@ def configure_nrf52_framework_libraries():
     update_library_build_metadata(
         tinyusb_json_path,
         {"srcFilter": tinyusb_src_filter, "libArchive": False},
-        "Adafruit_TinyUSB_Arduino for gat562_mesh_evb_pro",
+        f"Adafruit_TinyUSB_Arduino for {pio_env}",
     )
 
 

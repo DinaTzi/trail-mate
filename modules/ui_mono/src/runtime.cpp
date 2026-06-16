@@ -34,6 +34,10 @@
 #define TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS 0
 #endif
 
+#ifndef TRAILMATE_NRF_MONO_TARGET_MESSAGE_SOUND_SETTING
+#define TRAILMATE_NRF_MONO_TARGET_MESSAGE_SOUND_SETTING TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
+#endif
+
 namespace ui::mono
 {
 namespace
@@ -230,8 +234,10 @@ enum class DeviceSettingItem
 #if !TRAILMATE_NRF52_BLE_DISABLED
     Ble,
 #endif
-#if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
+#if TRAILMATE_NRF_MONO_TARGET_MESSAGE_SOUND_SETTING
     MessageTone,
+#endif
+#if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
     MessageLight,
     LedColor,
     KeyboardLight,
@@ -247,8 +253,10 @@ constexpr const char* kDeviceItems[] = {
 #if !TRAILMATE_NRF52_BLE_DISABLED
     "BLE",
 #endif
+#if TRAILMATE_NRF_MONO_TARGET_MESSAGE_SOUND_SETTING
+    "MSG SOUND",
+#endif
 #if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
-    "MSG TONE",
     "MSG LIGHT",
     "LED COLOR",
     "KEY LIGHT",
@@ -264,8 +272,10 @@ constexpr DeviceSettingItem kDeviceItemIds[] = {
 #if !TRAILMATE_NRF52_BLE_DISABLED
     DeviceSettingItem::Ble,
 #endif
-#if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
+#if TRAILMATE_NRF_MONO_TARGET_MESSAGE_SOUND_SETTING
     DeviceSettingItem::MessageTone,
+#endif
+#if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
     DeviceSettingItem::MessageLight,
     DeviceSettingItem::LedColor,
     DeviceSettingItem::KeyboardLight,
@@ -4546,13 +4556,15 @@ void Runtime::renderDeviceSettings()
             }
             break;
 #endif
-#if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
+#if TRAILMATE_NRF_MONO_TARGET_MESSAGE_SOUND_SETTING
         case DeviceSettingItem::MessageTone:
         {
             const uint8_t volume = host_.message_tone_volume_fn ? host_.message_tone_volume_fn() : 0;
-            std::snprintf(line, sizeof(line), "MSG TONE: %u%%", static_cast<unsigned>(volume));
+            std::snprintf(line, sizeof(line), "MSG SOUND: %s", volume > 0 ? "ON" : "OFF");
             break;
         }
+#endif
+#if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
         case DeviceSettingItem::MessageLight:
         {
             const bool enabled = host_.message_light_enabled_fn ? host_.message_light_enabled_fn() : false;
@@ -6205,11 +6217,12 @@ void Runtime::adjustSettingPopup(int delta)
             setting_popup_ble_enabled_ = !setting_popup_ble_enabled_;
             break;
 #endif
-#if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
+#if TRAILMATE_NRF_MONO_TARGET_MESSAGE_SOUND_SETTING
         case DeviceSettingItem::MessageTone:
-            setting_popup_message_tone_volume_ = static_cast<uint8_t>(
-                clampValue<int>(static_cast<int>(setting_popup_message_tone_volume_) + delta * 10, 0, 100));
+            setting_popup_message_tone_volume_ = setting_popup_message_tone_volume_ > 0 ? 0U : 45U;
             break;
+#endif
+#if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
         case DeviceSettingItem::MessageLight:
             setting_popup_message_light_enabled_ = !setting_popup_message_light_enabled_;
             break;
@@ -6288,10 +6301,12 @@ void Runtime::formatSettingPopupValue(char* out, size_t out_len) const
             std::snprintf(out, out_len, "%s", setting_popup_ble_enabled_ ? "ON" : "OFF");
             return;
 #endif
-#if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
+#if TRAILMATE_NRF_MONO_TARGET_MESSAGE_SOUND_SETTING
         case DeviceSettingItem::MessageTone:
-            std::snprintf(out, out_len, "%u%%", static_cast<unsigned>(setting_popup_message_tone_volume_));
+            std::snprintf(out, out_len, "%s", setting_popup_message_tone_volume_ > 0 ? "ON" : "OFF");
             return;
+#endif
+#if TRAILMATE_NRF_MONO_TARGET_DEVICE_IO_SETTINGS
         case DeviceSettingItem::MessageLight:
             std::snprintf(out, out_len, "%s", setting_popup_message_light_enabled_ ? "ON" : "OFF");
             return;
