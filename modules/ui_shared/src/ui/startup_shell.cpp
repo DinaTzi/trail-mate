@@ -138,14 +138,23 @@ platform::ui::screen::Hooks buildScreenSleepHooks(const Hooks& hooks)
     return runtime_hooks;
 }
 
-void prepareBootUi(bool waking_from_sleep)
+void setBootLogLine(const char* line)
+{
+    ui::boot::set_log_line(line);
+    present_boot_overlay_now();
+}
+
+void beginBootUi(bool waking_from_sleep, const char* initial_line)
 {
     if (!waking_from_sleep)
     {
         ui::boot::show();
-        ui::boot::set_log_line("Loading language packs...");
-        present_boot_overlay_now();
+        setBootLogLine(initial_line);
     }
+}
+
+void prepareBootResources()
+{
     ::ui::i18n::reload_language();
     ui::feedback::init();
 }

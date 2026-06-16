@@ -80,24 +80,29 @@ void run()
 
     platform::esp::arduino_common::startup_support::initializeBoard(waking_from_sleep);
     Serial.printf("[Setup] heap=%u psram=%u\n", ESP.getFreeHeap(), ESP.getFreePsram());
+
+    Serial.println("[Setup] LVGL init begin");
+    platform::esp::arduino_common::display_runtime::initialize();
+    Serial.println("[Setup] LVGL init done");
+
+    ui::startup_shell::beginBootUi(waking_from_sleep, "Starting services...");
+    ui::startup_shell::setBootLogLine("Starting debug log...");
+
     platform::esp::arduino_common::debug::begin_sd_debug_log();
     platform::esp::arduino_common::debug::printf(
         "[Setup] board initialized wake=%d heap=%u psram=%u",
         waking_from_sleep ? 1 : 0,
         ESP.getFreeHeap(),
         ESP.getFreePsram());
+    platform::esp::arduino_common::debug::append_line("[Setup] LVGL init done");
+    ui::startup_shell::setBootLogLine("Checking crash dump...");
     platform::esp::arduino_common::debug::export_previous_coredump_to_sd();
 
-    Serial.println("[Setup] LVGL init begin");
-    platform::esp::arduino_common::debug::append_line("[Setup] LVGL init begin");
-    platform::esp::arduino_common::display_runtime::initialize();
-    Serial.println("[Setup] LVGL init done");
-    platform::esp::arduino_common::debug::append_line("[Setup] LVGL init done");
-
-    ui::startup_shell::prepareBootUi(waking_from_sleep);
+    ui::startup_shell::setBootLogLine("Loading language packs...");
+    ui::startup_shell::prepareBootResources();
 
     bool use_mock = false;
-    ui::boot::set_log_line("Initializing app context...");
+    ui::startup_shell::setBootLogLine("Initializing app context...");
     if (trailmate::apps::esp32_lvgl::arduino_app_runtime_access::initialize(use_mock))
     {
         const auto& runtime_status = trailmate::apps::esp32_lvgl::arduino_app_runtime_access::status();
@@ -125,9 +130,9 @@ void run()
             runtime_status.background_tasks_started ? 1 : 0);
     }
 
-    ui::boot::set_log_line("Building main menu...");
+    ui::startup_shell::setBootLogLine("Building main menu...");
     initializeShell();
-    ui::boot::set_log_line("Startup complete");
+    ui::startup_shell::setBootLogLine("Startup complete");
     finishStartup(waking_from_sleep);
     platform::esp::arduino_common::debug::append_line("[Setup] Startup complete");
     platform::esp::arduino_common::debug::flush();

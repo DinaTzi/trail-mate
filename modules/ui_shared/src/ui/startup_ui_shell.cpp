@@ -99,11 +99,10 @@ void unlock_ui(const Hooks& hooks)
 
 } // namespace
 
-bool prepareBootUi(const Hooks& hooks, bool waking_from_sleep)
+bool beginBootUi(const Hooks& hooks, bool waking_from_sleep, const char* initial_line)
 {
     if (waking_from_sleep)
     {
-        ::ui::i18n::reload_language();
         return true;
     }
     if (!lock_ui(hooks))
@@ -111,12 +110,16 @@ bool prepareBootUi(const Hooks& hooks, bool waking_from_sleep)
         return false;
     }
     ui::boot::show();
-    ui::boot::set_log_line("Loading language packs...");
+    ui::boot::set_log_line(initial_line);
     present_boot_overlay_now();
     unlock_ui(hooks);
+    return true;
+}
+
+void prepareBootResources()
+{
     ::ui::i18n::reload_language();
     ui::feedback::init();
-    return true;
 }
 
 bool initializeMenuSkeleton(const Hooks& hooks)
