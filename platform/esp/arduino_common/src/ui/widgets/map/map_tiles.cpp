@@ -1100,7 +1100,7 @@ class LvglDecodedTileCache final : public ui::map_tiles::IMapTileDecoderCache
             {
                 return &slots_[i];
             }
-            if (!slots_[i].bound_to_lvgl_object)
+            if (slots_[i].lvgl_ref_count == 0)
             {
                 found_unused = true;
                 if (slots_[i].last_used_ms < oldest_ms)
@@ -1141,7 +1141,7 @@ class LvglDecodedTileCache final : public ui::map_tiles::IMapTileDecoderCache
         const uint32_t now_ms = sys::millis_now();
         for (std::size_t i = 0; i < kCapacity; ++i)
         {
-            slots_[i].bound_to_lvgl_object = false;
+            slots_[i].lvgl_ref_count = 0;
             if (slots_[i].img_dsc != NULL)
             {
                 slots_[i].last_used_ms = now_ms;
@@ -1187,7 +1187,7 @@ class LvglDecodedTileCache final : public ui::map_tiles::IMapTileDecoderCache
         slot.layer = ui::map_tiles::MapTileLayer::Osm;
         slot.img_dsc = NULL;
         slot.last_used_ms = 0;
-        slot.bound_to_lvgl_object = false;
+        slot.lvgl_ref_count = 0;
     }
 
     mutable DecodedTileCache slots_[kCapacity]{};
@@ -1716,6 +1716,15 @@ static DecodedTileCache* get_lru_cache_slot(size_t active_limit)
     return decoded_tile_cache().acquireSlot(active_limit);
 }
 
+static bool cache_matches_ref(const DecodedTileCache& cache,
+                              const ui::map_tiles::MapTileRef& ref)
+{
+    return cache.x == static_cast<int32_t>(ref.x) &&
+           cache.y == static_cast<int32_t>(ref.y) &&
+           cache.z == static_cast<int32_t>(ref.z) &&
+           cache.layer == ref.layer;
+}
+
 /**
  * Normalize tile coordinates to valid range (wrap x, clamp y)
  */
@@ -2049,7 +2058,10 @@ static void release_tile_decoded_cache(MapTile& tile)
 {
     if (tile.cached_img != NULL)
     {
-        tile.cached_img->bound_to_lvgl_object = false;
+        if (tile.cached_img->lvgl_ref_count > 0)
+        {
+            --tile.cached_img->lvgl_ref_count;
+        }
         tile.cached_img = NULL;
     }
 }
@@ -2058,7 +2070,10 @@ static void release_contour_decoded_cache(MapTile& tile)
 {
     if (tile.contour_cached_img != NULL)
     {
-        tile.contour_cached_img->bound_to_lvgl_object = false;
+        if (tile.contour_cached_img->lvgl_ref_count > 0)
+        {
+            --tile.contour_cached_img->lvgl_ref_count;
+        }
         tile.contour_cached_img = NULL;
     }
 }
@@ -2066,7 +2081,10 @@ static void release_contour_decoded_cache(MapTile& tile)
 static void bind_tile_decoded_cache(MapTile& tile, DecodedTileCache& cache)
 {
     release_tile_decoded_cache(tile);
-    cache.bound_to_lvgl_object = true;
+    if (cache.lvgl_ref_count < UINT8_MAX)
+    {
+        ++cache.lvgl_ref_count;
+    }
     cache.last_used_ms = sys::millis_now();
     tile.cached_img = &cache;
 }
@@ -2074,7 +2092,10 @@ static void bind_tile_decoded_cache(MapTile& tile, DecodedTileCache& cache)
 static void bind_contour_decoded_cache(MapTile& tile, DecodedTileCache& cache)
 {
     release_contour_decoded_cache(tile);
-    cache.bound_to_lvgl_object = true;
+    if (cache.lvgl_ref_count < UINT8_MAX)
+    {
+        ++cache.lvgl_ref_count;
+    }
     cache.last_used_ms = sys::millis_now();
     tile.contour_cached_img = &cache;
 }
@@ -2095,7 +2116,6 @@ static void touch_tile_decoded_cache(MapTile& tile)
     }
     else if (tile.cached_img != NULL)
     {
-        tile.cached_img->bound_to_lvgl_object = true;
         tile.cached_img->last_used_ms = sys::millis_now();
     }
 
@@ -2105,7 +2125,6 @@ static void touch_tile_decoded_cache(MapTile& tile)
     }
     else if (tile.contour_cached_img != NULL)
     {
-        tile.contour_cached_img->bound_to_lvgl_object = true;
         tile.contour_cached_img->last_used_ms = sys::millis_now();
     }
 }
@@ -2396,7 +2415,7 @@ static DecodedTileCache* decode_payload_to_cache(TileContext& ctx,
     cache_slot->layer = ref.layer;
     cache_slot->map_source = map_source_for_layer(ref.layer);
     cache_slot->last_used_ms = sys::millis_now();
-    cache_slot->bound_to_lvgl_object = false;
+    cache_slot->lvgl_ref_count = 0;
 
     lv_image_decoder_close(&decoder_dsc);
     return cache_slot;
@@ -2406,6 +2425,17 @@ static bool render_base_tile_from_cache(TileContext& ctx, MapTile& tile, Decoded
 {
     if (!ctx.map_container || cache.img_dsc == NULL)
     {
+        return false;
+    }
+
+    const ui::map_tiles::MapTileRef expected_ref = base_tile_ref_for_tile(tile);
+    if (!cache_matches_ref(cache, expected_ref))
+    {
+        log_map_tile_decode_failure("cache_ref_mismatch",
+                                    expected_ref,
+                                    ui::map_tiles::MapTileFormat::Unknown,
+                                    0,
+                                    static_cast<long>(cache.layer));
         return false;
     }
 
@@ -2458,6 +2488,18 @@ static bool render_contour_from_cache(MapTile& tile, DecodedTileCache& cache)
 {
     if (!g_active_contour_enabled || tile.img_obj == NULL || cache.img_dsc == NULL)
     {
+        return false;
+    }
+
+    ui::map_tiles::MapTileRef expected_ref{};
+    if (!contour_tile_ref(tile.z, static_cast<int>(tile.x), static_cast<int>(tile.y), expected_ref) ||
+        !cache_matches_ref(cache, expected_ref))
+    {
+        log_map_tile_decode_failure("contour_cache_ref_mismatch",
+                                    expected_ref,
+                                    ui::map_tiles::MapTileFormat::Unknown,
+                                    0,
+                                    static_cast<long>(cache.layer));
         return false;
     }
 

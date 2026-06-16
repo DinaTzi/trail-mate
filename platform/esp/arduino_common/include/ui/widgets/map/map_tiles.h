@@ -48,7 +48,7 @@ struct DecodedTileCache
     ui::map_tiles::MapTileLayer layer; // Base or contour layer represented by this cache entry
     lv_image_dsc_t* img_dsc; // Decoded image descriptor (RGB565 data in RAM)
     uint32_t last_used_ms;   // For LRU eviction
-    bool bound_to_lvgl_object; // True while referenced by a live LVGL image object
+    uint8_t lvgl_ref_count; // Number of live LVGL image objects referencing img_dsc
 };
 
 // Map tile structure

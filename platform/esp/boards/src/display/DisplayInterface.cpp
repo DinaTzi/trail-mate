@@ -13,8 +13,8 @@ static LilyGoDispArduinoSPI* g_display_spi = nullptr;
 
 namespace
 {
-constexpr TickType_t kDisplayFrameLockWait = 0;
-constexpr TickType_t kDisplayControlLockWait = pdMS_TO_TICKS(80);
+constexpr TickType_t kDisplayFrameLockWait = pdMS_TO_TICKS(8);
+constexpr TickType_t kDisplayControlLockWait = pdMS_TO_TICKS(50);
 constexpr uint32_t kDisplayLockTimeoutLogIntervalMs = 1000;
 
 uint32_t s_last_display_lock_timeout_log_ms = 0;
