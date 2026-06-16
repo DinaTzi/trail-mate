@@ -44,15 +44,6 @@ struct LoadTileCommand
 
 using MapTileEventKind = MapTileAsyncEventKind;
 
-struct MapTileDecodedImage
-{
-    void* native_handle = nullptr;
-    void (*release)(void*) = nullptr;
-    uint16_t width = 0;
-    uint16_t height = 0;
-    std::size_t data_size = 0;
-};
-
 class MapTileEvent
 {
   public:
@@ -62,7 +53,6 @@ class MapTileEvent
     MapTileRef tile{};
     MapTileFormat format = MapTileFormat::Unknown;
     MapTilePayload payload{};
-    MapTileDecodedImage decoded{};
     std::size_t payload_size = 0;
     int32_t error = 0;
 };

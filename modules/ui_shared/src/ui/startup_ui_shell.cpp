@@ -26,6 +26,7 @@ void present_boot_overlay_now()
     {
         lv_obj_invalidate(top);
     }
+    lv_timer_handler();
 }
 
 bool resolve_display_time(struct tm* out_tm)

@@ -414,30 +414,6 @@ uint8_t* allocate_tile_payload(std::size_t size)
                                 MALLOC_CAP_8BIT));
 }
 
-void release_decoded_image_handle(void* handle)
-{
-    auto* img_dsc = static_cast<lv_image_dsc_t*>(handle);
-    if (img_dsc == nullptr)
-    {
-        return;
-    }
-    lv_image_cache_drop(img_dsc);
-    if (img_dsc->data != nullptr)
-    {
-        lv_free((void*)img_dsc->data);
-    }
-    lv_free(img_dsc);
-}
-
-void release_tile_decoded_image(ui::map_tiles::MapTileDecodedImage& decoded)
-{
-    if (decoded.native_handle != nullptr && decoded.release != nullptr)
-    {
-        decoded.release(decoded.native_handle);
-    }
-    decoded = {};
-}
-
 void release_tile_payload(ui::map_tiles::MapTileAsyncEvent& event)
 {
     if (event.payload.data != nullptr)
@@ -445,7 +421,6 @@ void release_tile_payload(ui::map_tiles::MapTileAsyncEvent& event)
         heap_caps_free(const_cast<uint8_t*>(event.payload.data));
     }
     event.payload = {};
-    release_tile_decoded_image(event.decoded);
     event.payload_size = 0;
 }
 
@@ -812,33 +787,26 @@ class MapTileEventQueue final : public ui::map_tiles::IMapTileEventSink
     bool publish(const ui::map_tiles::MapTileAsyncEvent& event) override
     {
         ui::map_tiles::MapTileAsyncEvent owned = event;
-        if (owned.kind == ui::map_tiles::MapTileAsyncEventKind::Ready)
+        if (owned.kind == ui::map_tiles::MapTileAsyncEventKind::Ready &&
+            event.payload.data != nullptr &&
+            event.payload.size > 0)
         {
-            if (event.payload.data == nullptr || event.payload.size == 0)
+            uint8_t* payload = allocate_tile_payload(event.payload.size);
+            if (payload == nullptr)
             {
-                log_map_tile_event_failure("payload_missing", owned, -22);
+                log_map_tile_event_failure("payload_alloc", owned, -12);
                 owned.kind = ui::map_tiles::MapTileAsyncEventKind::Failed;
-                owned.error = -22;
-                owned.payload = {};
-                owned.payload_size = 0;
-            }
-            else if (lv_image_dsc_t* decoded = decode_payload_to_image_desc(event.tile, event.payload))
-            {
-                owned.decoded.native_handle = decoded;
-                owned.decoded.release = release_decoded_image_handle;
-                owned.decoded.width = static_cast<uint16_t>(decoded->header.w);
-                owned.decoded.height = static_cast<uint16_t>(decoded->header.h);
-                owned.decoded.data_size = decoded->data_size;
+                owned.error = -12;
                 owned.payload = {};
                 owned.payload_size = 0;
             }
             else
             {
-                log_map_tile_event_failure("decode_worker", owned, -12);
-                owned.kind = ui::map_tiles::MapTileAsyncEventKind::Failed;
-                owned.error = -12;
-                owned.payload = {};
-                owned.payload_size = 0;
+                std::memcpy(payload, event.payload.data, event.payload.size);
+                owned.payload.data = payload;
+                owned.payload.size = event.payload.size;
+                owned.payload.format = event.payload.format;
+                owned.payload.ref = event.payload.ref;
             }
         }
 
@@ -2374,21 +2342,19 @@ static void mark_missing_base_tile(TileContext& ctx, MapTile& tile)
     }
 }
 
-static DecodedTileCache* adopt_decoded_image_to_cache(
-    TileContext& ctx,
-    const ui::map_tiles::MapTileRef& ref,
-    ui::map_tiles::MapTileDecodedImage& decoded)
+static DecodedTileCache* decode_payload_to_cache(TileContext& ctx,
+                                                 const ui::map_tiles::MapTileRef& ref,
+                                                 const ui::map_tiles::MapTilePayload& payload)
 {
+    if (payload.data == nullptr || payload.size == 0)
+    {
+        return nullptr;
+    }
+
     DecodedTileCache* cached = find_cached_tile_ref(ref);
     if (cached != nullptr && cached->img_dsc != NULL)
     {
         return cached;
-    }
-
-    auto* img_dsc = static_cast<lv_image_dsc_t*>(decoded.native_handle);
-    if (img_dsc == nullptr)
-    {
-        return nullptr;
     }
 
     refresh_live_tile_decode_cache_usage(ctx);
@@ -2403,6 +2369,12 @@ static DecodedTileCache* adopt_decoded_image_to_cache(
         return nullptr;
     }
 
+    lv_image_dsc_t* img_dsc = decode_payload_to_image_desc(ref, payload);
+    if (img_dsc == nullptr)
+    {
+        return nullptr;
+    }
+
     cache_slot->img_dsc = img_dsc;
     cache_slot->x = static_cast<int32_t>(ref.x);
     cache_slot->y = static_cast<int32_t>(ref.y);
@@ -2411,8 +2383,6 @@ static DecodedTileCache* adopt_decoded_image_to_cache(
     cache_slot->map_source = map_source_for_layer(ref.layer);
     cache_slot->last_used_ms = sys::millis_now();
     cache_slot->lvgl_ref_count = 0;
-
-    decoded = {};
     return cache_slot;
 }
 
@@ -2662,11 +2632,11 @@ static bool apply_map_tile_event(TileContext& ctx, ui::map_tiles::MapTileAsyncEv
         return true;
     }
 
-    DecodedTileCache* cache = adopt_decoded_image_to_cache(ctx, event.tile, event.decoded);
+    DecodedTileCache* cache = decode_payload_to_cache(ctx, event.tile, event.payload);
     if (cache == nullptr)
     {
         retry_not_before = now_ms + kMapTileLayerCacheBackoffMs;
-        log_map_tile_event_failure("decoded_image", event, event.error);
+        log_map_tile_event_failure("decode", event, event.error);
         release_tile_payload(event);
         return false;
     }

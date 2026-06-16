@@ -58,6 +58,7 @@ void present_boot_overlay_now()
     {
         lv_obj_invalidate(top);
     }
+    lv_timer_handler();
 }
 
 } // namespace

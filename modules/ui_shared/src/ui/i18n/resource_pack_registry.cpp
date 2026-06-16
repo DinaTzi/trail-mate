@@ -159,6 +159,7 @@ std::vector<FontPackRecord*> s_content_supplement_packs;
 
 bool s_registry_ready = false;
 unsigned s_missing_content_font_diagnostics = 0;
+bool s_allow_sync_external_font_activation = false;
 
 class ScopedFontLoadOverlay
 {
@@ -1210,6 +1211,16 @@ bool can_load_font_from_content_hot_path(const FontPackRecord& pack)
 {
 #if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
     return pack.builtin;
+#else
+    (void)pack;
+    return true;
+#endif
+}
+
+bool can_load_font_from_activation_path(const FontPackRecord& pack)
+{
+#if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
+    return pack.builtin || s_allow_sync_external_font_activation;
 #else
     (void)pack;
     return true;
@@ -2342,8 +2353,21 @@ bool activate_locale_internal(LocalePackRecord* locale, FontPackRecord* preserve
 
     if (s_active_ui_font_pack != nullptr && !is_font_runtime_loaded(*s_active_ui_font_pack))
     {
-#if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
-        if (!s_active_ui_font_pack->builtin)
+        if (can_load_font_from_activation_path(*s_active_ui_font_pack))
+        {
+            if (!ensure_font_pack_loaded(s_active_ui_font_pack))
+            {
+                if (locale != nullptr && locale->id != kDefaultLocaleId)
+                {
+                    LocalePackRecord* fallback = resolve_active_locale(kDefaultLocaleId);
+                    if (fallback && fallback != locale)
+                    {
+                        return activate_locale_internal(fallback, preserved_content_pack);
+                    }
+                }
+            }
+        }
+        else
         {
             std::printf("%s font load deferred id=%s role=active_ui reason=ui_activation active_locale=%s source=%s\n",
                         kLogTag,
@@ -2357,23 +2381,25 @@ bool activate_locale_internal(LocalePackRecord* locale, FontPackRecord* preserve
                 s_active_ui_font_pack = fallback_ui;
             }
         }
-        else if (!ensure_font_pack_loaded(s_active_ui_font_pack))
+    }
+
+    if (s_active_content_font_pack != nullptr &&
+        !is_font_runtime_loaded(*s_active_content_font_pack))
+    {
+        if (can_load_font_from_activation_path(*s_active_content_font_pack))
         {
-            s_active_ui_font_pack = find_pack_by_id(s_font_packs, kBuiltinLatinFontPackId);
+            (void)ensure_font_pack_loaded(s_active_content_font_pack);
         }
-#else
-        if (!ensure_font_pack_loaded(s_active_ui_font_pack))
+        else
         {
-            if (locale != nullptr && locale->id != kDefaultLocaleId)
-            {
-                LocalePackRecord* fallback = resolve_active_locale(kDefaultLocaleId);
-                if (fallback && fallback != locale)
-                {
-                    return activate_locale_internal(fallback, preserved_content_pack);
-                }
-            }
+            std::printf("%s font load deferred id=%s role=active_content reason=ui_activation active_locale=%s source=%s\n",
+                        kLogTag,
+                        s_active_content_font_pack->id.c_str(),
+                        s_active_locale ? s_active_locale->id.c_str() : "<none>",
+                        s_active_content_font_pack->source_path.empty()
+                            ? "<none>"
+                            : s_active_content_font_pack->source_path.c_str());
         }
-#endif
     }
 
     if (can_preserve_content_pack(preserved_content_pack, s_active_ui_font_pack, s_active_content_font_pack))
@@ -2424,7 +2450,9 @@ void rebuild_registry()
     s_registry_ready = true;
 
     const std::string preferred_locale = migrate_legacy_locale_if_needed();
+    s_allow_sync_external_font_activation = true;
     (void)activate_locale(resolve_active_locale(preferred_locale));
+    s_allow_sync_external_font_activation = false;
     std::printf("%s registry rebuild end active_locale=%s locale_count=%lu ime_count=%lu enabled_ime=%lu active_ime=%s ui_chain=%s content_chain=%s\n",
                 kLogTag,
                 s_active_locale ? s_active_locale->id.c_str() : "<none>",

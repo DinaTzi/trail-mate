@@ -304,7 +304,7 @@ bool commit_pending_map_pan_from_screen()
         std::isfinite(snapshot.viewport.center_lat) &&
         std::isfinite(snapshot.viewport.center_lon) &&
         (snapshot.viewport.center_lat != 0.0 || snapshot.viewport.center_lon != 0.0);
-    model.focus_point.valid = has_viewport_center || snapshot.self.valid || snapshot.header.valid;
+    model.focus_point.valid = has_viewport_center || snapshot.self.valid;
     model.focus_point.lat = has_viewport_center
                                 ? snapshot.viewport.center_lat
                                 : (snapshot.self.valid ? snapshot.self.lat
