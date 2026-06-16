@@ -61,6 +61,8 @@
 static uint32_t g_cache_full_log_ms = 0;
 static uint8_t g_requested_map_source = 0;
 
+constexpr std::size_t kMapTileSdReadChunkBytes = 2U * 1024U;
+
 static void style_placeholder_card(lv_obj_t* card);
 static void style_placeholder_text(lv_obj_t* label);
 
@@ -141,6 +143,10 @@ class PathOnlyMapTileFileSystem final : public ui::map_tiles::IMapTileFileSystem
 };
 
 #if defined(ARDUINO) || defined(ARDUINO_ARCH_ESP32)
+bool yield_map_tile_sd_bus_between_chunks(const char* path,
+                                          std::size_t bytes_read,
+                                          std::size_t total_bytes);
+
 class SdMapTileFileSystem final : public ui::map_tiles::IMapTileFileSystem
 {
   public:
@@ -178,15 +184,32 @@ class SdMapTileFileSystem final : public ui::map_tiles::IMapTileFileSystem
             return false;
         }
 
-        const int bytes_read = file.read(buffer, static_cast<std::size_t>(file_size));
-        file.close();
-        if (bytes_read < 0 || static_cast<uint64_t>(bytes_read) != file_size)
+        const std::size_t target_size = static_cast<std::size_t>(file_size);
+        std::size_t total_read = 0;
+        while (total_read < target_size)
         {
-            out_size = bytes_read > 0 ? static_cast<std::size_t>(bytes_read) : 0;
-            return false;
+            const std::size_t chunk_size =
+                std::min<std::size_t>(kMapTileSdReadChunkBytes, target_size - total_read);
+            const int bytes_read = file.read(buffer + total_read, chunk_size);
+            if (bytes_read <= 0)
+            {
+                out_size = total_read;
+                file.close();
+                return false;
+            }
+
+            total_read += static_cast<std::size_t>(bytes_read);
+            if (total_read < target_size &&
+                !yield_map_tile_sd_bus_between_chunks(path, total_read, target_size))
+            {
+                out_size = total_read;
+                file.close();
+                return false;
+            }
         }
 
-        out_size = static_cast<std::size_t>(bytes_read);
+        file.close();
+        out_size = total_read;
         return true;
     }
 };
@@ -198,13 +221,15 @@ constexpr std::size_t kMapTileWorkerScratchBytes = 192U * 1024U;
 constexpr int kMapTileEventsPerUiDrain = 1;
 constexpr uint32_t kMapTileUiDrainBudgetMs = 4;
 constexpr uint32_t kMapTileUiEventCooldownMs = 120;
-constexpr uint32_t kMapTileLayerBusyBackoffMs = 1500;
+constexpr uint32_t kMapTileLayerBusyBackoffMs = 5000;
 constexpr uint32_t kMapTileLayerCacheBackoffMs = 350;
 constexpr uint32_t kMapTileMissingCacheTtlMs = 5U * 60U * 1000U;
 constexpr uint32_t kMapTileGenerationInitial = 1;
 constexpr uint32_t kMapTileBusResource = 1;
 constexpr uint32_t kMapTileDiagnosticLogIntervalMs = 1000;
 constexpr TickType_t kMapTileWorkerPostCommandYieldTicks = pdMS_TO_TICKS(32);
+constexpr TickType_t kMapTileSdChunkYieldTicks = pdMS_TO_TICKS(1);
+constexpr TickType_t kMapTileSdChunkReacquireTicks = pdMS_TO_TICKS(50);
 constexpr uint32_t kMapTileDisplaySpiSlowHoldMs = 8;
 constexpr uint32_t kMapTileDisplaySpiNormalCooldownMs = 160;
 constexpr uint32_t kMapTileDisplaySpiSlowCooldownMs = 1500;
@@ -213,6 +238,7 @@ constexpr uint32_t kMapTileDisplayPressureCooldownMs = 1500;
 uint32_t g_map_tile_decode_log_ms = 0;
 uint32_t g_map_tile_event_log_ms = 0;
 uint32_t g_map_tile_next_event_drain_ms = 0;
+uint32_t g_map_tile_chunk_yield_log_ms = 0;
 
 bool should_log_map_tile_diagnostic(uint32_t& last_ms, uint32_t now_ms)
 {
@@ -220,6 +246,35 @@ bool should_log_map_tile_diagnostic(uint32_t& last_ms, uint32_t now_ms)
     {
         last_ms = now_ms;
         return true;
+    }
+    return false;
+}
+
+bool yield_map_tile_sd_bus_between_chunks(const char* path,
+                                          std::size_t bytes_read,
+                                          std::size_t total_bytes)
+{
+    ::platform::esp::common::shared_spi_unlock();
+    vTaskDelay(kMapTileSdChunkYieldTicks);
+
+    if (::platform::esp::common::shared_spi_lock(kMapTileSdChunkReacquireTicks))
+    {
+        return true;
+    }
+
+    const uint32_t now_ms = sys::millis_now();
+    if (should_log_map_tile_diagnostic(g_map_tile_chunk_yield_log_ms, now_ms))
+    {
+        std::printf("[GPS][MAP][bus] chunk_reacquire_timeout path=%s bytes=%u/%u\n",
+                    path ? path : "",
+                    static_cast<unsigned>(bytes_read),
+                    static_cast<unsigned>(total_bytes));
+        std::fflush(stdout);
+    }
+
+    while (!::platform::esp::common::shared_spi_lock(pdMS_TO_TICKS(100)))
+    {
+        vTaskDelay(kMapTileSdChunkYieldTicks);
     }
     return false;
 }
@@ -915,13 +970,17 @@ class EspMapTileBusArbiter final : public sys::runtime::IBusArbiter
         const uint32_t release_ms = sys::millis_now();
         const uint32_t hold_ms = release_ms - token.acquired_ms;
         ::platform::esp::common::shared_spi_unlock();
-        const bool slow_hold = hold_ms >= kMapTileDisplaySpiSlowHoldMs;
+        const bool display_pressure =
+            ::platform::esp::common::display_spi_recently_timed_out(
+                release_ms,
+                kMapTileDisplayPressureCooldownMs);
+        const bool slow_hold = display_pressure && hold_ms >= kMapTileDisplaySpiSlowHoldMs;
         const uint32_t cooldown_ms = slow_hold ? kMapTileDisplaySpiSlowCooldownMs
                                                : kMapTileDisplaySpiNormalCooldownMs;
         cooldown_until_ms_ = release_ms + cooldown_ms;
         if (slow_hold && should_log_map_tile_diagnostic(last_slow_hold_log_ms_, release_ms))
         {
-            std::printf("[GPS][MAP][bus] display_shared_slow_hold hold_ms=%lu cooldown_ms=%lu\n",
+            std::printf("[GPS][MAP][bus] display_shared_slow_hold hold_ms=%lu cooldown_ms=%lu display_pressure=1\n",
                         static_cast<unsigned long>(hold_ms),
                         static_cast<unsigned long>(cooldown_ms));
             std::fflush(stdout);
