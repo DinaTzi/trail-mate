@@ -698,7 +698,22 @@ lv_image_dsc_t* decode_payload_to_image_desc(const ui::map_tiles::MapTileRef& re
     lv_image_decoder_dsc_t decoder_dsc;
     std::memset(&decoder_dsc, 0, sizeof(decoder_dsc));
 
-    const lv_result_t decode_res = lv_image_decoder_open(&decoder_dsc, &compressed, NULL);
+    // LVGL caches decoded images by source pointer. This descriptor is a stack
+    // object whose address is commonly reused between tile decodes, so stale
+    // cache hits would make different PNG tiles render with the same pixels.
+    lv_image_cache_drop(&compressed);
+
+    auto close_decoder = [&decoder_dsc, &compressed]()
+    {
+        lv_image_decoder_close(&decoder_dsc);
+        lv_image_cache_drop(&compressed);
+    };
+
+    lv_image_decoder_args_t decoder_args{};
+    decoder_args.stride_align = LV_DRAW_BUF_STRIDE_ALIGN != 1;
+    decoder_args.no_cache = true;
+
+    const lv_result_t decode_res = lv_image_decoder_open(&decoder_dsc, &compressed, &decoder_args);
     if (decode_res != LV_RESULT_OK || decoder_dsc.decoded == NULL)
     {
         log_map_tile_decode_failure("open",
@@ -706,7 +721,7 @@ lv_image_dsc_t* decode_payload_to_image_desc(const ui::map_tiles::MapTileRef& re
                                     payload_format,
                                     payload.size,
                                     static_cast<long>(decode_res));
-        lv_image_decoder_close(&decoder_dsc);
+        close_decoder();
         return nullptr;
     }
 
@@ -720,7 +735,7 @@ lv_image_dsc_t* decode_payload_to_image_desc(const ui::map_tiles::MapTileRef& re
                                     payload_format,
                                     payload.size,
                                     static_cast<long>(data_size));
-        lv_image_decoder_close(&decoder_dsc);
+        close_decoder();
         return nullptr;
     }
 
@@ -732,7 +747,7 @@ lv_image_dsc_t* decode_payload_to_image_desc(const ui::map_tiles::MapTileRef& re
                                     payload_format,
                                     payload.size,
                                     -12);
-        lv_image_decoder_close(&decoder_dsc);
+        close_decoder();
         return nullptr;
     }
     std::memset(img_dsc, 0, sizeof(lv_image_dsc_t));
@@ -746,7 +761,7 @@ lv_image_dsc_t* decode_payload_to_image_desc(const ui::map_tiles::MapTileRef& re
                                     data_size,
                                     -12);
         lv_free(img_dsc);
-        lv_image_decoder_close(&decoder_dsc);
+        close_decoder();
         return nullptr;
     }
 
@@ -760,7 +775,7 @@ lv_image_dsc_t* decode_payload_to_image_desc(const ui::map_tiles::MapTileRef& re
     img_dsc->data_size = data_size;
     img_dsc->data = img_data;
 
-    lv_image_decoder_close(&decoder_dsc);
+    close_decoder();
     return img_dsc;
 }
 
