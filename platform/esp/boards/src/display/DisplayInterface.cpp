@@ -13,7 +13,7 @@ static LilyGoDispArduinoSPI* g_display_spi = nullptr;
 
 namespace
 {
-constexpr TickType_t kDisplayFrameLockWait = pdMS_TO_TICKS(8);
+constexpr TickType_t kDisplayFrameLockWait = pdMS_TO_TICKS(35);
 constexpr TickType_t kDisplayControlLockWait = pdMS_TO_TICKS(50);
 constexpr uint32_t kDisplayLockTimeoutLogIntervalMs = 1000;
 
@@ -34,13 +34,17 @@ bool lock_or_log(LilyGoDispArduinoSPI& spi, TickType_t wait_ticks, const char* o
     if (s_last_display_lock_timeout_log_ms == 0 ||
         now_ms - s_last_display_lock_timeout_log_ms >= kDisplayLockTimeoutLogIntervalMs)
     {
-        Serial.printf("[SPI][DISPLAY] lock_timeout op=%s wait_ticks=%lu owner=%s task=%s held_ms=%lu depth=%lu suppressed=%lu\n",
+        Serial.printf("[SPI][DISPLAY] lock_timeout op=%s wait_ticks=%lu owner=%s task=%s held_ms=%lu depth=%lu last_owner=%s last_task=%s last_held_ms=%lu last_release_age_ms=%lu suppressed=%lu\n",
                       op ? op : "",
                       static_cast<unsigned long>(wait_ticks),
                       spi.lockOwnerLabel(),
                       spi.lockOwnerTaskName(),
                       static_cast<unsigned long>(spi.lockHeldMs(now_ms)),
                       static_cast<unsigned long>(spi.lockDepth()),
+                      spi.lastLockOwnerLabel(),
+                      spi.lastLockOwnerTaskName(),
+                      static_cast<unsigned long>(spi.lastLockHeldMs()),
+                      static_cast<unsigned long>(spi.lastLockReleaseAgeMs(now_ms)),
                       static_cast<unsigned long>(s_suppressed_display_lock_timeout_logs - 1));
         s_suppressed_display_lock_timeout_logs = 0;
         s_last_display_lock_timeout_log_ms = now_ms;
@@ -138,6 +142,11 @@ void LilyGoDispArduinoSPI::unlock()
     _lock_depth--;
     if (_lock_depth == 0)
     {
+        const uint32_t now_ms = millis();
+        _last_lock_owner_label = _lock_owner_label;
+        _last_lock_owner_task_name = _lock_owner_task_name;
+        _last_lock_held_ms = _lock_acquired_ms == 0 ? 0 : static_cast<uint32_t>(now_ms - _lock_acquired_ms);
+        _last_lock_released_ms = now_ms;
         _lock_owner = nullptr;
         _lock_owner_label = nullptr;
         _lock_owner_task_name = nullptr;
@@ -163,6 +172,26 @@ uint32_t LilyGoDispArduinoSPI::lockHeldMs(uint32_t now_ms) const
 uint32_t LilyGoDispArduinoSPI::lockDepth() const
 {
     return _lock_depth;
+}
+
+const char* LilyGoDispArduinoSPI::lastLockOwnerLabel() const
+{
+    return _last_lock_owner_label ? _last_lock_owner_label : "-";
+}
+
+const char* LilyGoDispArduinoSPI::lastLockOwnerTaskName() const
+{
+    return _last_lock_owner_task_name ? _last_lock_owner_task_name : "-";
+}
+
+uint32_t LilyGoDispArduinoSPI::lastLockHeldMs() const
+{
+    return _last_lock_held_ms;
+}
+
+uint32_t LilyGoDispArduinoSPI::lastLockReleaseAgeMs(uint32_t now_ms) const
+{
+    return _last_lock_released_ms == 0 ? 0 : static_cast<uint32_t>(now_ms - _last_lock_released_ms);
 }
 
 void LilyGoDispArduinoSPI::setBrightness(uint8_t level)

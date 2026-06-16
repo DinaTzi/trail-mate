@@ -1663,7 +1663,10 @@ MeshActionResult MeshCoreAdapter::transmitFrameNowDetailed(const uint8_t* data, 
 #if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280) || \
     defined(ARDUINO_LILYGO_LORA_LR1121)
     app::AppTasks::requestRadioReceiveRestart();
-    state = board_.transmitRadio(data, len);
+    {
+        app::AppTasks::ScopedRadioTransmitActivity tx_activity;
+        state = board_.transmitRadio(data, len);
+    }
 #endif
     if (state == RADIOLIB_ERR_NONE)
     {

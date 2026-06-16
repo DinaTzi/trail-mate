@@ -2837,11 +2837,13 @@ bool MtAdapter::transmitWirePacket(const uint8_t* wire_data, size_t wire_size)
 
     app::AppTasks::requestRadioReceiveRestart();
 
+    int state = RADIOLIB_ERR_UNSUPPORTED;
 #if defined(ARDUINO_LILYGO_LORA_SX1262) || defined(ARDUINO_LILYGO_LORA_SX1280) || \
     defined(ARDUINO_LILYGO_LORA_LR1121)
-    const int state = board_.transmitRadio(wire_data, wire_size);
-#else
-    const int state = RADIOLIB_ERR_UNSUPPORTED;
+    {
+        app::AppTasks::ScopedRadioTransmitActivity tx_activity;
+        state = board_.transmitRadio(wire_data, wire_size);
+    }
 #endif
     const bool ok = (state == RADIOLIB_ERR_NONE);
     if (ok)

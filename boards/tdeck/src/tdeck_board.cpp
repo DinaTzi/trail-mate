@@ -71,6 +71,22 @@ uint8_t brightness_level_to_backlight_step(uint8_t level)
     return step > kTDeckBacklightStepMax ? kTDeckBacklightStepMax : step;
 }
 
+template <typename RadioT>
+uint32_t radio_tx_timeout_ms(RadioT& radio, size_t len)
+{
+    const uint64_t air_us = static_cast<uint64_t>(radio.getTimeOnAir(len));
+    uint64_t timeout_ms = 10ULL + ((air_us * 5ULL) + 999ULL) / 1000ULL;
+    if (timeout_ms < 100ULL)
+    {
+        timeout_ms = 100ULL;
+    }
+    if (timeout_ms > 120000ULL)
+    {
+        timeout_ms = 120000ULL;
+    }
+    return static_cast<uint32_t>(timeout_ms);
+}
+
 void write_backlight_level(uint8_t level)
 {
 #if defined(DISP_BL)
@@ -950,10 +966,39 @@ bool TDeckBoard::syncTimeFromGPS(uint32_t gps_task_interval_ms)
 
 int TDeckBoard::transmitRadio(const uint8_t* data, size_t len)
 {
-    // Share the SPI bus with display to avoid tearing due to contention.
+    const uint32_t timeout_ms = radio_tx_timeout_ms(radio_, len);
     if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50), "radio_tx"))
     {
-        int rc = radio_.transmit(data, len);
+        int rc = radio_.startTransmit(data, len);
+        LilyGoDispArduinoSPI::unlock();
+        if (rc != RADIOLIB_ERR_NONE)
+        {
+            return rc;
+        }
+    }
+    else
+    {
+        return RADIOLIB_ERR_SPI_WRITE_FAILED;
+    }
+
+    const uint32_t started_ms = millis();
+    while (digitalRead(LORA_IRQ) == LOW)
+    {
+        if (static_cast<uint32_t>(millis() - started_ms) > timeout_ms)
+        {
+            if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50), "radio_tx_finish"))
+            {
+                (void)radio_.finishTransmit();
+                LilyGoDispArduinoSPI::unlock();
+            }
+            return RADIOLIB_ERR_TX_TIMEOUT;
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50), "radio_tx_finish"))
+    {
+        const int rc = radio_.finishTransmit();
         LilyGoDispArduinoSPI::unlock();
         return rc;
     }

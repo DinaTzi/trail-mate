@@ -77,6 +77,22 @@ static bool s_temp_cold = false;
 static uint32_t s_last_temp_notice_hot_ms = 0;
 static uint32_t s_last_temp_notice_cold_ms = 0;
 
+template <typename RadioT>
+uint32_t radio_tx_timeout_ms(RadioT& radio, size_t len)
+{
+    const uint64_t air_us = static_cast<uint64_t>(radio.getTimeOnAir(len));
+    uint64_t timeout_ms = 10ULL + ((air_us * 5ULL) + 999ULL) / 1000ULL;
+    if (timeout_ms < 100ULL)
+    {
+        timeout_ms = 100ULL;
+    }
+    if (timeout_ms > 120000ULL)
+    {
+        timeout_ms = 120000ULL;
+    }
+    return static_cast<uint32_t>(timeout_ms);
+}
+
 #ifdef USING_ST25R3916
 #include <rfal_rfst25r3916.h>
 #endif
@@ -1303,9 +1319,39 @@ void TLoRaPagerBoard::pushColors(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t
 
 int TLoRaPagerBoard::transmitRadio(const uint8_t* data, size_t len)
 {
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50)))
+    const uint32_t timeout_ms = radio_tx_timeout_ms(radio_, len);
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50), "radio_tx"))
     {
-        int rc = radio_.transmit(data, len);
+        int rc = radio_.startTransmit(data, len);
+        LilyGoDispArduinoSPI::unlock();
+        if (rc != RADIOLIB_ERR_NONE)
+        {
+            return rc;
+        }
+    }
+    else
+    {
+        return RADIOLIB_ERR_SPI_WRITE_FAILED;
+    }
+
+    const uint32_t started_ms = millis();
+    while (digitalRead(LORA_IRQ) == LOW)
+    {
+        if (static_cast<uint32_t>(millis() - started_ms) > timeout_ms)
+        {
+            if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50), "radio_tx_finish"))
+            {
+                (void)radio_.finishTransmit();
+                LilyGoDispArduinoSPI::unlock();
+            }
+            return RADIOLIB_ERR_TX_TIMEOUT;
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50), "radio_tx_finish"))
+    {
+        const int rc = radio_.finishTransmit();
         LilyGoDispArduinoSPI::unlock();
         return rc;
     }
@@ -1314,7 +1360,7 @@ int TLoRaPagerBoard::transmitRadio(const uint8_t* data, size_t len)
 
 int TLoRaPagerBoard::radioStandby()
 {
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50), "radio_cfg"))
     {
         int rc = radio_.standby();
         LilyGoDispArduinoSPI::unlock();
@@ -1325,7 +1371,7 @@ int TLoRaPagerBoard::radioStandby()
 
 int TLoRaPagerBoard::startRadioReceive()
 {
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50), "radio_rx"))
     {
         int rc = radio_.startReceive();
         LilyGoDispArduinoSPI::unlock();
@@ -1336,7 +1382,7 @@ int TLoRaPagerBoard::startRadioReceive()
 
 uint32_t TLoRaPagerBoard::getRadioIrqFlags()
 {
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20), "radio_irq"))
     {
         uint32_t flags = radio_.getIrqFlags();
         LilyGoDispArduinoSPI::unlock();
@@ -1347,7 +1393,7 @@ uint32_t TLoRaPagerBoard::getRadioIrqFlags()
 
 int TLoRaPagerBoard::getRadioPacketLength(bool update)
 {
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20), "radio_rx"))
     {
         int len = static_cast<int>(radio_.getPacketLength(update));
         LilyGoDispArduinoSPI::unlock();
@@ -1358,7 +1404,7 @@ int TLoRaPagerBoard::getRadioPacketLength(bool update)
 
 int TLoRaPagerBoard::readRadioData(uint8_t* buf, size_t len)
 {
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50), "radio_rx"))
     {
         int rc = radio_.readData(buf, len);
         LilyGoDispArduinoSPI::unlock();
@@ -1369,7 +1415,7 @@ int TLoRaPagerBoard::readRadioData(uint8_t* buf, size_t len)
 
 void TLoRaPagerBoard::clearRadioIrqFlags(uint32_t flags)
 {
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20), "radio_irq"))
     {
         radio_.clearIrqFlags(flags);
         LilyGoDispArduinoSPI::unlock();
@@ -1378,7 +1424,7 @@ void TLoRaPagerBoard::clearRadioIrqFlags(uint32_t flags)
 
 float TLoRaPagerBoard::getRadioRSSI()
 {
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20), "radio_rssi"))
     {
         float rssi = radio_.getRSSI();
         LilyGoDispArduinoSPI::unlock();
@@ -1389,7 +1435,7 @@ float TLoRaPagerBoard::getRadioRSSI()
 
 float TLoRaPagerBoard::getRadioInstantRSSI()
 {
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20), "radio_rssi"))
     {
 #if defined(ARDUINO_LILYGO_LORA_SX1262)
         const float rssi = radio_.getRSSI(false);
@@ -1404,7 +1450,7 @@ float TLoRaPagerBoard::getRadioInstantRSSI()
 
 float TLoRaPagerBoard::getRadioSNR()
 {
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(20), "radio_rssi"))
     {
         float snr = radio_.getSNR();
         LilyGoDispArduinoSPI::unlock();
@@ -1422,7 +1468,7 @@ int TLoRaPagerBoard::configureFskRadio(float freq_mhz, float bit_rate_kbps, floa
         return -1;
     }
 
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(200)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(200), "radio_cfg"))
     {
         int rc = radio_.standby();
         if (rc == RADIOLIB_ERR_NONE)
@@ -1457,7 +1503,7 @@ int TLoRaPagerBoard::restoreLoRaRadio()
 {
     CachedLoRaConfig cached = lora_config_;
 
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(200)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(200), "radio_cfg"))
     {
 #if defined(ARDUINO_LILYGO_LORA_LR1121)
         int rc = radio_.begin(cached.valid ? cached.freq_mhz : 434.0f,
@@ -1495,7 +1541,7 @@ int TLoRaPagerBoard::restoreLoRaRadio()
 
 int TLoRaPagerBoard::startRadioTransmit(const uint8_t* data, size_t len)
 {
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(50), "radio_tx"))
     {
         int rc = radio_.startTransmit(const_cast<uint8_t*>(data), len);
         LilyGoDispArduinoSPI::unlock();
@@ -1528,7 +1574,7 @@ void TLoRaPagerBoard::configureLoraRadio(float freq_mhz, float bw_khz, uint8_t s
     lora_config_.sync_word = sync_word;
     lora_config_.crc_len = crc_len;
 
-    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(100)))
+    if (LilyGoDispArduinoSPI::lock(pdMS_TO_TICKS(100), "radio_cfg"))
     {
         radio_.setFrequency(freq_mhz);
         radio_.setBandwidth(bw_khz);

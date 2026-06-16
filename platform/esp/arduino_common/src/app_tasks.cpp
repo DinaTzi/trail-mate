@@ -193,6 +193,7 @@ chat::IMeshAdapter* AppTasks::adapter_ = nullptr;
 bool AppTasks::radio_tasks_paused_ = false;
 volatile bool AppTasks::radio_receive_active_ = false;
 volatile bool AppTasks::radio_receive_restart_pending_ = true;
+volatile bool AppTasks::radio_transmit_active_ = false;
 
 bool AppTasks::init(LoraBoard& board, chat::IMeshAdapter* adapter)
 {
@@ -300,6 +301,35 @@ void AppTasks::requestRadioReceiveRestart()
     radio_receive_restart_pending_ = true;
 }
 
+void AppTasks::setRadioTransmitActive(bool active)
+{
+    radio_transmit_active_ = active;
+    if (active)
+    {
+        radio_receive_active_ = false;
+        radio_receive_restart_pending_ = false;
+    }
+    else
+    {
+        radio_receive_restart_pending_ = true;
+    }
+}
+
+bool AppTasks::isRadioTransmitActive()
+{
+    return radio_transmit_active_;
+}
+
+AppTasks::ScopedRadioTransmitActivity::ScopedRadioTransmitActivity()
+{
+    AppTasks::setRadioTransmitActive(true);
+}
+
+AppTasks::ScopedRadioTransmitActivity::~ScopedRadioTransmitActivity()
+{
+    AppTasks::setRadioTransmitActive(false);
+}
+
 void AppTasks::radioTask(void* pvParameters)
 {
     (void)pvParameters;
@@ -313,6 +343,12 @@ void AppTasks::radioTask(void* pvParameters)
         bool should_restart_rx = radio_receive_restart_pending_;
         bool handled_tx = false;
 
+        if (radio_transmit_active_)
+        {
+            vTaskDelay(kRadioDisplayPressurePollDelay);
+            continue;
+        }
+
         // Process TX queue
         RadioPacket tx_packet;
         if (xQueueReceive(radio_tx_queue_, &tx_packet, 0) == pdPASS)
@@ -325,7 +361,9 @@ void AppTasks::radioTask(void* pvParameters)
                 {
                     requestRadioReceiveRestart();
                     int state = RADIOLIB_ERR_NONE;
+                    setRadioTransmitActive(true);
                     state = board_->transmitRadio(tx_packet.data, tx_packet.size);
+                    setRadioTransmitActive(false);
                     LORA_LOG("[LORA] TX queue len=%u state=%d\n", (unsigned)tx_packet.size, state);
                     if (state == RADIOLIB_ERR_NONE)
                     {
