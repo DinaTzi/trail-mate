@@ -10,6 +10,7 @@ namespace platform::esp::common
 // devices where display, SD, radio, NFC, or other peripherals physically
 // share one controller. It is not display-specific.
 bool shared_spi_lock(TickType_t xTicksToWait);
+bool shared_spi_lock_with_owner(TickType_t xTicksToWait, const char* owner);
 void shared_spi_unlock();
 void note_display_spi_timeout(uint32_t now_ms);
 uint32_t last_display_spi_timeout_ms();
@@ -18,8 +19,9 @@ bool display_spi_recently_timed_out(uint32_t now_ms, uint32_t window_ms);
 class SharedSpiLockGuard
 {
   public:
-    explicit SharedSpiLockGuard(TickType_t wait_ticks)
-        : locked_(shared_spi_lock(wait_ticks))
+    explicit SharedSpiLockGuard(TickType_t wait_ticks, const char* owner = nullptr)
+        : locked_(owner ? shared_spi_lock_with_owner(wait_ticks, owner)
+                        : shared_spi_lock(wait_ticks))
     {
     }
 

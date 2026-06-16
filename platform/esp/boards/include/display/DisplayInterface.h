@@ -168,7 +168,16 @@ class LilyGoDispArduinoSPI
     void writeData(uint8_t data);
     void writeCommand(uint8_t cmd);
     void setAddrWindow(uint16_t xs, uint16_t ys, uint16_t xe, uint16_t ye);
-    bool lock(TickType_t xTicksToWait = portMAX_DELAY);
+    bool lock(TickType_t xTicksToWait = portMAX_DELAY, const char* owner = nullptr);
     void unlock();
+    const char* lockOwnerLabel() const;
+    const char* lockOwnerTaskName() const;
+    uint32_t lockHeldMs(uint32_t now_ms) const;
+    uint32_t lockDepth() const;
+
+  private:
+    const char* _lock_owner_label = nullptr;
+    const char* _lock_owner_task_name = nullptr;
+    uint32_t _lock_acquired_ms = 0;
 };
 #endif

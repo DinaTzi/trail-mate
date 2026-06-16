@@ -210,7 +210,7 @@ void NodeStore::clearBlob()
 
     if (::platform::esp::arduino_common::storage::sd_card_ready())
     {
-        ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdPersistWait);
+        ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdPersistWait, "node_store_sd");
         if (spi_guard.locked() &&
             ::platform::esp::arduino_common::storage::sd_exists(kPersistNodesFile))
         {
@@ -318,7 +318,7 @@ bool NodeStore::loadFromSd(std::vector<uint8_t>& out) const
         return false;
     }
 
-    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdLoadWait);
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdLoadWait, "node_store_sd");
     if (!spi_guard.locked())
     {
         NODE_STORE_LOG("[NodeStore] load SD skipped: spi busy\n");
@@ -481,7 +481,7 @@ bool NodeStore::saveToSd(const uint8_t* data, size_t len) const
         return false;
     }
 
-    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdPersistWait);
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdPersistWait, "node_store_sd");
     if (!spi_guard.locked())
     {
         NODE_STORE_LOG("[NodeStore] save SD skipped: spi busy len=%u\n",

@@ -280,7 +280,8 @@ bool yield_map_tile_sd_bus_between_chunks(const char* path,
     ::platform::esp::common::shared_spi_unlock();
     vTaskDelay(kMapTileSdChunkYieldTicks);
 
-    if (::platform::esp::common::shared_spi_lock(kMapTileSdChunkReacquireTicks))
+    if (::platform::esp::common::shared_spi_lock_with_owner(kMapTileSdChunkReacquireTicks,
+                                                            "map_tile_sd"))
     {
         return true;
     }
@@ -295,7 +296,8 @@ bool yield_map_tile_sd_bus_between_chunks(const char* path,
         std::fflush(stdout);
     }
 
-    while (!::platform::esp::common::shared_spi_lock(pdMS_TO_TICKS(100)))
+    while (!::platform::esp::common::shared_spi_lock_with_owner(pdMS_TO_TICKS(100),
+                                                                "map_tile_sd"))
     {
         vTaskDelay(kMapTileSdChunkYieldTicks);
     }
@@ -376,19 +378,6 @@ bool resolve_map_tile_log_path(const ui::map_tiles::MapTileRef& ref,
     return resolver.resolvePath(ref, out_path, out_size);
 }
 
-bool fallback_base_ref_to_osm(const ui::map_tiles::MapTileRef& ref,
-                              ui::map_tiles::MapTileRef& out)
-{
-    if (ui::map_tiles::mapTileLayerIsContour(ref.layer) ||
-        ref.layer == ui::map_tiles::MapTileLayer::Osm)
-    {
-        return false;
-    }
-    out = ref;
-    out.layer = ui::map_tiles::MapTileLayer::Osm;
-    return true;
-}
-
 lv_color_format_t lvgl_source_format_for_tile(ui::map_tiles::MapTileFormat format)
 {
     switch (format)
@@ -449,34 +438,6 @@ void log_map_tile_event_failure(const char* stage,
                 static_cast<unsigned long>(g_map_tile_runtime_generation),
                 error,
                 path[0] != '\0' ? path : "<resolve-failed>");
-    std::fflush(stdout);
-}
-
-void log_map_tile_source_fallback(const char* stage,
-                                  const ui::map_tiles::MapTileRef& requested,
-                                  const ui::map_tiles::MapTileRef& fallback)
-{
-    const uint32_t now_ms = sys::millis_now();
-    if (!should_log_map_tile_diagnostic(g_map_tile_event_log_ms, now_ms))
-    {
-        return;
-    }
-
-    char requested_path[160]{};
-    char fallback_path[160]{};
-    (void)resolve_map_tile_log_path(requested, requested_path, sizeof(requested_path));
-    (void)resolve_map_tile_log_path(fallback, fallback_path, sizeof(fallback_path));
-    std::printf("[GPS][MAP][source] fallback stage=%s requested=%s(%u) fallback=%s(%u) z=%u x=%lu y=%lu requested_path=%s fallback_path=%s\n",
-                stage ? stage : "unknown",
-                map_tile_layer_name(requested.layer),
-                static_cast<unsigned>(requested.layer),
-                map_tile_layer_name(fallback.layer),
-                static_cast<unsigned>(fallback.layer),
-                static_cast<unsigned>(requested.z),
-                static_cast<unsigned long>(requested.x),
-                static_cast<unsigned long>(requested.y),
-                requested_path[0] != '\0' ? requested_path : "<resolve-failed>",
-                fallback_path[0] != '\0' ? fallback_path : "<resolve-failed>");
     std::fflush(stdout);
 }
 
@@ -965,7 +926,8 @@ class EspMapTileBusArbiter final : public sys::runtime::IBusArbiter
 
         const uint32_t timeout_ms = timeoutFor(request.policy);
         const bool acquired =
-            ::platform::esp::common::shared_spi_lock(pdMS_TO_TICKS(timeout_ms));
+            ::platform::esp::common::shared_spi_lock_with_owner(pdMS_TO_TICKS(timeout_ms),
+                                                                "map_tile_sd");
         const uint32_t end_ms = sys::millis_now();
 
         sys::runtime::BusAcquireResult result{};
@@ -1097,25 +1059,7 @@ class EspMapTileWorkerBackend final : public ui::map_tiles::IMapTileWorkerBacken
     ui::map_tiles::MapTileLookupResult lookup(
         const ui::map_tiles::MapTileRef& ref) override
     {
-        const auto result = source_.lookup(ref);
-        if (result.status == ui::map_tiles::MapTileStatus::Available)
-        {
-            return result;
-        }
-
-        ui::map_tiles::MapTileRef fallback{};
-        if (!fallback_base_ref_to_osm(ref, fallback))
-        {
-            return result;
-        }
-
-        const auto fallback_result = source_.lookup(fallback);
-        if (fallback_result.status == ui::map_tiles::MapTileStatus::Available)
-        {
-            log_map_tile_source_fallback("lookup", ref, fallback);
-            return fallback_result;
-        }
-        return result;
+        return source_.lookup(ref);
     }
 
     bool read(const ui::map_tiles::MapTileRef& ref,
@@ -1137,28 +1081,7 @@ class EspMapTileWorkerBackend final : public ui::map_tiles::IMapTileWorkerBacken
             return true;
         }
 
-        ui::map_tiles::MapTileRef fallback{};
-        if (!fallback_base_ref_to_osm(ref, fallback))
-        {
-            map_tile_availability_memory().markMissing(ref);
-            return false;
-        }
-
-        if (map_tile_availability_memory().knownMissing(fallback))
-        {
-            map_tile_availability_memory().markMissing(ref);
-            return false;
-        }
-
-        if (source_.read(fallback, buffer, capacity, out_size, out_format))
-        {
-            log_map_tile_source_fallback("read", ref, fallback);
-            map_tile_availability_memory().markAvailable(ref);
-            map_tile_availability_memory().markAvailable(fallback);
-            return true;
-        }
         map_tile_availability_memory().markMissing(ref);
-        map_tile_availability_memory().markMissing(fallback);
         return false;
     }
 
@@ -3261,6 +3184,12 @@ void calculate_required_tiles(TileContext& ctx, double lat, double lng, int zoom
     }
 
     sync_render_settings(ctx);
+    const uint32_t now_ms = sys::millis_now();
+    if (map_tile_display_under_pressure(now_ms))
+    {
+        log_map_tile_display_pressure_pause(now_ms, "calculate");
+        return;
+    }
 
     GPS_LOG("[GPS] calculate_required_tiles: has_fix=%d, zoom=%d, lat=%.6f, lng=%.6f\n",
             has_fix, zoom, lat, lng);
@@ -3308,6 +3237,11 @@ void tile_loader_step(TileContext& ctx)
     const uint32_t start_ms = sys::millis_now();
     const uint32_t budget_ms = kMapTileUiDrainBudgetMs;
     sync_render_settings(ctx);
+    if (map_tile_display_under_pressure(start_ms))
+    {
+        log_map_tile_display_pressure_pause(start_ms, "loader");
+        return;
+    }
     drain_map_tile_events(ctx, start_ms, budget_ms);
     update_visible_map_data_flag(ctx);
     if (static_cast<uint32_t>(sys::millis_now() - start_ms) >= budget_ms)

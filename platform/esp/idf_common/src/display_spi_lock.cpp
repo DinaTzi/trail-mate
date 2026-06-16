@@ -9,6 +9,13 @@ bool shared_spi_lock(TickType_t xTicksToWait)
     return true;
 }
 
+bool shared_spi_lock_with_owner(TickType_t xTicksToWait, const char* owner)
+{
+    (void)xTicksToWait;
+    (void)owner;
+    return true;
+}
+
 void shared_spi_unlock() {}
 
 void note_display_spi_timeout(uint32_t now_ms)

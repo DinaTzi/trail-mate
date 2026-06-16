@@ -237,7 +237,7 @@ bool TrackRecorder::start()
     bool ok = false;
     do
     {
-        ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait);
+        ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait, "track_sd");
         if (!spi_guard.locked())
         {
             break;
@@ -273,7 +273,7 @@ void TrackRecorder::stop()
         return;
     }
 
-    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait);
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait, "track_sd");
     if (!spi_guard.locked())
     {
         if (mutex_)
@@ -330,7 +330,7 @@ void TrackRecorder::setAutoRecording(bool enabled)
         return;
     }
 
-    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait);
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait, "track_sd");
     if (!spi_guard.locked())
     {
         if (mutex_)
@@ -421,7 +421,7 @@ void TrackRecorder::setFormat(TrackFormat format)
         return;
     }
 
-    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait);
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait, "track_sd");
     if (!spi_guard.locked())
     {
         if (mutex_)
@@ -561,7 +561,7 @@ void TrackRecorder::flushPending(bool force)
     }
 
     const TickType_t spi_wait = force ? kSdTransactionLockWait : 0;
-    ::platform::esp::common::SharedSpiLockGuard spi_guard(spi_wait);
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(spi_wait, "track_sd");
     if (!spi_guard.locked())
     {
         if (mutex_)
@@ -653,7 +653,7 @@ bool TrackRecorder::restoreActiveSession()
     bool ok = false;
     do
     {
-        ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait);
+        ::platform::esp::common::SharedSpiLockGuard spi_guard(kSdTransactionLockWait, "track_sd");
         if (!spi_guard.locked())
         {
             break;
@@ -832,7 +832,7 @@ size_t TrackRecorder::listTracks(String* out_names, size_t max_names) const
         }
     };
 
-    ::platform::esp::common::SharedSpiLockGuard spi_guard(0);
+    ::platform::esp::common::SharedSpiLockGuard spi_guard(0, "track_sd");
     if (!spi_guard.locked())
     {
         release_mutex();

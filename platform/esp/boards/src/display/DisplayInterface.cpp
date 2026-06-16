@@ -23,7 +23,7 @@ volatile uint32_t s_last_display_spi_timeout_ms = 0;
 
 bool lock_or_log(LilyGoDispArduinoSPI& spi, TickType_t wait_ticks, const char* op)
 {
-    if (spi.lock(wait_ticks))
+    if (spi.lock(wait_ticks, "display"))
     {
         return true;
     }
@@ -34,9 +34,13 @@ bool lock_or_log(LilyGoDispArduinoSPI& spi, TickType_t wait_ticks, const char* o
     if (s_last_display_lock_timeout_log_ms == 0 ||
         now_ms - s_last_display_lock_timeout_log_ms >= kDisplayLockTimeoutLogIntervalMs)
     {
-        Serial.printf("[SPI][DISPLAY] lock_timeout op=%s wait_ticks=%lu suppressed=%lu\n",
+        Serial.printf("[SPI][DISPLAY] lock_timeout op=%s wait_ticks=%lu owner=%s task=%s held_ms=%lu depth=%lu suppressed=%lu\n",
                       op ? op : "",
                       static_cast<unsigned long>(wait_ticks),
+                      spi.lockOwnerLabel(),
+                      spi.lockOwnerTaskName(),
+                      static_cast<unsigned long>(spi.lockHeldMs(now_ms)),
+                      static_cast<unsigned long>(spi.lockDepth()),
                       static_cast<unsigned long>(s_suppressed_display_lock_timeout_logs - 1));
         s_suppressed_display_lock_timeout_logs = 0;
         s_last_display_lock_timeout_log_ms = now_ms;
@@ -50,7 +54,12 @@ namespace platform::esp::common
 
 bool shared_spi_lock(TickType_t xTicksToWait)
 {
-    return g_display_spi && g_display_spi->lock(xTicksToWait);
+    return shared_spi_lock_with_owner(xTicksToWait, "shared");
+}
+
+bool shared_spi_lock_with_owner(TickType_t xTicksToWait, const char* owner)
+{
+    return g_display_spi && g_display_spi->lock(xTicksToWait, owner);
 }
 
 void shared_spi_unlock()
@@ -80,7 +89,7 @@ bool display_spi_recently_timed_out(uint32_t now_ms, uint32_t window_ms)
 
 } // namespace platform::esp::common
 
-bool LilyGoDispArduinoSPI::lock(TickType_t xTicksToWait)
+bool LilyGoDispArduinoSPI::lock(TickType_t xTicksToWait, const char* owner)
 {
     if (_lock == nullptr)
     {
@@ -101,6 +110,9 @@ bool LilyGoDispArduinoSPI::lock(TickType_t xTicksToWait)
     {
         _lock_owner = current;
         _lock_depth = 1;
+        _lock_owner_label = (owner && owner[0] != '\0') ? owner : "direct";
+        _lock_owner_task_name = pcTaskGetName(current);
+        _lock_acquired_ms = millis();
     }
     return true;
 }
@@ -127,7 +139,30 @@ void LilyGoDispArduinoSPI::unlock()
     if (_lock_depth == 0)
     {
         _lock_owner = nullptr;
+        _lock_owner_label = nullptr;
+        _lock_owner_task_name = nullptr;
+        _lock_acquired_ms = 0;
     }
+}
+
+const char* LilyGoDispArduinoSPI::lockOwnerLabel() const
+{
+    return _lock_owner_label ? _lock_owner_label : "-";
+}
+
+const char* LilyGoDispArduinoSPI::lockOwnerTaskName() const
+{
+    return _lock_owner_task_name ? _lock_owner_task_name : "-";
+}
+
+uint32_t LilyGoDispArduinoSPI::lockHeldMs(uint32_t now_ms) const
+{
+    return _lock_acquired_ms == 0 ? 0 : static_cast<uint32_t>(now_ms - _lock_acquired_ms);
+}
+
+uint32_t LilyGoDispArduinoSPI::lockDepth() const
+{
+    return _lock_depth;
 }
 
 void LilyGoDispArduinoSPI::setBrightness(uint8_t level)
