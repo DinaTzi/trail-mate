@@ -278,6 +278,9 @@ bool yield_map_tile_sd_bus_between_chunks(const char* path,
                                           std::size_t bytes_read,
                                           std::size_t total_bytes)
 {
+    // Worker-domain SD tile reads voluntarily release the shared bus between
+    // chunks. This is the current ESP adapter's hold-budget enforcement point:
+    // display flush can make progress even while a large tile payload is read.
     ::platform::esp::common::shared_spi_unlock();
     vTaskDelay(kMapTileSdChunkYieldTicks);
 
@@ -1116,6 +1119,9 @@ class EspMapTileBusArbiter final : public sys::runtime::IBusArbiter
         const sys::runtime::BusAcquireRequest& request) override
     {
         const uint32_t start_ms = sys::millis_now();
+        // Display lock timeout is treated as pressure from the frame-critical
+        // domain. Map tile IO backs off instead of competing with wake/input
+        // rendering for the same physical SPI bus.
         if (::platform::esp::common::display_spi_recently_timed_out(
                 start_ms,
                 kMapTileDisplayPressureCooldownMs))

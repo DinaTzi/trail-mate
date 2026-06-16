@@ -8,7 +8,7 @@ namespace platform::esp::common
 
 // The shared SPI lock arbitrates ownership of the board-level SPI bus on
 // devices where display, SD, radio, NFC, or other peripherals physically
-// share one controller. It is not display-specific.
+// share one controller.
 bool shared_spi_lock(TickType_t xTicksToWait);
 bool shared_spi_lock_with_owner(TickType_t xTicksToWait, const char* owner);
 void shared_spi_unlock();
@@ -45,16 +45,3 @@ class SharedSpiLockGuard
 };
 
 } // namespace platform::esp::common
-
-// Legacy compatibility alias. New code should use shared_spi_lock /
-// shared_spi_unlock or SharedSpiLockGuard so call sites describe the bus they
-// are arbitrating rather than implying the lock belongs only to display code.
-inline bool display_spi_lock(TickType_t xTicksToWait)
-{
-    return ::platform::esp::common::shared_spi_lock(xTicksToWait);
-}
-
-inline void display_spi_unlock()
-{
-    ::platform::esp::common::shared_spi_unlock();
-}

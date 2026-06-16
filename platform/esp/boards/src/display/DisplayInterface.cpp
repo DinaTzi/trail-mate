@@ -13,6 +13,10 @@ static LilyGoDispArduinoSPI* g_display_spi = nullptr;
 
 namespace
 {
+// Display flush is the frame-critical client of the shared SPI bus. It uses a
+// short bounded wait and drops the current flush if storage/radio work is
+// holding the bus, so LVGL can return to input/timer processing instead of
+// blocking the UI owner task indefinitely.
 constexpr TickType_t kDisplayFrameLockWait = pdMS_TO_TICKS(35);
 constexpr TickType_t kDisplayControlLockWait = pdMS_TO_TICKS(50);
 constexpr uint32_t kDisplayLockTimeoutLogIntervalMs = 1000;
@@ -113,6 +117,8 @@ bool LilyGoDispArduinoSPI::lock(TickType_t xTicksToWait, const char* owner)
         return false;
     }
 
+    // Keep owner diagnostics on the physical shared-bus mutex. The timeout log
+    // is used by storage adapters to detect display pressure and back off.
     _lock_owner = current;
     _lock_depth = 1;
     _lock_owner_label = (owner && owner[0] != '\0') ? owner : "direct";

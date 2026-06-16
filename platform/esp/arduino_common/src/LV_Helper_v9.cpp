@@ -45,6 +45,9 @@ namespace
 {
 constexpr char kLvglFlashFsLetter = 'F';
 constexpr const char* kLvglFlashFsMountPoint = "/fs";
+// LVGL's SD drive callback can still be reached by resource-pack and image
+// paths. Keep every callback acquisition extremely short: a busy shared
+// bus must surface as LV_FS_RES_BUSY/failed open, not as a blocked UI frame.
 constexpr TickType_t kLvglSdFsWait = pdMS_TO_TICKS(2);
 constexpr TickType_t kLvglSdFsCloseWait = pdMS_TO_TICKS(10);
 
@@ -110,6 +113,9 @@ bool sd_fs_ready_cb(lv_fs_drv_t* drv)
 void* sd_fs_open(lv_fs_drv_t* drv, const char* path, lv_fs_mode_t mode)
 {
     LV_UNUSED(drv);
+    // This is a platform adapter boundary. Product/UI code must not use LVGL
+    // FS as a synchronous SD probe; callers should submit runtime work and let
+    // worker-domain code handle retry/backpressure.
     ::platform::esp::common::SharedSpiLockGuard spi_guard(kLvglSdFsWait);
     if (!spi_guard.locked())
     {
@@ -995,11 +1001,11 @@ void beginLvglHelper(LilyGo_Display& board, bool debug)
 
     // Allocate display buffers
     // Use DMA-capable memory if board supports DMA, otherwise use PSRAM
-    bool useDMA = board.useDMA();
+    bool use_dma_draw_buffers = board.useDMA();
 #if LV_TEST_FORCE_DMA_BUF
-    useDMA = true;
+    use_dma_draw_buffers = true;
 #endif
-    Serial.printf("[LVGL] buffer alloc start (useDMA=%d)\n", useDMA ? 1 : 0);
+    Serial.printf("[LVGL] buffer alloc start (use_dma_draw_buffers=%d)\n", use_dma_draw_buffers ? 1 : 0);
     Serial.printf("[LVGL] free heap internal=%u dma=%u psram=%u\n",
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA),
@@ -1007,7 +1013,7 @@ void beginLvglHelper(LilyGo_Display& board, bool debug)
     size_t lv_buffer_size = board.width() * board.height() * sizeof(lv_color16_t);
     size_t full_screen_size = lv_buffer_size;
 
-    if (useDMA)
+    if (use_dma_draw_buffers)
     {
         // For DMA, keep internal RAM pressure low to avoid starving other subsystems.
 #if LV_TEST_FORCE_DMA_FULL_SIZE
@@ -1032,10 +1038,10 @@ void beginLvglHelper(LilyGo_Display& board, bool debug)
             }
             buf = nullptr;
             buf1 = nullptr;
-            useDMA = false;
+            use_dma_draw_buffers = false;
         }
     }
-    if (!useDMA)
+    if (!use_dma_draw_buffers)
     {
         lv_buffer_size = board.width() * board.height() * sizeof(lv_color16_t);
 #if HAS_PSRAM

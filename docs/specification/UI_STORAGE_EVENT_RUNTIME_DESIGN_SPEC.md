@@ -1,6 +1,6 @@
 # UI / Storage / Event Runtime Design Spec
 
-Status date: 2026-06-14
+Status date: 2026-06-17
 
 This document defines the design baseline for removing UI stalls caused by
 blocking storage, shared-SPI contention, synchronous persistence, and page-owned
@@ -697,6 +697,383 @@ classDiagram
   BusAcquireResult --> BusAccessToken
   BusAcquireResult --> BusDiagnostics
 ```
+
+## UML ESP Shared-SPI Lock Mechanism
+
+This section is the normative specification for the ESP shared-SPI lock
+mechanism that protects UI responsiveness when display refresh, SD-backed LVGL
+FS, map tile IO, track persistence, radio, NFC, USB, and other peripherals share
+one physical SPI controller.
+
+The mechanism is intentionally specified in `docs/specification`, not in
+historical best-practice notes. Any future change to the lock behavior must
+update this section and the code bindings below in the same commit.
+
+### Lock Mechanism Distinctions
+
+| Concept | Meaning | Current code binding |
+| --- | --- | --- |
+| Physical shared bus | The real contested resource: board-level SPI controller and chip-select domain | `platform/esp/common/include/platform/esp/common/shared_spi_lock.h` |
+| Frame-critical display consumer | Display flush, wake rendering, and input-visible feedback | `platform/esp/boards/src/display/DisplayInterface.cpp` |
+| Worker-domain storage consumer | Map tile SD reads, track persistence, node/team/config stores, pack IO | Platform/runtime adapters that use `SharedSpiLockGuard` or `IBusArbiter` |
+| LVGL FS adapter | Technical adapter allowing LVGL to read SD/flash paths; not a scheduler and not a business owner | `platform/esp/arduino_common/src/LV_Helper_v9.cpp` |
+| Runtime bus arbiter | Policy boundary that turns commands into bounded bus acquire/release attempts | `modules/core_sys/include/sys/runtime_async.h`, ESP map binding in `platform/esp/arduino_common/src/ui/widgets/map/map_tiles.cpp` |
+| Display pressure signal | A recent display lock timeout that tells worker-domain storage to cool down | `note_display_spi_timeout()`, `display_spi_recently_timed_out()` |
+| Legacy display-lock alias | Old naming that implied the lock belonged to display instead of the bus | Burned down; `display_spi_lock()` / `display_spi_unlock()` must not exist in active headers |
+
+The most important distinction is this:
+
+```text
+The lock belongs to the physical shared SPI bus.
+Display is the frame-critical client of that bus, not the owner of the concept.
+```
+
+Therefore code outside the display driver must not name the mechanism as a
+display-private lock. New code must use runtime bus ports, `shared_spi_lock*`,
+or `SharedSpiLockGuard` depending on layer.
+
+### Why LVGL FS Does Not Solve This
+
+LVGL can register file-system callbacks. That gives LVGL a path to call open,
+read, write, seek, tell, and dir operations. It does not give LVGL knowledge of:
+
+- which board peripherals share one physical SPI controller
+- which consumer is frame-critical
+- whether a display flush just timed out
+- how many storage commands may run in one burst
+- whether a tile load is stale after a map drag
+- whether a track flush is durable or background
+
+For that reason `init_sd_fs_driver()` is only a platform adapter registration.
+It does not make SD and display contention safe by itself. The callbacks in
+`LV_Helper_v9.cpp` must remain short, bounded, and allowed to fail with busy or
+failed-open semantics. Product/UI code must not use LVGL FS as a synchronous
+storage probe from renderer hot paths.
+
+### Static Class Binding
+
+```mermaid
+classDiagram
+  class SharedSpiLockPort {
+    <<platform port>>
+    +shared_spi_lock(wait_ticks)
+    +shared_spi_lock_with_owner(wait_ticks, owner)
+    +shared_spi_unlock()
+    +note_display_spi_timeout(now_ms)
+    +display_spi_recently_timed_out(now_ms, window_ms)
+  }
+
+  class SharedSpiLockGuard {
+    <<RAII adapter>>
+    +SharedSpiLockGuard(wait_ticks, owner)
+    +locked()
+  }
+
+  class LilyGoDispArduinoSPI {
+    <<frame-critical adapter>>
+    +pushColors(area)
+    +writeCommand(cmd)
+    +lock(wait_ticks, owner)
+    +unlock()
+    +lockOwnerLabel()
+    +lastLockHeldMs()
+  }
+
+  class LvglSdFsAdapter {
+    <<platform adapter>>
+    +sd_fs_open(path, mode)
+    +sd_fs_read(file, buffer, bytes)
+    +sd_fs_write(file, buffer, bytes)
+    +sd_fs_dir_open(path)
+  }
+
+  class RuntimeBusAbstractions {
+    <<runtime contract>>
+    +BusAcquireRequest
+    +BusAccessToken
+    +BusAcquireResult
+    +IBusArbiter
+    +StorageHealthState
+  }
+
+  class EspMapTileBusArbiter {
+    <<ESP adapter>>
+    +acquire(request)
+    +release(token)
+    +health()
+  }
+
+  class MapTileWorker {
+    <<active object>>
+    +execute(command, now_ms)
+  }
+
+  class SdMapTileFileSystem {
+    <<storage adapter>>
+    +exists(path)
+    +isDirectory(path)
+    +readFile(path, buffer, capacity)
+  }
+
+  SharedSpiLockGuard --> SharedSpiLockPort
+  LilyGoDispArduinoSPI --> SharedSpiLockPort : publishes pressure
+  LvglSdFsAdapter --> SharedSpiLockGuard
+  RuntimeBusAbstractions <|.. EspMapTileBusArbiter
+  EspMapTileBusArbiter --> SharedSpiLockPort
+  MapTileWorker --> RuntimeBusAbstractions
+  MapTileWorker --> SdMapTileFileSystem
+  SdMapTileFileSystem --> SharedSpiLockPort : chunk yield
+```
+
+Static ownership rules:
+
+- `LilyGoDispArduinoSPI` is allowed to own the concrete mutex because it is the
+  platform object that initializes the shared display SPI implementation on the
+  Arduino ESP boards.
+- The public platform name remains `shared_spi_*`; callers must not use or
+  reintroduce `display_spi_*` aliases.
+- Runtime workers should depend on `IBusArbiter`, not directly on the physical
+  lock. A temporary ESP adapter may call `shared_spi_*` while it implements the
+  arbiter port.
+- LVGL FS callbacks are adapters. They must not contain product policy, retry
+  strategy, tile priority, or page state.
+
+### Component Deployment
+
+```mermaid
+flowchart TB
+  subgraph UiDomain["UI realtime domain"]
+    LvglTick["lv_timer_handler / input drain"]
+    DisplayFlush["Display flush callback"]
+    WakeRender["Wake/sleep visual transition"]
+  end
+
+  subgraph RuntimeDomain["Runtime command domain"]
+    TileRuntime["MapTileAsyncRuntime"]
+    TrackRuntime["Track runtime"]
+    PersistRuntime["Persistence runtime"]
+    CommandQueue["Command queues"]
+  end
+
+  subgraph WorkerDomain["Worker / adapter domain"]
+    TileWorker["MapTileWorker"]
+    TrackWorker["TrackStorageWorker"]
+    PersistWorker["PersistenceWorker"]
+    LvglFs["LVGL SD FS adapter"]
+  end
+
+  subgraph BusDomain["Physical shared-SPI domain"]
+    DisplayLock["LilyGoDispArduinoSPI mutex"]
+    SharedPort["shared_spi_* port"]
+    Pressure["display pressure timestamp"]
+  end
+
+  subgraph StorageDomain["Storage media"]
+    SdRuntime["SdRuntimeFile / SdRuntimeDir"]
+    SdCard["SD card"]
+  end
+
+  LvglTick --> DisplayFlush
+  DisplayFlush --> DisplayLock
+  DisplayLock --> Pressure
+  TileRuntime --> CommandQueue
+  TrackRuntime --> CommandQueue
+  PersistRuntime --> CommandQueue
+  CommandQueue --> TileWorker
+  CommandQueue --> TrackWorker
+  CommandQueue --> PersistWorker
+  TileWorker --> SharedPort
+  TrackWorker --> SharedPort
+  PersistWorker --> SharedPort
+  LvglFs --> SharedPort
+  SharedPort --> DisplayLock
+  SharedPort --> SdRuntime
+  SdRuntime --> SdCard
+  Pressure --> TileWorker
+```
+
+The UI realtime domain may be denied a single frame, but it must never wait
+indefinitely. Worker-domain storage may be delayed, cancelled, retried, or
+marked busy when display pressure exists.
+
+### Display Flush Sequence
+
+```mermaid
+sequenceDiagram
+  participant UI as UI owner / LVGL
+  participant Display as LilyGoDispArduinoSPI
+  participant Lock as Shared SPI mutex
+  participant Pressure as Display pressure signal
+
+  UI->>Display: pushColorsArea()
+  Display->>Lock: lock(wait=frame budget, owner="display")
+  alt acquired
+    Lock-->>Display: token
+    Display->>Display: SPI transaction
+    Display->>Lock: unlock()
+    Display-->>UI: flush complete
+  else timed out
+    Display->>Pressure: note_display_spi_timeout(now_ms)
+    Display-->>UI: return without blocking
+  end
+```
+
+Display timeout is not a normal success path. It is a pressure signal that
+storage workers must observe. Returning from the flush is still required because
+blocking inside display refresh prevents input, wake rendering, and page
+navigation from recovering.
+
+### LVGL SD FS Callback Sequence
+
+```mermaid
+sequenceDiagram
+  participant LVGL as LVGL file consumer
+  participant Fs as LVGL SD FS adapter
+  participant Guard as SharedSpiLockGuard
+  participant SD as SdRuntimeFile
+
+  LVGL->>Fs: sd_fs_open/read/write/dir()
+  Fs->>Guard: acquire(short bounded wait)
+  alt acquired
+    Fs->>SD: perform one storage operation
+    Fs->>Guard: release on scope exit
+    Fs-->>LVGL: ok/result
+  else busy
+    Fs-->>LVGL: LV_FS_RES_BUSY or failed open
+  end
+```
+
+The adapter must not retry in a loop. A busy result is valid and lets the caller
+or runtime decide whether to defer, cancel, or show pending state. This keeps
+legacy LVGL FS callers from monopolising the UI owner task.
+
+### Map Tile Worker Sequence With Display Pressure
+
+```mermaid
+sequenceDiagram
+  participant UI as Map UI owner
+  participant Runtime as MapTileAsyncRuntime
+  participant Worker as MapTileWorker
+  participant Arbiter as EspMapTileBusArbiter
+  participant Bus as shared_spi_* port
+  participant TileStore as SdMapTileFileSystem
+  participant Events as MapTileEventSink
+
+  UI->>Runtime: requestVisibleTiles(plan, generation)
+  Runtime->>Worker: enqueue LoadTileCommand
+  UI-->>UI: return to input/render loop
+  Worker->>Arbiter: acquire(command policy)
+  Arbiter->>Bus: display_spi_recently_timed_out()
+  alt recent display pressure or cooldown
+    Arbiter-->>Worker: Busy
+    Worker->>Events: ResourceBusy(generation, tile)
+  else acquired
+    Arbiter->>Bus: shared_spi_lock_with_owner("map_tile_sd")
+    Bus-->>Arbiter: token
+    Worker->>TileStore: readFile()
+    loop between tile chunks
+      TileStore->>Bus: shared_spi_unlock()
+      TileStore->>Bus: bounded reacquire
+    end
+    Worker->>Arbiter: release(token)
+    Arbiter->>Bus: shared_spi_unlock()
+    Arbiter->>Arbiter: cooldown based on hold/display pressure
+    Worker->>Events: Ready or Failed
+  end
+  Events-->>UI: drain at most one tile event per UI pass
+```
+
+This is the current ESP Arduino map binding. It is conforming only because:
+
+- the UI owner submits a command and returns
+- the worker owns the SD read
+- `EspMapTileBusArbiter` checks display pressure before acquiring
+- tile reads release the bus between chunks
+- completed events are drained with a UI budget
+
+Moving any of these operations back into a page callback, LVGL timer, input
+handler, or renderer mutation path is a regression.
+
+### Lock Health State
+
+```mermaid
+stateDiagram-v2
+  [*] --> Healthy
+  Healthy --> DisplayPressure: display lock timeout
+  DisplayPressure --> WorkerCooldown: worker observes pressure
+  WorkerCooldown --> Healthy: cooldown elapsed without new timeout
+  DisplayPressure --> Slow: repeated busy/timed out acquire
+  Slow --> Degraded: consecutive worker acquire failures >= threshold
+  Degraded --> Recovering: recovery/backoff window starts
+  Recovering --> Healthy: acquired and released within budget
+  Recovering --> Degraded: pressure continues
+```
+
+The state is intentionally driven by observable resource events, not by page
+state. A map page, contacts page, tracker page, chat page, or boot UI can all be
+affected by the same physical contention.
+
+### Code Binding Table
+
+| Role | File | Required behavior |
+| --- | --- | --- |
+| Runtime lock contract | `modules/core_sys/include/sys/runtime_async.h` | Owns `BusAccessPolicy`, `BusAcquireRequest`, `BusAccessToken`, `BusAcquireResult`, `IBusArbiter`, `StorageHealthState`. Shared business/runtime code depends on these abstractions. |
+| Shared SPI port | `platform/esp/common/include/platform/esp/common/shared_spi_lock.h` | Names the physical bus. Must not expose `display_spi_lock` aliases. |
+| Arduino display mutex implementation | `platform/esp/boards/src/display/DisplayInterface.cpp` | Uses bounded display waits; logs and records pressure; never waits forever in `pushColors*`. |
+| IDF no-contention implementation | `platform/esp/idf_common/src/shared_spi_lock.cpp` | Provides a no-op conforming implementation for ESP IDF targets that do not use the Arduino shared bus path. |
+| LVGL SD FS adapter | `platform/esp/arduino_common/src/LV_Helper_v9.cpp` | Uses short bounded acquisitions and returns busy/failed-open instead of retrying. |
+| Map runtime worker contract | `modules/ui_map_runtime/src/map_tiles/map_tile_async_runtime.cpp` | Executes tile commands through `IBusArbiter` and publishes ready/busy/failed events. |
+| ESP map bus arbiter | `platform/esp/arduino_common/src/ui/widgets/map/map_tiles.cpp` | Checks display pressure, applies cooldown, maps runtime policy to short waits, and releases bus after each tile command. |
+| ESP map tile SD adapter | `platform/esp/arduino_common/src/ui/widgets/map/map_tiles.cpp` | Reads tile payload in worker domain and yields the bus between chunks. |
+
+### Forbidden Bypasses
+
+The following are non-conforming in active UI-visible paths:
+
+- adding `display_spi_lock()` / `display_spi_unlock()` aliases back to public
+  headers
+- page/widget code calling `shared_spi_lock*`
+- page/widget code calling Arduino `SD.open`, `SdRuntimeFile`, or LVGL SD FS to
+  probe whether content exists
+- LVGL timer callbacks performing synchronous SD open/read/list operations
+- storage adapters spinning until the bus becomes available
+- worker loops draining many SD operations without cooldown after display
+  pressure
+- `lv_refr_now()` or forced flush used as feedback while storage owns the
+  display-shared bus
+
+Allowed exceptions must be explicit platform adapter code and must document
+their wait, hold, burst, and frame budgets.
+
+### Legacy Burn-Down Status
+
+| Legacy path | Status | Deletion/containment rule |
+| --- | --- | --- |
+| `display_spi_lock` / `display_spi_unlock` public aliases | Burned down | No active declaration or inline alias may remain. New code must use `shared_spi_*` or runtime bus ports. |
+| `display_spi_lock.cpp` source filename | Burned down | Platform implementations must be named after `shared_spi_lock`, not display-private terminology. |
+| ESP map UI source synchronous storage behavior | Burned down | UI map source is path/planning only; worker source performs SD reads. |
+| LVGL SD FS adapter reachable from legacy resource paths | Contained | Adapter remains but uses short bounded lock attempts and must not be used as a UI hot-path storage probe. |
+| ESP map worker direct physical lock calls | Contained adapter | Allowed only inside `EspMapTileBusArbiter` and tile SD adapter until all ESP storage paths use a common `IBusArbiter` implementation. |
+| Team UI store direct SD persistence | Remaining legacy | Must move behind team/storage runtime worker in a separate migration. |
+| Route/track file load from GPS page | Remaining legacy | Must move behind route/track runtime worker in a separate migration. |
+| Pack repository direct file operations | Remaining legacy | Must move behind pack repository commands/events. |
+
+### Simulation Requirements
+
+Every future change to this mechanism must have a hardware-free simulation or
+host test that covers:
+
+- display acquire timeout while storage owns the bus
+- worker receiving `Busy` because display pressure was recent
+- worker cooldown ending and a later command succeeding
+- stale map generation completion being ignored
+- LVGL SD FS callback returning busy rather than blocking
+- deletion guard proving no `display_spi_lock` alias or UI-page direct SD probe
+  was reintroduced
+
+The simulation may use fake `IBusArbiter`, fake clock, fake event sink, fake UI
+drain, and fake storage backend. It must not require real SD, LVGL, display SPI,
+or radio hardware.
 
 ## UML Map Tile Class Model
 
