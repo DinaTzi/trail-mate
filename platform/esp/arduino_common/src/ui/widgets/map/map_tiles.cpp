@@ -16,7 +16,6 @@
 #include "ui/page/page_profile.h"
 #include "ui/runtime/memory_profile.h"
 #include "ui/screens/gps/gps_constants.h"
-#include "ui/support/lvgl_fs_utils.h"
 #include "ui_map_runtime/map_tiles/filesystem_map_tile_source.h"
 #include "ui_map_runtime/map_tiles/map_tile_async_runtime.h"
 #include "ui_map_runtime/map_tiles/map_tile_decoder_cache.h"
@@ -113,27 +112,19 @@ static uint32_t g_map_tile_runtime_generation = 1;
 
 namespace
 {
-class LvglMapTileFileSystem final : public ui::map_tiles::IMapTileFileSystem
+class PathOnlyMapTileFileSystem final : public ui::map_tiles::IMapTileFileSystem
 {
   public:
     bool exists(const char* path) const override
     {
-#if defined(ARDUINO) || defined(ARDUINO_ARCH_ESP32)
         (void)path;
         return false;
-#else
-        return ui::fs::file_exists(path);
-#endif
     }
 
     bool isDirectory(const char* path) const override
     {
-#if defined(ARDUINO) || defined(ARDUINO_ARCH_ESP32)
         (void)path;
         return false;
-#else
-        return ui::fs::dir_exists(path);
-#endif
     }
 
     bool readFile(const char* path,
@@ -142,52 +133,10 @@ class LvglMapTileFileSystem final : public ui::map_tiles::IMapTileFileSystem
                   std::size_t& out_size) const override
     {
         out_size = 0;
-#if defined(ARDUINO) || defined(ARDUINO_ARCH_ESP32)
         (void)path;
         (void)buffer;
         (void)capacity;
         return false;
-#else
-        if (!path || !buffer || capacity == 0)
-        {
-            return false;
-        }
-
-        const std::string normalized = ui::fs::normalize_path(path);
-        if (normalized.empty())
-        {
-            return false;
-        }
-
-        lv_fs_file_t file;
-        if (lv_fs_open(&file, normalized.c_str(), LV_FS_MODE_RD) != LV_FS_RES_OK)
-        {
-            return false;
-        }
-
-        uint32_t file_size = 0;
-        if (lv_fs_seek(&file, 0, LV_FS_SEEK_END) != LV_FS_RES_OK ||
-            lv_fs_tell(&file, &file_size) != LV_FS_RES_OK ||
-            lv_fs_seek(&file, 0, LV_FS_SEEK_SET) != LV_FS_RES_OK ||
-            file_size == 0 ||
-            file_size > capacity)
-        {
-            lv_fs_close(&file);
-            return false;
-        }
-
-        uint32_t bytes_read = 0;
-        const lv_fs_res_t res = lv_fs_read(&file, buffer, file_size, &bytes_read);
-        lv_fs_close(&file);
-        if (res != LV_FS_RES_OK || bytes_read != file_size)
-        {
-            out_size = bytes_read;
-            return false;
-        }
-
-        out_size = bytes_read;
-        return true;
-#endif
     }
 };
 
@@ -465,6 +414,30 @@ uint8_t* allocate_tile_payload(std::size_t size)
                                 MALLOC_CAP_8BIT));
 }
 
+void release_decoded_image_handle(void* handle)
+{
+    auto* img_dsc = static_cast<lv_image_dsc_t*>(handle);
+    if (img_dsc == nullptr)
+    {
+        return;
+    }
+    lv_image_cache_drop(img_dsc);
+    if (img_dsc->data != nullptr)
+    {
+        lv_free((void*)img_dsc->data);
+    }
+    lv_free(img_dsc);
+}
+
+void release_tile_decoded_image(ui::map_tiles::MapTileDecodedImage& decoded)
+{
+    if (decoded.native_handle != nullptr && decoded.release != nullptr)
+    {
+        decoded.release(decoded.native_handle);
+    }
+    decoded = {};
+}
+
 void release_tile_payload(ui::map_tiles::MapTileAsyncEvent& event)
 {
     if (event.payload.data != nullptr)
@@ -472,7 +445,107 @@ void release_tile_payload(ui::map_tiles::MapTileAsyncEvent& event)
         heap_caps_free(const_cast<uint8_t*>(event.payload.data));
     }
     event.payload = {};
+    release_tile_decoded_image(event.decoded);
     event.payload_size = 0;
+}
+
+lv_image_dsc_t* decode_payload_to_image_desc(const ui::map_tiles::MapTileRef& ref,
+                                             const ui::map_tiles::MapTilePayload& payload)
+{
+    if (payload.data == nullptr || payload.size == 0)
+    {
+        return nullptr;
+    }
+
+    const ui::map_tiles::MapTileFormat payload_format =
+        payload.format == ui::map_tiles::MapTileFormat::Unknown
+            ? ui::map_tiles::mapTileFormatForLayer(ref.layer)
+            : payload.format;
+    const lv_color_format_t source_format = lvgl_source_format_for_tile(payload_format);
+    if (source_format == LV_COLOR_FORMAT_UNKNOWN)
+    {
+        log_map_tile_decode_failure("unsupported_format",
+                                    ref,
+                                    payload_format,
+                                    payload.size,
+                                    static_cast<long>(payload_format));
+        return nullptr;
+    }
+
+    lv_image_dsc_t compressed{};
+    compressed.header.magic = LV_IMAGE_HEADER_MAGIC;
+    compressed.header.cf = source_format;
+    compressed.header.flags = 0;
+    compressed.data_size = static_cast<uint32_t>(payload.size);
+    compressed.data = payload.data;
+
+    lv_image_decoder_dsc_t decoder_dsc;
+    std::memset(&decoder_dsc, 0, sizeof(decoder_dsc));
+
+    const lv_result_t decode_res = lv_image_decoder_open(&decoder_dsc, &compressed, NULL);
+    if (decode_res != LV_RESULT_OK || decoder_dsc.decoded == NULL)
+    {
+        log_map_tile_decode_failure("open",
+                                    ref,
+                                    payload_format,
+                                    payload.size,
+                                    static_cast<long>(decode_res));
+        lv_image_decoder_close(&decoder_dsc);
+        return nullptr;
+    }
+
+    const lv_draw_buf_t* decoded_buf = decoder_dsc.decoded;
+    const uint32_t data_size = decoded_buf->data_size;
+    if (decoded_buf->data == nullptr || data_size == 0 || decoded_buf->header.w == 0 ||
+        decoded_buf->header.h == 0)
+    {
+        log_map_tile_decode_failure("decoded_buffer",
+                                    ref,
+                                    payload_format,
+                                    payload.size,
+                                    static_cast<long>(data_size));
+        lv_image_decoder_close(&decoder_dsc);
+        return nullptr;
+    }
+
+    lv_image_dsc_t* img_dsc = static_cast<lv_image_dsc_t*>(lv_malloc(sizeof(lv_image_dsc_t)));
+    if (img_dsc == NULL)
+    {
+        log_map_tile_decode_failure("alloc_desc",
+                                    ref,
+                                    payload_format,
+                                    payload.size,
+                                    -12);
+        lv_image_decoder_close(&decoder_dsc);
+        return nullptr;
+    }
+    std::memset(img_dsc, 0, sizeof(lv_image_dsc_t));
+
+    uint8_t* img_data = static_cast<uint8_t*>(lv_malloc(data_size));
+    if (img_data == NULL)
+    {
+        log_map_tile_decode_failure("alloc_pixels",
+                                    ref,
+                                    payload_format,
+                                    data_size,
+                                    -12);
+        lv_free(img_dsc);
+        lv_image_decoder_close(&decoder_dsc);
+        return nullptr;
+    }
+
+    std::memcpy(img_data, decoded_buf->data, data_size);
+    img_dsc->header.magic = LV_IMAGE_HEADER_MAGIC;
+    img_dsc->header.w = decoded_buf->header.w;
+    img_dsc->header.h = decoded_buf->header.h;
+    img_dsc->header.cf = decoded_buf->header.cf;
+    img_dsc->header.flags = 0;
+    img_dsc->header.stride = decoded_buf->header.stride;
+    img_dsc->data_size = data_size;
+    img_dsc->data = img_data;
+
+    lv_image_decoder_close(&decoder_dsc);
+    return img_dsc;
 }
 
 bool same_tile_ref(const ui::map_tiles::MapTileRef& lhs,
@@ -739,26 +812,33 @@ class MapTileEventQueue final : public ui::map_tiles::IMapTileEventSink
     bool publish(const ui::map_tiles::MapTileAsyncEvent& event) override
     {
         ui::map_tiles::MapTileAsyncEvent owned = event;
-        if (owned.kind == ui::map_tiles::MapTileAsyncEventKind::Ready &&
-            event.payload.data != nullptr &&
-            event.payload.size > 0)
+        if (owned.kind == ui::map_tiles::MapTileAsyncEventKind::Ready)
         {
-            uint8_t* payload = allocate_tile_payload(event.payload.size);
-            if (payload == nullptr)
+            if (event.payload.data == nullptr || event.payload.size == 0)
             {
-                log_map_tile_event_failure("payload_alloc", owned, -12);
+                log_map_tile_event_failure("payload_missing", owned, -22);
                 owned.kind = ui::map_tiles::MapTileAsyncEventKind::Failed;
-                owned.error = -12;
+                owned.error = -22;
+                owned.payload = {};
+                owned.payload_size = 0;
+            }
+            else if (lv_image_dsc_t* decoded = decode_payload_to_image_desc(event.tile, event.payload))
+            {
+                owned.decoded.native_handle = decoded;
+                owned.decoded.release = release_decoded_image_handle;
+                owned.decoded.width = static_cast<uint16_t>(decoded->header.w);
+                owned.decoded.height = static_cast<uint16_t>(decoded->header.h);
+                owned.decoded.data_size = decoded->data_size;
                 owned.payload = {};
                 owned.payload_size = 0;
             }
             else
             {
-                std::memcpy(payload, event.payload.data, event.payload.size);
-                owned.payload.data = payload;
-                owned.payload.size = event.payload.size;
-                owned.payload.format = event.payload.format;
-                owned.payload.ref = event.payload.ref;
+                log_map_tile_event_failure("decode_worker", owned, -12);
+                owned.kind = ui::map_tiles::MapTileAsyncEventKind::Failed;
+                owned.error = -12;
+                owned.payload = {};
+                owned.payload_size = 0;
             }
         }
 
@@ -1194,9 +1274,9 @@ class LvglDecodedTileCache final : public ui::map_tiles::IMapTileDecoderCache
     bool initialized_ = false;
 };
 
-LvglMapTileFileSystem& tile_file_system()
+PathOnlyMapTileFileSystem& tile_file_system()
 {
-    static LvglMapTileFileSystem fs;
+    static PathOnlyMapTileFileSystem fs;
     return fs;
 }
 
@@ -1218,7 +1298,7 @@ ui::map_tiles::FilesystemMapTileSource& worker_tile_source()
     static SdMapTileFileSystem fs;
     static ui::map_tiles::FilesystemMapTileSource source(fs, "/");
 #else
-    static LvglMapTileFileSystem fs;
+    static PathOnlyMapTileFileSystem fs;
     static ui::map_tiles::FilesystemMapTileSource source(fs, "A:");
 #endif
     return source;
@@ -2294,19 +2374,21 @@ static void mark_missing_base_tile(TileContext& ctx, MapTile& tile)
     }
 }
 
-static DecodedTileCache* decode_payload_to_cache(TileContext& ctx,
-                                                 const ui::map_tiles::MapTileRef& ref,
-                                                 const ui::map_tiles::MapTilePayload& payload)
+static DecodedTileCache* adopt_decoded_image_to_cache(
+    TileContext& ctx,
+    const ui::map_tiles::MapTileRef& ref,
+    ui::map_tiles::MapTileDecodedImage& decoded)
 {
-    if (payload.data == nullptr || payload.size == 0)
-    {
-        return nullptr;
-    }
-
     DecodedTileCache* cached = find_cached_tile_ref(ref);
     if (cached != nullptr && cached->img_dsc != NULL)
     {
         return cached;
+    }
+
+    auto* img_dsc = static_cast<lv_image_dsc_t*>(decoded.native_handle);
+    if (img_dsc == nullptr)
+    {
+        return nullptr;
     }
 
     refresh_live_tile_decode_cache_usage(ctx);
@@ -2321,94 +2403,7 @@ static DecodedTileCache* decode_payload_to_cache(TileContext& ctx,
         return nullptr;
     }
 
-    const ui::map_tiles::MapTileFormat payload_format =
-        payload.format == ui::map_tiles::MapTileFormat::Unknown
-            ? ui::map_tiles::mapTileFormatForLayer(ref.layer)
-            : payload.format;
-    const lv_color_format_t source_format = lvgl_source_format_for_tile(payload_format);
-    if (source_format == LV_COLOR_FORMAT_UNKNOWN)
-    {
-        log_map_tile_decode_failure("unsupported_format",
-                                    ref,
-                                    payload_format,
-                                    payload.size,
-                                    static_cast<long>(payload_format));
-        return nullptr;
-    }
-
-    lv_image_dsc_t compressed{};
-    compressed.header.magic = LV_IMAGE_HEADER_MAGIC;
-    compressed.header.cf = source_format;
-    compressed.header.flags = 0;
-    compressed.data_size = static_cast<uint32_t>(payload.size);
-    compressed.data = payload.data;
-
-    lv_image_decoder_dsc_t decoder_dsc;
-    std::memset(&decoder_dsc, 0, sizeof(decoder_dsc));
-
-    const lv_result_t decode_res = lv_image_decoder_open(&decoder_dsc, &compressed, NULL);
-    if (decode_res != LV_RESULT_OK || decoder_dsc.decoded == NULL)
-    {
-        log_map_tile_decode_failure("open",
-                                    ref,
-                                    payload_format,
-                                    payload.size,
-                                    static_cast<long>(decode_res));
-        lv_image_decoder_close(&decoder_dsc);
-        return nullptr;
-    }
-
-    const lv_draw_buf_t* decoded_buf = decoder_dsc.decoded;
-    const uint32_t data_size = decoded_buf->data_size;
-    if (decoded_buf->data == nullptr || data_size == 0 || decoded_buf->header.w == 0 ||
-        decoded_buf->header.h == 0)
-    {
-        log_map_tile_decode_failure("decoded_buffer",
-                                    ref,
-                                    payload_format,
-                                    payload.size,
-                                    static_cast<long>(data_size));
-        lv_image_decoder_close(&decoder_dsc);
-        return nullptr;
-    }
-
-    cache_slot->img_dsc = static_cast<lv_image_dsc_t*>(lv_malloc(sizeof(lv_image_dsc_t)));
-    if (cache_slot->img_dsc == NULL)
-    {
-        log_map_tile_decode_failure("alloc_desc",
-                                    ref,
-                                    payload_format,
-                                    payload.size,
-                                    -12);
-        lv_image_decoder_close(&decoder_dsc);
-        return nullptr;
-    }
-    std::memset(cache_slot->img_dsc, 0, sizeof(lv_image_dsc_t));
-
-    uint8_t* img_data = static_cast<uint8_t*>(lv_malloc(data_size));
-    if (img_data == NULL)
-    {
-        log_map_tile_decode_failure("alloc_pixels",
-                                    ref,
-                                    payload_format,
-                                    data_size,
-                                    -12);
-        lv_free(cache_slot->img_dsc);
-        cache_slot->img_dsc = NULL;
-        lv_image_decoder_close(&decoder_dsc);
-        return nullptr;
-    }
-
-    std::memcpy(img_data, decoded_buf->data, data_size);
-    cache_slot->img_dsc->header.magic = LV_IMAGE_HEADER_MAGIC;
-    cache_slot->img_dsc->header.w = decoded_buf->header.w;
-    cache_slot->img_dsc->header.h = decoded_buf->header.h;
-    cache_slot->img_dsc->header.cf = decoded_buf->header.cf;
-    cache_slot->img_dsc->header.flags = 0;
-    cache_slot->img_dsc->header.stride = decoded_buf->header.stride;
-    cache_slot->img_dsc->data_size = data_size;
-    cache_slot->img_dsc->data = img_data;
-
+    cache_slot->img_dsc = img_dsc;
     cache_slot->x = static_cast<int32_t>(ref.x);
     cache_slot->y = static_cast<int32_t>(ref.y);
     cache_slot->z = static_cast<int32_t>(ref.z);
@@ -2417,7 +2412,7 @@ static DecodedTileCache* decode_payload_to_cache(TileContext& ctx,
     cache_slot->last_used_ms = sys::millis_now();
     cache_slot->lvgl_ref_count = 0;
 
-    lv_image_decoder_close(&decoder_dsc);
+    decoded = {};
     return cache_slot;
 }
 
@@ -2667,11 +2662,11 @@ static bool apply_map_tile_event(TileContext& ctx, ui::map_tiles::MapTileAsyncEv
         return true;
     }
 
-    DecodedTileCache* cache = decode_payload_to_cache(ctx, event.tile, event.payload);
+    DecodedTileCache* cache = adopt_decoded_image_to_cache(ctx, event.tile, event.decoded);
     if (cache == nullptr)
     {
         retry_not_before = now_ms + kMapTileLayerCacheBackoffMs;
-        log_map_tile_event_failure("decode", event, event.error);
+        log_map_tile_event_failure("decoded_image", event, event.error);
         release_tile_payload(event);
         return false;
     }

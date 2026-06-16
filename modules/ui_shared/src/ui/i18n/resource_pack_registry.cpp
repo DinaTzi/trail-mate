@@ -2340,16 +2340,40 @@ bool activate_locale_internal(LocalePackRecord* locale, FontPackRecord* preserve
                             ? find_pack_by_id(s_ime_packs, locale->ime_pack_id.c_str())
                             : nullptr;
 
-    if (s_active_ui_font_pack != nullptr && !ensure_font_pack_loaded(s_active_ui_font_pack))
+    if (s_active_ui_font_pack != nullptr && !is_font_runtime_loaded(*s_active_ui_font_pack))
     {
-        if (locale != nullptr && locale->id != kDefaultLocaleId)
+#if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
+        if (!s_active_ui_font_pack->builtin)
         {
-            LocalePackRecord* fallback = resolve_active_locale(kDefaultLocaleId);
-            if (fallback && fallback != locale)
+            std::printf("%s font load deferred id=%s role=active_ui reason=ui_activation active_locale=%s source=%s\n",
+                        kLogTag,
+                        s_active_ui_font_pack->id.c_str(),
+                        s_active_locale ? s_active_locale->id.c_str() : "<none>",
+                        s_active_ui_font_pack->source_path.empty()
+                            ? "<none>"
+                            : s_active_ui_font_pack->source_path.c_str());
+            if (FontPackRecord* fallback_ui = find_pack_by_id(s_font_packs, kBuiltinLatinFontPackId))
             {
-                return activate_locale_internal(fallback, preserved_content_pack);
+                s_active_ui_font_pack = fallback_ui;
             }
         }
+        else if (!ensure_font_pack_loaded(s_active_ui_font_pack))
+        {
+            s_active_ui_font_pack = find_pack_by_id(s_font_packs, kBuiltinLatinFontPackId);
+        }
+#else
+        if (!ensure_font_pack_loaded(s_active_ui_font_pack))
+        {
+            if (locale != nullptr && locale->id != kDefaultLocaleId)
+            {
+                LocalePackRecord* fallback = resolve_active_locale(kDefaultLocaleId);
+                if (fallback && fallback != locale)
+                {
+                    return activate_locale_internal(fallback, preserved_content_pack);
+                }
+            }
+        }
+#endif
     }
 
     if (can_preserve_content_pack(preserved_content_pack, s_active_ui_font_pack, s_active_content_font_pack))
@@ -2582,10 +2606,22 @@ const lv_font_t* locale_preview_font(const char* locale_id, const lv_font_t* asc
     }
 
     FontPackRecord* ui_pack = find_pack_by_id(s_font_packs, locale->ui_font_pack_id.c_str());
-    if (ui_pack == nullptr || !ensure_font_pack_loaded(ui_pack))
+    if (ui_pack == nullptr)
     {
         return base_font;
     }
+
+#if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
+    if (!is_font_runtime_loaded(*ui_pack))
+    {
+        return base_font;
+    }
+#else
+    if (!ensure_font_pack_loaded(ui_pack))
+    {
+        return base_font;
+    }
+#endif
 
     return ::ui::fonts::composed_font_with_fallback(base_font,
                                                     resolved_font(ui_pack),

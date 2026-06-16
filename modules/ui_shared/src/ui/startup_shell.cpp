@@ -54,8 +54,10 @@ bool resolve_display_time(struct tm* out_tm)
 
 void present_boot_overlay_now()
 {
-    lv_timer_handler();
-    lv_refr_now(nullptr);
+    if (lv_obj_t* top = lv_layer_top())
+    {
+        lv_obj_invalidate(top);
+    }
 }
 
 } // namespace
