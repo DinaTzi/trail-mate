@@ -312,8 +312,44 @@ uint32_t TLoRaPagerBoard::begin(uint32_t disable_hw_init)
             fullChargeCapacity = static_cast<uint16_t>(f);
         }
 
-        gauge.setNewCapacity(designCapacity, fullChargeCapacity);
-        log_d("Battery capacity set to design=%umAh full=%umAh", designCapacity, fullChargeCapacity);
+        bool gauge_capacity_applied = false;
+        bool gauge_capacity_skipped = false;
+        {
+            I2CGuard i2c;
+            Serial.printf("[TLoRaPagerBoard::begin] gauge capacity check begin desired_design=%u desired_full=%u\n",
+                          designCapacity,
+                          fullChargeCapacity);
+            if (gauge.refresh())
+            {
+                const uint16_t current_design = gauge.getDesignCapacity();
+                const uint16_t current_full = gauge.getFullChargeCapacity();
+                if (current_design == designCapacity && current_full == fullChargeCapacity)
+                {
+                    gauge_capacity_skipped = true;
+                    Serial.printf("[TLoRaPagerBoard::begin] gauge capacity unchanged design=%u full=%u\n",
+                                  current_design,
+                                  current_full);
+                }
+                else
+                {
+                    Serial.printf("[TLoRaPagerBoard::begin] gauge capacity apply begin current_design=%u current_full=%u\n",
+                                  current_design,
+                                  current_full);
+                    gauge_capacity_applied = gauge.setNewCapacity(designCapacity, fullChargeCapacity);
+                    Serial.printf("[TLoRaPagerBoard::begin] gauge capacity apply end ok=%d\n",
+                                  gauge_capacity_applied ? 1 : 0);
+                }
+            }
+            else
+            {
+                Serial.printf("[TLoRaPagerBoard::begin] gauge capacity refresh failed, skip capacity write\n");
+            }
+        }
+        log_d("Battery capacity startup profile desired design=%umAh full=%umAh applied=%d skipped=%d",
+              designCapacity,
+              fullChargeCapacity,
+              gauge_capacity_applied ? 1 : 0,
+              gauge_capacity_skipped ? 1 : 0);
     }
 
     // Initialize PMU (BQ25896 power management)
