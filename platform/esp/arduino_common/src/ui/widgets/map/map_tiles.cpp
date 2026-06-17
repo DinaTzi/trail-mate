@@ -305,7 +305,7 @@ bool yield_map_tile_sd_bus_between_chunks(const char* path,
     {
         vTaskDelay(kMapTileSdChunkYieldTicks);
     }
-    return false;
+    return true;
 }
 
 const char* map_tile_format_name(ui::map_tiles::MapTileFormat format)

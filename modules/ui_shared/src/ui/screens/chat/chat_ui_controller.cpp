@@ -19,6 +19,7 @@
 #include "ui/screens/chat/chat_team_workflow.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/ime/ime_widget.h"
+#include "ui/widgets/text_candidate_picker.h"
 #include "ui/runtime/ui_feedback.h"
 #include "ui_chat_runtime/chat_delivery_action_port_adapter.h"
 #include "ui_lvgl_ux_packs/common/key_verification_modal_renderer.h"
@@ -745,9 +746,34 @@ void UiController::switchToCompose(chat::ConversationId conv)
         }
         compose_ime_->init(compose_content, compose_textarea);
         compose_->attachImeWidget(compose_ime_.get());
-        if (lv_group_t* g = lv_group_get_default())
+        lv_group_t* group = lv_group_get_default();
+        lv_obj_t* ime_toggle = compose_ime_->toggle_btn();
+        if (lv_obj_t* toolbar = ime_toggle ? lv_obj_get_parent(ime_toggle) : nullptr)
         {
-            lv_group_add_obj(g, compose_ime_->focus_obj());
+            lv_obj_t* sym_btn = ::ui::widgets::add_text_candidate_button(
+                toolbar,
+                compose_textarea,
+                ::ui::widgets::text_candidates::CandidateSet::Symbols,
+                group,
+                ime_toggle);
+            lv_obj_t* emoji_btn = ::ui::widgets::add_text_candidate_button(
+                toolbar,
+                compose_textarea,
+                ::ui::widgets::text_candidates::CandidateSet::Emoji,
+                group,
+                ime_toggle);
+            if (sym_btn)
+            {
+                lv_obj_move_to_index(sym_btn, 1);
+            }
+            if (emoji_btn)
+            {
+                lv_obj_move_to_index(emoji_btn, 2);
+            }
+        }
+        if (group)
+        {
+            lv_group_add_obj(group, compose_ime_->focus_obj());
         }
     }
 

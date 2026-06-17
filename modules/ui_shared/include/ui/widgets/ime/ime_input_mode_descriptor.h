@@ -19,7 +19,6 @@ enum class ScriptInputKind
     None,
     Pinyin,
     DirectKeyboard,
-    CandidatePicker,
 };
 
 struct KeyboardLayoutDescriptor

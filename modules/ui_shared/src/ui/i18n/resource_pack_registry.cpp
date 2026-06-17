@@ -16,6 +16,7 @@
 #include "ui/runtime/memory_profile.h"
 #include "ui/support/lvgl_fs_utils.h"
 #include "ui/widgets/busy_overlay.h"
+#include "ui/widgets/text_candidate_data.h"
 
 #if __has_include("lv_binfont_loader.h")
 #include "lv_binfont_loader.h"
@@ -52,10 +53,11 @@ constexpr const char* kLocalePackRoot = "/trailmate/packs/locales";
 constexpr const char* kImePackRoot = "/trailmate/packs/ime";
 constexpr const char* kDisabledImeSentinel = "__none__";
 constexpr std::size_t kFontLoadOverlayThresholdBytes = 64U * 1024U;
+constexpr uint8_t kFontLoadOverlayPresentFrameCount = 3;
+constexpr uint32_t kFontLoadOverlayPresentFrameDelayMs = 16;
 constexpr unsigned kMaxMissingFontDiagnostics = 20;
 constexpr uint32_t kFontLoadFailureBackoffMs = 5U * 60U * 1000U;
 constexpr std::size_t kSmallContentSupplementMaxBytes = 16U * 1024U;
-constexpr std::size_t kMaxImeCandidateCount = 100U;
 
 #if defined(LV_USE_FS_POSIX) && LV_USE_FS_POSIX
 constexpr bool kLvFsPosixEnabled = true;
@@ -110,7 +112,6 @@ struct ImePackRecord
     std::string display_name;
     std::string backend;
     std::string layout;
-    std::vector<std::string> candidates;
     bool builtin = false;
 };
 
@@ -163,6 +164,7 @@ std::vector<FontPackRecord*> s_content_supplement_packs;
 bool s_registry_ready = false;
 unsigned s_missing_content_font_diagnostics = 0;
 bool s_allow_sync_external_font_activation = false;
+bool s_force_font_load_overlay = false;
 
 class ScopedFontLoadOverlay
 {
@@ -179,6 +181,12 @@ class ScopedFontLoadOverlay
                                           pack.display_name.empty()
                                               ? pack.id.c_str()
                                               : pack.display_name.c_str());
+        std::printf("%s font load overlay show id=%s source=%s forced=%d bytes=%lu\n",
+                    kLogTag,
+                    pack.id.c_str(),
+                    pack.source_path.empty() ? "<none>" : pack.source_path.c_str(),
+                    s_force_font_load_overlay ? 1 : 0,
+                    static_cast<unsigned long>(pack.estimated_ram_bytes));
         present_now();
     }
 
@@ -187,6 +195,8 @@ class ScopedFontLoadOverlay
         if (active_)
         {
             ::ui::widgets::busy_overlay::hide();
+            std::printf("%s font load overlay hide\n", kLogTag);
+            present_now();
         }
     }
 
@@ -200,6 +210,10 @@ class ScopedFontLoadOverlay
         {
             return false;
         }
+        if (s_force_font_load_overlay)
+        {
+            return true;
+        }
         return pack.estimated_ram_bytes == 0U || pack.estimated_ram_bytes >= kFontLoadOverlayThresholdBytes;
     }
 
@@ -211,11 +225,69 @@ class ScopedFontLoadOverlay
             return;
         }
         s_presenting = true;
-        lv_timer_handler();
+        for (uint8_t frame = 0; frame < kFontLoadOverlayPresentFrameCount; ++frame)
+        {
+            if (lv_obj_t* top = lv_layer_top())
+            {
+                lv_obj_invalidate(top);
+            }
+            lv_timer_handler();
+            lv_refr_now(nullptr);
+            if (frame + 1U < kFontLoadOverlayPresentFrameCount)
+            {
+                sys::sleep_ms(kFontLoadOverlayPresentFrameDelayMs);
+            }
+        }
         s_presenting = false;
     }
 
     bool active_ = false;
+};
+
+class ScopedExternalFontActivation
+{
+  public:
+    explicit ScopedExternalFontActivation(bool force_overlay)
+        : previous_allow_(s_allow_sync_external_font_activation),
+          previous_force_overlay_(s_force_font_load_overlay)
+    {
+        s_allow_sync_external_font_activation = true;
+        s_force_font_load_overlay = force_overlay || previous_force_overlay_;
+    }
+
+    ~ScopedExternalFontActivation()
+    {
+        s_allow_sync_external_font_activation = previous_allow_;
+        s_force_font_load_overlay = previous_force_overlay_;
+    }
+
+    ScopedExternalFontActivation(const ScopedExternalFontActivation&) = delete;
+    ScopedExternalFontActivation& operator=(const ScopedExternalFontActivation&) = delete;
+
+  private:
+    bool previous_allow_ = false;
+    bool previous_force_overlay_ = false;
+};
+
+class ScopedForcedFontLoadOverlay
+{
+  public:
+    ScopedForcedFontLoadOverlay()
+        : previous_force_overlay_(s_force_font_load_overlay)
+    {
+        s_force_font_load_overlay = true;
+    }
+
+    ~ScopedForcedFontLoadOverlay()
+    {
+        s_force_font_load_overlay = previous_force_overlay_;
+    }
+
+    ScopedForcedFontLoadOverlay(const ScopedForcedFontLoadOverlay&) = delete;
+    ScopedForcedFontLoadOverlay& operator=(const ScopedForcedFontLoadOverlay&) = delete;
+
+  private:
+    bool previous_force_overlay_ = false;
 };
 
 const char* safe_text(const char* value)
@@ -593,56 +665,9 @@ bool ime_backend_supports_runtime_input(const ImePackRecord& pack)
     {
         return true;
     }
-    if (pack.backend == "builtin-candidate-picker")
-    {
-        return !pack.candidates.empty();
-    }
     return pack.id == "ru-cyrillic-keyboard" &&
            pack.backend == "builtin-keyboard-layout" &&
            pack.layout == "ru-cyrillic";
-}
-
-bool parse_ime_candidate_file(const std::string& path, std::vector<std::string>& out)
-{
-    out.clear();
-
-    std::string contents;
-    if (!::ui::fs::read_text_file(path.c_str(), contents))
-    {
-        return false;
-    }
-
-    std::size_t token_start = 0;
-    while (token_start <= contents.size())
-    {
-        const std::size_t token_end = contents.find_first_of(",\r\n", token_start);
-        std::string token = contents.substr(
-            token_start,
-            token_end == std::string::npos ? std::string::npos : (token_end - token_start));
-        const std::size_t comment = token.find('#');
-        if (comment != std::string::npos)
-        {
-            token.resize(comment);
-        }
-        trim_in_place(token);
-        if (!token.empty() &&
-            std::find(out.begin(), out.end(), token) == out.end())
-        {
-            out.push_back(std::move(token));
-            if (out.size() >= kMaxImeCandidateCount)
-            {
-                break;
-            }
-        }
-
-        if (token_end == std::string::npos)
-        {
-            break;
-        }
-        token_start = token_end + 1U;
-    }
-
-    return !out.empty();
 }
 
 bool ime_backend_can_be_enabled(const ImePackRecord& pack)
@@ -1009,6 +1034,30 @@ void collect_non_ascii_codepoints(const char* text, std::vector<uint32_t>& out)
 
     std::sort(out.begin(), out.end());
     out.erase(std::unique(out.begin(), out.end()), out.end());
+}
+
+void append_candidate_set_coverage(FontPackRecord& pack,
+                                   ::ui::widgets::text_candidates::CandidateSet set)
+{
+    const std::size_t total = ::ui::widgets::text_candidates::count(set);
+    for (std::size_t index = 0; index < total; ++index)
+    {
+        const char* text = ::ui::widgets::text_candidates::at(set, index);
+        if (text == nullptr || text[0] == '\0')
+        {
+            continue;
+        }
+        const unsigned char* ptr = reinterpret_cast<const unsigned char*>(text);
+        uint32_t codepoint = 0;
+        while (decode_next_utf8(ptr, codepoint))
+        {
+            CodepointRange range;
+            range.first = codepoint;
+            range.last = codepoint;
+            pack.coverage.push_back(range);
+        }
+    }
+    normalize_ranges(pack.coverage);
 }
 
 std::size_t coverage_hit_count(const FontPackRecord& pack, const std::vector<uint32_t>& missing)
@@ -1700,7 +1749,6 @@ void rebuild_ime_views()
         view.display_name = pack.display_name.c_str();
         view.backend = pack.backend.c_str();
         view.layout = pack.layout.empty() ? nullptr : pack.layout.c_str();
-        view.candidate_count = pack.candidates.size();
         view.builtin = pack.builtin;
         s_ime_views.push_back(view);
     }
@@ -1716,32 +1764,37 @@ void add_builtin_font_packs()
     latin_pack.builtin_font = nullptr;
     latin_pack.estimated_ram_bytes = 0;
     s_font_packs.push_back(std::move(latin_pack));
+
+#if UI_I18N_HAVE_BINFONT
+    static lv_font_t* s_builtin_emoji_font = nullptr;
+    if (s_builtin_emoji_font == nullptr)
+    {
+        s_builtin_emoji_font = lv_binfont_create_from_buffer(
+            ::ui::widgets::text_candidates::emoji_core_binfont_data(),
+            static_cast<uint32_t>(
+                ::ui::widgets::text_candidates::emoji_core_binfont_size()));
+    }
+    if (s_builtin_emoji_font != nullptr)
+    {
+        FontPackRecord emoji_pack{};
+        emoji_pack.id = "builtin-emoji-core";
+        emoji_pack.display_name = "Emoji Core";
+        emoji_pack.usage = FontPackUsage::ContentOnly;
+        emoji_pack.builtin = true;
+        emoji_pack.builtin_font = s_builtin_emoji_font;
+        emoji_pack.estimated_ram_bytes =
+            ::ui::widgets::text_candidates::emoji_core_binfont_size();
+        append_candidate_set_coverage(
+            emoji_pack,
+            ::ui::widgets::text_candidates::CandidateSet::Emoji);
+        s_font_packs.push_back(std::move(emoji_pack));
+    }
+#endif
 }
 
 void add_builtin_ime_packs()
 {
-    static constexpr const char* kSymbolCandidates[] = {
-        "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*",
-        "+", ",", "-", ".", "/", ":", ";", "<", "=", ">", "?",
-        "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~",
-    };
-
-    ImePackRecord symbol_pack{};
-    symbol_pack.id = "symbol-picker";
-    symbol_pack.display_name = "Symbols";
-    symbol_pack.backend = "builtin-candidate-picker";
-    symbol_pack.builtin = true;
-    symbol_pack.candidates.reserve(std::min<std::size_t>(
-        kMaxImeCandidateCount,
-        sizeof(kSymbolCandidates) / sizeof(kSymbolCandidates[0])));
-    for (const char* candidate : kSymbolCandidates)
-    {
-        if (candidate != nullptr && symbol_pack.candidates.size() < kMaxImeCandidateCount)
-        {
-            symbol_pack.candidates.emplace_back(candidate);
-        }
-    }
-    s_ime_packs.push_back(std::move(symbol_pack));
+    // Built-in Symbol/Emoji insertion is owned by TextCandidatePicker, not IME.
 }
 
 void add_builtin_locale_packs()
@@ -1927,24 +1980,11 @@ bool catalog_external_ime_pack(const std::string& pack_dir)
     {
         pack.layout = layout;
     }
-    if (const char* candidates = manifest_value(manifest, "candidates"))
-    {
-        const std::string candidates_path = resolve_pack_file_path(pack_dir, candidates);
-        if (!parse_ime_candidate_file(candidates_path, pack.candidates))
-        {
-            std::printf("%s ime pack candidates unavailable id=%s path=%s\n",
-                        kLogTag,
-                        pack.id.c_str(),
-                        candidates_path.empty() ? "<none>" : candidates_path.c_str());
-        }
-    }
-
-    std::printf("%s ime pack catalog id=%s backend=%s layout=%s candidates=%lu\n",
+    std::printf("%s ime pack catalog id=%s backend=%s layout=%s\n",
                 kLogTag,
                 pack.id.c_str(),
                 pack.backend.c_str(),
-                pack.layout.empty() ? "<none>" : pack.layout.c_str(),
-                static_cast<unsigned long>(pack.candidates.size()));
+                pack.layout.empty() ? "<none>" : pack.layout.c_str());
     s_ime_packs.push_back(std::move(pack));
     return true;
 }
@@ -2642,9 +2682,10 @@ void rebuild_registry()
     s_registry_ready = true;
 
     const std::string preferred_locale = migrate_legacy_locale_if_needed();
-    s_allow_sync_external_font_activation = true;
-    (void)activate_locale(resolve_active_locale(preferred_locale));
-    s_allow_sync_external_font_activation = false;
+    {
+        ScopedExternalFontActivation activation(false);
+        (void)activate_locale(resolve_active_locale(preferred_locale));
+    }
     (void)preload_small_content_supplements();
     std::printf("%s registry rebuild end active_locale=%s locale_count=%lu ime_count=%lu enabled_ime=%lu active_ime=%s ui_chain=%s content_chain=%s\n",
                 kLogTag,
@@ -2772,7 +2813,10 @@ bool set_locale(const char* locale_id, bool persist)
     }
 
     const LocalePackRecord* previous_locale = s_active_locale;
-    (void)activate_locale(next_locale);
+    {
+        ScopedExternalFontActivation activation(true);
+        (void)activate_locale(next_locale);
+    }
 
     if (persist && s_active_locale != nullptr)
     {
@@ -2879,6 +2923,7 @@ bool ensure_content_font_for_text(const char* text)
         return true;
     }
 
+    ScopedForcedFontLoadOverlay forced_overlay;
     bool changed = false;
     changed |= ensure_active_content_pack_loaded();
     if (s_active_content_font_pack && !is_font_runtime_loaded(*s_active_content_font_pack) &&
@@ -2952,24 +2997,6 @@ const ImeInfo* ime_at(std::size_t index)
         return nullptr;
     }
     return &s_ime_views[index];
-}
-
-std::size_t ime_candidate_count(const char* ime_id)
-{
-    ensure_registry();
-    const ImePackRecord* pack = find_pack_by_id(s_ime_packs, ime_id);
-    return pack ? pack->candidates.size() : 0;
-}
-
-const char* ime_candidate_at(const char* ime_id, std::size_t index)
-{
-    ensure_registry();
-    const ImePackRecord* pack = find_pack_by_id(s_ime_packs, ime_id);
-    if (pack == nullptr || index >= pack->candidates.size())
-    {
-        return nullptr;
-    }
-    return pack->candidates[index].c_str();
 }
 
 std::size_t enabled_ime_count()

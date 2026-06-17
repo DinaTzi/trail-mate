@@ -761,10 +761,10 @@
     #define LV_FS_FATFS_CACHE_SIZE 0    /*>0 to cache this number of bytes in lv_fs_read()*/
 #endif
 
-/*API for memory-mapped file access. */
-#define LV_USE_FS_MEMFS 0
+/*API for memory-mapped file access. Required for built-in binfont buffers. */
+#define LV_USE_FS_MEMFS 1
 #if LV_USE_FS_MEMFS
-    #define LV_FS_MEMFS_LETTER '\0'     /*Set an upper cased letter on which the drive will accessible (e.g. 'A')*/
+    #define LV_FS_MEMFS_LETTER 'M'      /*Set an upper cased letter on which the drive will accessible (e.g. 'M')*/
 #endif
 
 /*API for LittleFs. */

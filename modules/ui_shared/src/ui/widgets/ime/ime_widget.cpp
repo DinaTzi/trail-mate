@@ -9,7 +9,6 @@
 #include "ui/assets/fonts/font_utils.h"
 #include "ui/localization.h"
 #include "ui/page/page_profile.h"
-#include "ui/ui_theme.h"
 #include "ui/widgets/ime/ime_input_mode_descriptor.h"
 
 #if UI_SHARED_TOUCH_IME_ENABLED
@@ -17,7 +16,6 @@
 #endif
 
 #include <algorithm>
-#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -32,7 +30,6 @@ namespace
 
 ImeWidget* s_active_ime = nullptr;
 static constexpr int kCompactCandidatesPerPage = 7;
-static constexpr int kCandidatePickerMaxCandidates = 100;
 static constexpr lv_coord_t kCompactImeRowHeight = 22;
 static constexpr lv_coord_t kCompactImeControlHeight = 18;
 
@@ -154,35 +151,6 @@ static const char* kTouchNumMap[] = {
 
 #endif
 
-const char* candidate_picker_ime_id(int script_input_index)
-{
-    const ScriptInputDescriptor input = selected_script_input(script_input_index);
-    return input.kind == ScriptInputKind::CandidatePicker ? input.ime_id : nullptr;
-}
-
-const char* candidate_picker_display_name(int script_input_index)
-{
-    const ScriptInputDescriptor input = selected_script_input(script_input_index);
-    return input.kind == ScriptInputKind::CandidatePicker ? input.display_name : nullptr;
-}
-
-int candidate_picker_candidate_count(int script_input_index)
-{
-    const char* ime_id = candidate_picker_ime_id(script_input_index);
-    return std::min(static_cast<int>(::ui::i18n::ime_candidate_count(ime_id)),
-                    kCandidatePickerMaxCandidates);
-}
-
-const char* candidate_picker_candidate_at(int script_input_index, int index)
-{
-    if (index < 0)
-    {
-        return nullptr;
-    }
-    const char* ime_id = candidate_picker_ime_id(script_input_index);
-    return ::ui::i18n::ime_candidate_at(ime_id, static_cast<std::size_t>(index));
-}
-
 std::string make_candidates_text(const std::vector<std::string>& candidates,
                                  int active_idx,
                                  int max_show,
@@ -236,44 +204,6 @@ void erase_last_utf8_char(std::string& text)
         --pos;
     }
     text.erase(pos);
-}
-
-void set_button_text(lv_obj_t* button, const char* text)
-{
-    if (!button)
-    {
-        return;
-    }
-    lv_obj_t* label = lv_obj_get_child(button, 0);
-    if (!label)
-    {
-        label = lv_label_create(button);
-    }
-    lv_obj_set_style_text_color(label, ::ui::theme::text(), 0);
-    ::ui::i18n::set_content_label_text_raw(label, text ? text : "");
-    lv_obj_center(label);
-}
-
-void apply_picker_button_style(lv_obj_t* button)
-{
-    if (!button)
-    {
-        return;
-    }
-    lv_obj_set_style_bg_color(button, ::ui::theme::surface(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(button, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(button, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(button, ::ui::theme::border(), LV_PART_MAIN);
-    lv_obj_set_style_radius(button, 6, LV_PART_MAIN);
-    lv_obj_set_style_outline_width(button, 2, LV_STATE_FOCUSED);
-    lv_obj_set_style_outline_color(button, ::ui::theme::accent(), LV_STATE_FOCUSED);
-    lv_obj_set_style_outline_pad(button, 1, LV_STATE_FOCUSED);
-}
-
-void apply_picker_control_style(lv_obj_t* button)
-{
-    apply_picker_button_style(button);
-    lv_obj_set_style_bg_color(button, ::ui::theme::accent(), LV_PART_MAIN);
 }
 
 #if UI_SHARED_TOUCH_IME_ENABLED
@@ -494,7 +424,9 @@ void ImeWidget::init_compact_ui(lv_obj_t* parent)
 void ImeWidget::init_touch_ui(lv_obj_t* parent)
 {
     const auto& profile = ::ui::page_profile::current();
-    const lv_coord_t nav_button_width = std::max<lv_coord_t>(48, ::ui::page_profile::resolve_compact_button_min_width());
+    const lv_coord_t nav_button_width = std::max<lv_coord_t>(
+        48,
+        ::ui::page_profile::resolve_compact_button_min_width());
 
     container_ = lv_obj_create(parent);
     lv_obj_set_size(container_, LV_PCT(100), LV_SIZE_CONTENT);
@@ -617,7 +549,6 @@ void ImeWidget::init_touch_ui(lv_obj_t* parent)
 
 void ImeWidget::detach()
 {
-    close_candidate_picker_modal(false);
     container_ = nullptr;
     top_row_ = nullptr;
     toggle_btn_ = nullptr;
@@ -657,10 +588,6 @@ void ImeWidget::setMode(Mode mode)
     mode_ = mode;
     const bool use_pinyin = script_mode(mode_) && requested_kind == ScriptInputKind::Pinyin;
     ime_.setEnabled(use_pinyin);
-    if (!candidate_picker_mode())
-    {
-        close_candidate_picker_modal(false);
-    }
     if (textarea_)
     {
         const char* cur = lv_textarea_get_text(textarea_);
@@ -668,10 +595,6 @@ void ImeWidget::setMode(Mode mode)
         if (use_pinyin)
         {
             ime_.reset();
-            lv_textarea_set_accepted_chars(textarea_, "");
-        }
-        else if (script_mode(mode_) && requested_kind == ScriptInputKind::CandidatePicker)
-        {
             lv_textarea_set_accepted_chars(textarea_, "");
         }
         else
@@ -682,10 +605,6 @@ void ImeWidget::setMode(Mode mode)
     }
     candidate_window_start_ = 0;
     refresh_labels();
-    if (candidate_picker_mode())
-    {
-        open_candidate_picker_modal();
-    }
 }
 
 ImeWidget::Mode ImeWidget::mode() const
@@ -703,12 +622,6 @@ bool ImeWidget::direct_keyboard_mode() const
 {
     return script_mode(mode_) &&
            selected_script_input_kind(script_input_index_) == ScriptInputKind::DirectKeyboard;
-}
-
-bool ImeWidget::candidate_picker_mode() const
-{
-    return script_mode(mode_) &&
-           selected_script_input_kind(script_input_index_) == ScriptInputKind::CandidatePicker;
 }
 
 void ImeWidget::cycleMode()
@@ -745,24 +658,6 @@ void ImeWidget::cycleMode()
 
 bool ImeWidget::commit_candidate(int candidate_index)
 {
-    if (candidate_picker_mode())
-    {
-        if (candidate_index < 0 ||
-            candidate_index >= candidate_picker_candidate_count(script_input_index_))
-        {
-            return false;
-        }
-        const char* candidate = candidate_picker_candidate_at(script_input_index_, candidate_index);
-        if (candidate == nullptr || candidate[0] == '\0')
-        {
-            return false;
-        }
-        committed_text_ += candidate;
-        sync_textarea();
-        refresh_labels();
-        return true;
-    }
-
     std::string out;
     if (!ime_.commitCandidate(candidate_index, out))
     {
@@ -772,217 +667,6 @@ bool ImeWidget::commit_candidate(int candidate_index)
     candidate_window_start_ = 0;
     sync_textarea();
     refresh_labels();
-    return true;
-}
-
-bool ImeWidget::candidate_picker_modal_open() const
-{
-    return picker_modal_root_ != nullptr;
-}
-
-void ImeWidget::open_candidate_picker_modal()
-{
-    if (!textarea_ || !candidate_picker_mode() || candidate_picker_modal_open())
-    {
-        return;
-    }
-
-    const int count = candidate_picker_candidate_count(script_input_index_);
-    if (count <= 0)
-    {
-        return;
-    }
-    if (candidate_picker_index_ < 0 || candidate_picker_index_ >= count)
-    {
-        candidate_picker_index_ = 0;
-    }
-
-    lv_obj_t* parent = lv_layer_top();
-    if (!parent)
-    {
-        parent = lv_screen_active();
-    }
-    if (!parent)
-    {
-        return;
-    }
-
-    picker_prev_group_ = lv_group_get_default();
-    picker_modal_group_ = lv_group_create();
-    set_default_group(picker_modal_group_);
-
-    picker_modal_root_ = lv_obj_create(parent);
-    lv_obj_set_size(picker_modal_root_, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(picker_modal_root_, ::ui::theme::page_bg(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(picker_modal_root_, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(picker_modal_root_, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(picker_modal_root_, 8, LV_PART_MAIN);
-    lv_obj_set_flex_flow(picker_modal_root_, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(picker_modal_root_,
-                          LV_FLEX_ALIGN_START,
-                          LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER);
-    lv_obj_clear_flag(picker_modal_root_, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(picker_modal_root_, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(picker_modal_root_, on_picker_modal_key, LV_EVENT_KEY, this);
-
-    lv_obj_t* header = lv_obj_create(picker_modal_root_);
-    lv_obj_set_size(header, LV_PCT(100), 32);
-    lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(header,
-                          LV_FLEX_ALIGN_SPACE_BETWEEN,
-                          LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_bg_opa(header, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(header, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(header, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_column(header, 8, LV_PART_MAIN);
-    lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t* title = lv_label_create(header);
-    const char* display_name = candidate_picker_display_name(script_input_index_);
-    ::ui::i18n::set_content_label_text_raw(
-        title,
-        display_name && display_name[0] != '\0' ? display_name : ::ui::i18n::tr("Input picker"));
-    lv_obj_set_flex_grow(title, 1);
-    lv_label_set_long_mode(title, LV_LABEL_LONG_CLIP);
-    lv_obj_set_style_text_color(title, ::ui::theme::text(), LV_PART_MAIN);
-
-    lv_obj_t* close_btn = lv_btn_create(header);
-    lv_obj_set_size(close_btn, 64, 28);
-    lv_obj_set_user_data(close_btn, reinterpret_cast<void*>(static_cast<intptr_t>(-1)));
-    apply_picker_control_style(close_btn);
-    set_button_text(close_btn, ::ui::i18n::tr("Close"));
-    lv_obj_add_event_cb(close_btn, on_picker_close_clicked, LV_EVENT_CLICKED, this);
-    lv_obj_add_event_cb(close_btn, on_picker_modal_key, LV_EVENT_KEY, this);
-    lv_group_add_obj(picker_modal_group_, close_btn);
-
-    lv_obj_t* grid = lv_obj_create(picker_modal_root_);
-    lv_obj_set_width(grid, LV_PCT(100));
-    lv_obj_set_flex_grow(grid, 1);
-    lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(grid,
-                          LV_FLEX_ALIGN_START,
-                          LV_FLEX_ALIGN_START,
-                          LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_scroll_dir(grid, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(grid, LV_SCROLLBAR_MODE_AUTO);
-    lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(grid, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(grid, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_row(grid, 6, LV_PART_MAIN);
-    lv_obj_set_style_pad_column(grid, 6, LV_PART_MAIN);
-
-    const lv_coord_t screen_w = lv_obj_get_width(parent) > 0
-                                    ? lv_obj_get_width(parent)
-                                    : lv_display_get_physical_horizontal_resolution(nullptr);
-    int columns = 5;
-    if (screen_w >= 700)
-    {
-        columns = 10;
-    }
-    else if (screen_w >= 400)
-    {
-        columns = 8;
-    }
-    else if (screen_w >= 300)
-    {
-        columns = 6;
-    }
-    const lv_coord_t cell_w =
-        std::max<lv_coord_t>(34,
-                             (screen_w - 16 - ((columns - 1) * 6)) / columns);
-    const lv_coord_t cell_h = std::max<lv_coord_t>(
-        ::ui::page_profile::resolve_control_button_height(),
-        ::ui::page_profile::current().large_touch_hitbox ? 42 : 30);
-
-    picker_candidate_buttons_.clear();
-    picker_candidate_buttons_.reserve(static_cast<std::size_t>(count));
-    for (int index = 0; index < count; ++index)
-    {
-        const char* candidate = candidate_picker_candidate_at(script_input_index_, index);
-        if (candidate == nullptr || candidate[0] == '\0')
-        {
-            continue;
-        }
-
-        lv_obj_t* btn = lv_btn_create(grid);
-        lv_obj_set_size(btn, cell_w, cell_h);
-        lv_obj_set_user_data(btn, reinterpret_cast<void*>(static_cast<intptr_t>(index)));
-        apply_picker_button_style(btn);
-        set_button_text(btn, candidate);
-        lv_obj_add_event_cb(btn, on_picker_candidate_clicked, LV_EVENT_CLICKED, this);
-        lv_obj_add_event_cb(btn, on_picker_modal_key, LV_EVENT_KEY, this);
-        lv_obj_add_event_cb(btn, on_picker_candidate_focused, LV_EVENT_FOCUSED, this);
-        lv_group_add_obj(picker_modal_group_, btn);
-        picker_candidate_buttons_.push_back(btn);
-    }
-
-    if (!picker_candidate_buttons_.empty())
-    {
-        const std::size_t focus_index = std::min<std::size_t>(
-            static_cast<std::size_t>(std::max(candidate_picker_index_, 0)),
-            picker_candidate_buttons_.size() - 1U);
-        lv_group_focus_obj(picker_candidate_buttons_[focus_index]);
-    }
-}
-
-void ImeWidget::close_candidate_picker_modal(bool return_to_text_mode)
-{
-    lv_obj_t* root = picker_modal_root_;
-    lv_group_t* group = picker_modal_group_;
-    lv_group_t* restore_group = picker_prev_group_;
-
-    picker_modal_root_ = nullptr;
-    picker_modal_group_ = nullptr;
-    picker_prev_group_ = nullptr;
-    picker_candidate_buttons_.clear();
-
-    if (restore_group != nullptr)
-    {
-        set_default_group(restore_group);
-    }
-    else if (lv_group_get_default() == group)
-    {
-        set_default_group(nullptr);
-    }
-    if (group != nullptr)
-    {
-        lv_group_del(group);
-    }
-    if (root != nullptr)
-    {
-        lv_obj_del_async(root);
-    }
-
-    if (return_to_text_mode && candidate_picker_mode())
-    {
-        mode_ = Mode::EN;
-        ime_.setEnabled(false);
-        if (textarea_)
-        {
-            lv_textarea_set_accepted_chars(textarea_, nullptr);
-        }
-        refresh_labels();
-    }
-    if (textarea_)
-    {
-        lv_obj_add_state(textarea_, LV_STATE_FOCUSED);
-        if (lv_group_t* g = lv_group_get_default())
-        {
-            lv_group_focus_obj(textarea_);
-            lv_group_set_editing(g, false);
-        }
-    }
-}
-
-bool ImeWidget::commit_picker_candidate_and_close(int candidate_index)
-{
-    if (!commit_candidate(candidate_index))
-    {
-        return false;
-    }
-    close_candidate_picker_modal(true);
     return true;
 }
 
@@ -1092,25 +776,6 @@ bool ImeWidget::handle_key_code(uint32_t key)
                 update_text = true;
                 consumed = true;
             }
-        }
-    }
-    else if (candidate_picker_mode())
-    {
-        if (key == LV_KEY_BACKSPACE && !candidate_picker_modal_open())
-        {
-            erase_last_utf8_char(committed_text_);
-            update_text = true;
-            consumed = true;
-        }
-        else if (key == LV_KEY_ESC || key == LV_KEY_BACKSPACE)
-        {
-            close_candidate_picker_modal(true);
-            consumed = true;
-        }
-        else
-        {
-            open_candidate_picker_modal();
-            consumed = true;
         }
     }
     else
@@ -1251,7 +916,7 @@ void ImeWidget::refresh_touch_candidates()
         return;
     }
 
-    const bool show_candidates = pinyin_mode();
+    const bool show_candidates = pinyin_mode() && ime_.hasBuffer();
     if (!show_candidates)
     {
         lv_obj_add_flag(candidate_row_, LV_OBJ_FLAG_HIDDEN);
@@ -1320,7 +985,7 @@ void ImeWidget::refresh_touch_candidates()
         const int index = start + slot;
         if (index < total)
         {
-            set_button_label(btn, candidates[index].c_str());
+            set_button_label(btn, candidates[static_cast<std::size_t>(index)].c_str());
             lv_obj_clear_flag(btn, LV_OBJ_FLAG_HIDDEN);
             apply_candidate_button_style(btn, index == active);
         }
@@ -1349,7 +1014,7 @@ void ImeWidget::refresh_labels()
 
     if (textarea_)
     {
-        if ((pinyin_mode() && ime_.hasBuffer()) || candidate_picker_mode())
+        if (pinyin_mode() && ime_.hasBuffer())
         {
             if (lv_group_t* g = lv_group_get_default())
             {
@@ -1424,25 +1089,6 @@ void ImeWidget::refresh_labels()
         }
 #endif
         set_candidates_label_text(candidates_label_, "");
-        return;
-    }
-
-    if (script_kind == ScriptInputKind::CandidatePicker)
-    {
-        lv_label_set_text(toggle_label_, "IM");
-        const char* display_name = candidate_picker_display_name(script_input_index_);
-        set_candidates_label_text(candidates_label_,
-                                  display_name && display_name[0] != '\0'
-                                      ? display_name
-                                      : ::ui::i18n::tr("Input picker"));
-#if UI_SHARED_TOUCH_IME_ENABLED
-        if (touch_keyboard_enabled_)
-        {
-            refresh_touch_keyboard();
-            refresh_touch_candidates();
-            return;
-        }
-#endif
         return;
     }
 
@@ -1568,81 +1214,6 @@ void ImeWidget::on_candidate_nav_clicked(lv_event_t* e)
     }
 }
 #endif
-
-void ImeWidget::on_picker_candidate_clicked(lv_event_t* e)
-{
-    ImeWidget* self = static_cast<ImeWidget*>(lv_event_get_user_data(e));
-    if (!self)
-    {
-        return;
-    }
-
-    lv_obj_t* target = static_cast<lv_obj_t*>(lv_event_get_target(e));
-    const intptr_t raw = reinterpret_cast<intptr_t>(lv_obj_get_user_data(target));
-    if (raw < 0 || raw >= candidate_picker_candidate_count(self->script_input_index_))
-    {
-        return;
-    }
-    self->candidate_picker_index_ = static_cast<int>(raw);
-    (void)self->commit_picker_candidate_and_close(static_cast<int>(raw));
-}
-
-void ImeWidget::on_picker_close_clicked(lv_event_t* e)
-{
-    ImeWidget* self = static_cast<ImeWidget*>(lv_event_get_user_data(e));
-    if (self)
-    {
-        self->close_candidate_picker_modal(true);
-    }
-}
-
-void ImeWidget::on_picker_modal_key(lv_event_t* e)
-{
-    ImeWidget* self = static_cast<ImeWidget*>(lv_event_get_user_data(e));
-    if (!self || lv_event_get_code(e) != LV_EVENT_KEY)
-    {
-        return;
-    }
-
-    const uint32_t key = lv_event_get_key(e);
-    if (key == LV_KEY_ESC || key == LV_KEY_BACKSPACE)
-    {
-        self->close_candidate_picker_modal(true);
-        lv_event_stop_processing(e);
-        return;
-    }
-    if (key == LV_KEY_ENTER)
-    {
-        lv_obj_t* target = static_cast<lv_obj_t*>(lv_event_get_target(e));
-        if (target != nullptr)
-        {
-            const intptr_t raw = reinterpret_cast<intptr_t>(lv_obj_get_user_data(target));
-            if (raw >= 0 && raw < candidate_picker_candidate_count(self->script_input_index_))
-            {
-                self->candidate_picker_index_ = static_cast<int>(raw);
-                (void)self->commit_picker_candidate_and_close(static_cast<int>(raw));
-                lv_event_stop_processing(e);
-            }
-        }
-    }
-}
-
-void ImeWidget::on_picker_candidate_focused(lv_event_t* e)
-{
-    ImeWidget* self = static_cast<ImeWidget*>(lv_event_get_user_data(e));
-    if (!self)
-    {
-        return;
-    }
-
-    lv_obj_t* target = static_cast<lv_obj_t*>(lv_event_get_target(e));
-    const intptr_t raw = reinterpret_cast<intptr_t>(lv_obj_get_user_data(target));
-    if (raw >= 0 && raw < candidate_picker_candidate_count(self->script_input_index_))
-    {
-        self->candidate_picker_index_ = static_cast<int>(raw);
-    }
-    lv_obj_scroll_to_view(target, LV_ANIM_OFF);
-}
 
 } // namespace widgets
 } // namespace ui

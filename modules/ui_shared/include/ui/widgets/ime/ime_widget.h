@@ -7,7 +7,6 @@
 
 #include <array>
 #include <string>
-#include <vector>
 
 #include "lvgl.h"
 #include "ui/widgets/ime/pinyin_ime.h"
@@ -61,22 +60,13 @@ class ImeWidget
     bool handle_key_code(uint32_t key);
     bool handle_text_token(const char* token);
     bool commit_candidate(int candidate_index);
-    bool candidate_picker_modal_open() const;
-    void open_candidate_picker_modal();
-    void close_candidate_picker_modal(bool return_to_text_mode);
-    bool commit_picker_candidate_and_close(int candidate_index);
     bool pinyin_mode() const;
     bool direct_keyboard_mode() const;
-    bool candidate_picker_mode() const;
 
     static void on_toggle_clicked(lv_event_t* e);
     static void on_touch_key_event(lv_event_t* e);
     static void on_candidate_clicked(lv_event_t* e);
     static void on_candidate_nav_clicked(lv_event_t* e);
-    static void on_picker_candidate_clicked(lv_event_t* e);
-    static void on_picker_close_clicked(lv_event_t* e);
-    static void on_picker_modal_key(lv_event_t* e);
-    static void on_picker_candidate_focused(lv_event_t* e);
 
     PinyinIme ime_;
     lv_obj_t* container_ = nullptr;
@@ -91,16 +81,11 @@ class ImeWidget
     lv_obj_t* candidate_next_btn_ = nullptr;
     lv_obj_t* keyboard_matrix_ = nullptr;
     lv_obj_t* textarea_ = nullptr;
-    lv_obj_t* picker_modal_root_ = nullptr;
-    lv_group_t* picker_modal_group_ = nullptr;
-    lv_group_t* picker_prev_group_ = nullptr;
-    std::vector<lv_obj_t*> picker_candidate_buttons_;
     Mode mode_ = Mode::EN;
     std::string committed_text_;
     bool touch_keyboard_enabled_ = false;
     int candidate_window_start_ = 0;
     int script_input_index_ = 0;
-    int candidate_picker_index_ = 0;
 };
 
 } // namespace widgets

@@ -74,10 +74,6 @@ ScriptInputDescriptor describe_script_input(const ::ui::i18n::ImeInfo* ime)
         }
         return {ScriptInputKind::DirectKeyboard, ime->id, display_name, layout};
     }
-    if (streq(ime->backend, "builtin-candidate-picker") && ime->candidate_count > 0)
-    {
-        return {ScriptInputKind::CandidatePicker, ime->id, display_name, nullptr};
-    }
     return {};
 }
 

@@ -48,6 +48,7 @@
 #include "ui/widgets/busy_overlay.h"
 #include "ui/runtime/ui_feedback.h"
 #include "ui/widgets/ime/ime_widget.h"
+#include "ui/widgets/text_candidate_picker.h"
 #include "ui/widgets/top_bar.h"
 #include "ui_presentation/settings/settings_model.h"
 
@@ -1944,6 +1945,30 @@ static void open_text_modal(const settings::ui::SettingItem& item, settings::ui:
 
     s_text_modal_ime.reset(new ::ui::widgets::ImeWidget());
     s_text_modal_ime->init(ime_host, g_state.modal_textarea);
+    lv_obj_t* ime_toggle = s_text_modal_ime->toggle_btn();
+    if (lv_obj_t* toolbar = ime_toggle ? lv_obj_get_parent(ime_toggle) : nullptr)
+    {
+        lv_obj_t* sym_btn = ::ui::widgets::add_text_candidate_button(
+            toolbar,
+            g_state.modal_textarea,
+            ::ui::widgets::text_candidates::CandidateSet::Symbols,
+            g_state.modal_group,
+            ime_toggle);
+        lv_obj_t* emoji_btn = ::ui::widgets::add_text_candidate_button(
+            toolbar,
+            g_state.modal_textarea,
+            ::ui::widgets::text_candidates::CandidateSet::Emoji,
+            g_state.modal_group,
+            ime_toggle);
+        if (sym_btn)
+        {
+            lv_obj_move_to_index(sym_btn, 1);
+        }
+        if (emoji_btn)
+        {
+            lv_obj_move_to_index(emoji_btn, 2);
+        }
+    }
 
     lv_obj_t* btn_row = lv_obj_create(win);
     lv_obj_set_size(btn_row, LV_PCT(100), LV_SIZE_CONTENT);
