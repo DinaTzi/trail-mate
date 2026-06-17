@@ -55,6 +55,7 @@ constexpr std::size_t kFontLoadOverlayThresholdBytes = 64U * 1024U;
 constexpr unsigned kMaxMissingFontDiagnostics = 20;
 constexpr uint32_t kFontLoadFailureBackoffMs = 5U * 60U * 1000U;
 constexpr std::size_t kSmallContentSupplementMaxBytes = 16U * 1024U;
+constexpr std::size_t kMaxImeCandidateCount = 100U;
 
 #if defined(LV_USE_FS_POSIX) && LV_USE_FS_POSIX
 constexpr bool kLvFsPosixEnabled = true;
@@ -174,7 +175,11 @@ class ScopedFontLoadOverlay
             return;
         }
 
-        ::ui::widgets::busy_overlay::show("Loading font pack...", pack.id.c_str());
+        ::ui::widgets::busy_overlay::show("Loading language pack...",
+                                          pack.display_name.empty()
+                                              ? pack.id.c_str()
+                                              : pack.display_name.c_str());
+        present_now();
     }
 
     ~ScopedFontLoadOverlay()
@@ -196,6 +201,18 @@ class ScopedFontLoadOverlay
             return false;
         }
         return pack.estimated_ram_bytes == 0U || pack.estimated_ram_bytes >= kFontLoadOverlayThresholdBytes;
+    }
+
+    static void present_now()
+    {
+        static bool s_presenting = false;
+        if (s_presenting)
+        {
+            return;
+        }
+        s_presenting = true;
+        lv_timer_handler();
+        s_presenting = false;
     }
 
     bool active_ = false;
@@ -612,6 +629,10 @@ bool parse_ime_candidate_file(const std::string& path, std::vector<std::string>&
             std::find(out.begin(), out.end(), token) == out.end())
         {
             out.push_back(std::move(token));
+            if (out.size() >= kMaxImeCandidateCount)
+            {
+                break;
+            }
         }
 
         if (token_end == std::string::npos)
@@ -1299,6 +1320,23 @@ bool can_load_font_from_activation_path(const FontPackRecord& pack)
 
 bool can_add_content_supplement(const FontPackRecord& pack);
 
+bool can_activate_content_supplement_for_text(const FontPackRecord& pack)
+{
+#if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
+    // Content text is data from contacts, chat, map labels, and extension pages.
+    // It must not be tied to the display locale: an English UI can still need a
+    // Chinese/Korean/emoji content font when those optional packs are installed.
+    // The guard here is coverage + memory-profile budget, while load_font_pack()
+    // still owns failure backoff so a missing/bad pack is not retried per label.
+    return pack.builtin ||
+           is_font_runtime_loaded(pack) ||
+           (font_pack_supports_content(pack) && can_add_content_supplement(pack));
+#else
+    (void)pack;
+    return true;
+#endif
+}
+
 bool can_preload_small_content_supplement(const FontPackRecord& pack)
 {
     if (pack.builtin || is_font_runtime_loaded(pack))
@@ -1678,6 +1716,32 @@ void add_builtin_font_packs()
     latin_pack.builtin_font = nullptr;
     latin_pack.estimated_ram_bytes = 0;
     s_font_packs.push_back(std::move(latin_pack));
+}
+
+void add_builtin_ime_packs()
+{
+    static constexpr const char* kSymbolCandidates[] = {
+        "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*",
+        "+", ",", "-", ".", "/", ":", ";", "<", "=", ">", "?",
+        "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~",
+    };
+
+    ImePackRecord symbol_pack{};
+    symbol_pack.id = "symbol-picker";
+    symbol_pack.display_name = "Symbols";
+    symbol_pack.backend = "builtin-candidate-picker";
+    symbol_pack.builtin = true;
+    symbol_pack.candidates.reserve(std::min<std::size_t>(
+        kMaxImeCandidateCount,
+        sizeof(kSymbolCandidates) / sizeof(kSymbolCandidates[0])));
+    for (const char* candidate : kSymbolCandidates)
+    {
+        if (candidate != nullptr && symbol_pack.candidates.size() < kMaxImeCandidateCount)
+        {
+            symbol_pack.candidates.emplace_back(candidate);
+        }
+    }
+    s_ime_packs.push_back(std::move(symbol_pack));
 }
 
 void add_builtin_locale_packs()
@@ -2563,6 +2627,7 @@ void rebuild_registry()
     s_missing_content_font_diagnostics = 0;
     clear_registry();
     add_builtin_font_packs();
+    add_builtin_ime_packs();
     add_builtin_locale_packs();
     catalog_external_packs();
     std::printf("%s registry cataloged before_prune fonts=%lu ime=%lu locales=%lu\n",
@@ -2837,9 +2902,9 @@ bool ensure_content_font_for_text(const char* text)
         }
         if (!is_font_runtime_loaded(*candidate) &&
             !kAllowSynchronousContentSupplementFontLoad &&
-            !can_load_font_from_content_hot_path(*candidate))
+            !can_activate_content_supplement_for_text(*candidate))
         {
-            log_font_load_deferred(*candidate, "content_supplement", "ui_hot_path");
+            log_font_load_deferred(*candidate, "content_supplement", "content_budget");
             break;
         }
         if (!ensure_font_pack_loaded(candidate))

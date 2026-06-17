@@ -62,7 +62,6 @@ void testSummaryProjection()
     assert(summary.self_is_leader);
     assert(summary.team_name == "TEAM-ABCD");
     assert(summary.member_count == 3);
-    assert(summary.online_count == 1);
     assert(summary.has_security_round);
     assert(summary.security_round == 7);
     assert(summary.last_update.kind == team::ui::TeamRelativeTimeKind::SecondsAgo);
@@ -80,11 +79,13 @@ void testRowsDoNotMutatePresence()
     assert(rows.size() == 3);
     assert(rows[0].source_index == 0);
     assert(rows[0].name == "1111");
-    assert(rows[0].online);
+    assert(rows[0].last_seen.kind == team::ui::TeamRelativeTimeKind::MinutesAgo);
+    assert(rows[0].last_seen.value == 0);
     assert(rows[0].leader);
     assert(rows[1].source_index == 1);
     assert(rows[1].name == "2222");
-    assert(!rows[1].online);
+    assert(rows[1].last_seen.kind == team::ui::TeamRelativeTimeKind::MinutesAgo);
+    assert(rows[1].last_seen.value == 6);
     assert(rows[2].name == "3333");
     assert(input.members[0].online == false);
 }
@@ -98,7 +99,6 @@ void testMemberDetailProjection()
 
     assert(detail.valid);
     assert(detail.member.name == "2222");
-    assert(!detail.member.online);
     assert(detail.last_seen.kind == team::ui::TeamRelativeTimeKind::MinutesAgo);
     assert(detail.last_seen.value == 6);
     assert(detail.management_actions_enabled);

@@ -119,6 +119,12 @@ struct SettingsData
     int screen_brightness = 16;
     int timezone_offset_min = 0;
     int timezone_profile_id = 0;
+    char manual_time_year[5] = "";
+    char manual_time_month[3] = "";
+    char manual_time_day[3] = "";
+    char manual_time_hour[3] = "";
+    char manual_time_minute[3] = "";
+    char manual_time_second[3] = "";
     int speaker_volume = 45;
     int display_locale_index = 0;
     char c6_companion_status[96] = "";

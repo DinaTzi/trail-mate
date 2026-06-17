@@ -637,3 +637,14 @@ Restore failed	还原失败
 Settings restored. Restarting...	设置已还原，正在重启...
 Overwrite current settings and restart?	覆盖当前设置并重启?
 Restore	还原
+Date/Time	日期/时间
+Set Date/Time	设置日期/时间
+Date	日期
+Time	时间
+Invalid date/time	日期/时间无效
+Set time unsupported	不支持设置时间
+Date/time updated	日期/时间已更新
+Seen %um ago	%u 分钟前出现
+Seen %uh ago	%u 小时前出现
+Seen %ud ago	%u 天前出现
+Seen --	未见

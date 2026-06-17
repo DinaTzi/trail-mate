@@ -193,9 +193,9 @@ Extensions UI 必须把 `locale-bundle`、`content-bundle` 与 `input-bundle`
 
 1. package type 不是空值且不是伪装的 `locale-bundle`。
 2. 没有 locale 时仍至少提供一个 font 或 IME record。
-3. IME backend 已被当前固件运行时支持；`builtin-candidate-picker` 这类通用候选列表后端必须带候选 payload。
+3. IME backend 已被当前固件运行时支持；`builtin-candidate-picker` 这类通用候选列表后端必须带候选 payload，候选数不得超过 100，且顺序必须按预估使用频率排列。
 4. font `usage` 与包语义匹配；emoji 这类内容补充必须使用 `usage=content`。
-5. 如果 IME 需要候选表或布局表，这些数据必须作为 pack payload 文件发布，不能写进固件代码，也不能靠固件按 package id 补齐。
+5. 如果 IME 需要候选表或布局表，这些数据必须作为 pack payload 文件发布，不能写进固件代码，也不能靠固件按 package id 补齐。唯一例外是固件内建 `symbol-picker` 的基础 ASCII 特殊字符候选表；该例外不得扩展成内置 emoji 或页面私有 picker。
 
 每个 package manifest 必须校验：
 

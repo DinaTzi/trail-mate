@@ -10,7 +10,8 @@ It is a content/input extension, not a locale:
 
 The runtime uses `emoji-core` as a content supplement when installed and when
 the active memory profile allows supplement fonts. The picker uses the generic
-`builtin-candidate-picker` backend and reads its candidates from pack payload.
+`builtin-candidate-picker` backend and reads up to 100 ordered candidates from
+pack payload.
 
 ## Source Font
 

@@ -44,6 +44,7 @@ ALLOWED_ENGLISH_EQUIVALENTS = {
 REAL_IME_BACKENDS = {
     "builtin-pinyin": {"zh-hans-pinyin"},
     "builtin-keyboard-layout": {"ru-cyrillic-keyboard"},
+    "builtin-candidate-picker": {"emoji-picker"},
 }
 
 REAL_IME_LAYOUTS = {
@@ -76,6 +77,18 @@ def parse_tsv(path: Path) -> tuple[dict[str, str], list[str], list[str]]:
         order.append(key)
         rows[key] = value
     return rows, order, malformed
+
+
+def parse_candidate_file(path: Path) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+    text = path.read_text(encoding="utf-8")
+    for token in re.split(r"[,\r\n]", text):
+        token = token.split("#", 1)[0].strip()
+        if token and token not in seen:
+            seen.add(token)
+            candidates.append(token)
+    return candidates
 
 
 def placeholders(text: str) -> Counter[str]:
@@ -170,6 +183,22 @@ def validate_manifests(pack_root: Path) -> list[str]:
             errors.append(f"{manifest_path}: expected layout={expected_layout} for IME {ime_id}")
         elif not expected_layout and layout:
             errors.append(f"{manifest_path}: unexpected layout for non-layout IME: {ime_id}")
+        if backend == "builtin-candidate-picker":
+            candidate_file = manifest.get("candidates", "")
+            if not candidate_file:
+                errors.append(f"{manifest_path}: candidate picker IME missing candidates file")
+            else:
+                candidate_path = manifest_path.parent / candidate_file
+                if not candidate_path.is_file():
+                    errors.append(f"{manifest_path}: candidate file missing: {candidate_file}")
+                else:
+                    candidates = parse_candidate_file(candidate_path)
+                    if not candidates:
+                        errors.append(f"{manifest_path}: candidate file is empty: {candidate_file}")
+                    elif len(candidates) > 100:
+                        errors.append(
+                            f"{manifest_path}: candidate file exceeds 100 entries: {len(candidates)}"
+                        )
         ime_backends[ime_id] = backend
 
     for manifest_path in sorted(pack_root.glob("*/locales/*/manifest.ini")):

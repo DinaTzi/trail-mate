@@ -9,7 +9,7 @@ reaction set.
 
 Included payload:
 - emoji-core: content-only LVGL binfont generated from Noto Emoji Monochrome
-  with a small reaction-focused charset.
+  with the same ordered common-emoji charset used by the picker.
 - emoji-picker: generic candidate picker backend with candidates stored in
   pack payload.
 
