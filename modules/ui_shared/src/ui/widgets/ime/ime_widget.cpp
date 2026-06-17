@@ -10,6 +10,7 @@
 #include "ui/localization.h"
 #include "ui/page/page_profile.h"
 #include "ui/ui_theme.h"
+#include "ui/widgets/ime/ime_input_mode_descriptor.h"
 
 #if UI_SHARED_TOUCH_IME_ENABLED
 #include "ui/LV_Helper.h"
@@ -35,20 +36,9 @@ static constexpr int kCandidatePickerMaxCandidates = 100;
 static constexpr lv_coord_t kCompactImeRowHeight = 22;
 static constexpr lv_coord_t kCompactImeControlHeight = 18;
 
-enum class ScriptInputKind
-{
-    None,
-    Pinyin,
-    RuCyrillicKeyboard,
-    CandidatePicker
-};
-
-struct ScriptInputDescriptor
-{
-    ScriptInputKind kind = ScriptInputKind::None;
-    const char* ime_id = nullptr;
-    const char* display_name = nullptr;
-};
+using KeyboardLayoutDescriptor = ::ui::widgets::ime::KeyboardLayoutDescriptor;
+using ScriptInputDescriptor = ::ui::widgets::ime::ScriptInputDescriptor;
+using ScriptInputKind = ::ui::widgets::ime::ScriptInputKind;
 
 const ::ui::i18n::ImeInfo* active_ime_info()
 {
@@ -70,41 +60,15 @@ const ::ui::i18n::ImeInfo* active_ime_info()
     return nullptr;
 }
 
-ScriptInputKind script_input_kind_for_ime(const ::ui::i18n::ImeInfo* ime)
-{
-    if (!ime || !ime->id || !ime->backend)
-    {
-        return ScriptInputKind::None;
-    }
-    if (std::strcmp(ime->id, "zh-hans-pinyin") == 0 &&
-        std::strcmp(ime->backend, "builtin-pinyin") == 0)
-    {
-        return ScriptInputKind::Pinyin;
-    }
-    if (std::strcmp(ime->id, "ru-cyrillic-keyboard") == 0 &&
-        std::strcmp(ime->backend, "builtin-keyboard-layout") == 0 &&
-        ime->layout != nullptr &&
-        std::strcmp(ime->layout, "ru-cyrillic") == 0)
-    {
-        return ScriptInputKind::RuCyrillicKeyboard;
-    }
-    if (std::strcmp(ime->backend, "builtin-candidate-picker") == 0 &&
-        ime->candidate_count > 0)
-    {
-        return ScriptInputKind::CandidatePicker;
-    }
-    return ScriptInputKind::None;
-}
-
 void append_unique_script_input(std::vector<ScriptInputDescriptor>& inputs,
                                 const ::ui::i18n::ImeInfo* ime)
 {
-    const ScriptInputKind kind = script_input_kind_for_ime(ime);
-    if (kind == ScriptInputKind::None)
+    ScriptInputDescriptor descriptor = ::ui::widgets::ime::describe_script_input(ime);
+    if (descriptor.kind == ScriptInputKind::None || descriptor.ime_id == nullptr)
     {
         return;
     }
-    const char* ime_id = ime && ime->id ? ime->id : "";
+    const char* ime_id = descriptor.ime_id;
     const auto existing = std::find_if(
         inputs.begin(),
         inputs.end(),
@@ -114,7 +78,7 @@ void append_unique_script_input(std::vector<ScriptInputDescriptor>& inputs,
         });
     if (existing == inputs.end())
     {
-        inputs.push_back({kind, ime_id, ime && ime->display_name ? ime->display_name : ime_id});
+        inputs.push_back(descriptor);
     }
 }
 
@@ -155,6 +119,12 @@ ScriptInputKind selected_script_input_kind(int script_input_index)
     return selected_script_input(script_input_index).kind;
 }
 
+const KeyboardLayoutDescriptor* selected_keyboard_layout(int script_input_index)
+{
+    const ScriptInputDescriptor input = selected_script_input(script_input_index);
+    return input.kind == ScriptInputKind::DirectKeyboard ? input.keyboard_layout : nullptr;
+}
+
 bool script_mode(ImeWidget::Mode mode)
 {
     return mode == ImeWidget::Mode::SCRIPT;
@@ -182,14 +152,6 @@ static const char* kTouchNumMap[] = {
     ".", ",", "?", "!", "'", "\"", "%", "+", "\n",
     "Space", ""};
 
-static const char* kTouchRuCyrillicMap[] = {
-    "й", "ц", "у", "к", "е", "н", "г", "ш", "щ", "з", "х", "ъ", "Bksp", "\n",
-    "ф", "ы", "в", "а", "п", "р", "о", "л", "д", "ж", "э", "Enter", "\n",
-    "я", "ч", "с", "м", "и", "т", "ь", "б", "ю", ",", ".", "?", "\n",
-    "Space", ""};
-
-static constexpr const char* kRuCyrillicFontProbe =
-    "йцукенгшщзхъфывапролджэячсмитьбю";
 #endif
 
 const char* candidate_picker_ime_id(int script_input_index)
@@ -740,7 +702,7 @@ bool ImeWidget::pinyin_mode() const
 bool ImeWidget::direct_keyboard_mode() const
 {
     return script_mode(mode_) &&
-           selected_script_input_kind(script_input_index_) == ScriptInputKind::RuCyrillicKeyboard;
+           selected_script_input_kind(script_input_index_) == ScriptInputKind::DirectKeyboard;
 }
 
 bool ImeWidget::candidate_picker_mode() const
@@ -1265,8 +1227,18 @@ void ImeWidget::refresh_touch_keyboard()
     }
     else if (direct_keyboard_mode())
     {
-        map = kTouchRuCyrillicMap;
-        font = ::ui::fonts::content_font(kRuCyrillicFontProbe, ::ui::fonts::ui_chrome_font());
+        const KeyboardLayoutDescriptor* layout = selected_keyboard_layout(script_input_index_);
+        if (layout != nullptr && layout->touch_map != nullptr)
+        {
+            map = layout->touch_map;
+        }
+        if (layout != nullptr &&
+            layout->font_probe_text != nullptr &&
+            layout->font_probe_text[0] != '\0')
+        {
+            font = ::ui::fonts::content_font(layout->font_probe_text,
+                                             ::ui::fonts::ui_chrome_font());
+        }
     }
     lv_obj_set_style_text_font(keyboard_matrix_, font, LV_PART_ITEMS);
     lv_btnmatrix_set_map(keyboard_matrix_, map);
@@ -1430,13 +1402,22 @@ void ImeWidget::refresh_labels()
     }
 
     const ScriptInputKind script_kind = selected_script_input_kind(script_input_index_);
-    if (script_kind == ScriptInputKind::RuCyrillicKeyboard)
+    if (script_kind == ScriptInputKind::DirectKeyboard)
     {
-        lv_label_set_text(toggle_label_, "RU");
+        const KeyboardLayoutDescriptor* layout = selected_keyboard_layout(script_input_index_);
+        lv_label_set_text(toggle_label_,
+                          layout != nullptr && layout->mode_label != nullptr
+                              ? layout->mode_label
+                              : "IM");
 #if UI_SHARED_TOUCH_IME_ENABLED
         if (touch_keyboard_enabled_)
         {
-            set_candidates_label_text(candidates_label_, ::ui::i18n::tr("Cyrillic keyboard"));
+            const ScriptInputDescriptor input = selected_script_input(script_input_index_);
+            const char* hint =
+                layout != nullptr && layout->touch_hint_key != nullptr
+                    ? ::ui::i18n::tr(layout->touch_hint_key)
+                    : input.display_name;
+            set_candidates_label_text(candidates_label_, hint != nullptr ? hint : "");
             refresh_touch_keyboard();
             refresh_touch_candidates();
             return;

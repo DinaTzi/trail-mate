@@ -190,6 +190,54 @@ IME pack manifest 只是输入法后端的声明，不是后端本身。
 
 `symbol-picker` 是内建特殊字符 IME。它不属于任何 locale，目的是让设备在未联网、未安装扩展包时仍可输入 Wi-Fi 密码、PSK、频道名等常用特殊字符。它可以被 Settings 的 IME 列表启用/禁用，但不能被实现成 Wi-Fi 页面私有按钮。
 
+直接键盘类后端必须再拆一层 `KeyboardLayoutDescriptor`。IME backend 只说明“这是直接提交字符的键盘输入策略”，layout descriptor 才拥有：
+
+1. 触摸键盘按键表。
+2. 触摸键盘标签需要的字体覆盖探针。
+3. 布局 id 与用户可见输入模式标签。
+
+因此，共享 `ImeWidget` 不允许按 `ru-cyrillic-keyboard`、`emoji-picker` 这类具体 IME id 写展示分支；它只能通过 strategy/descriptor 询问当前输入模式是否有触摸键盘、是否有全屏候选页、需要什么字体探针。西里尔、希腊、希伯来、假名等未来布局都必须新增 layout descriptor，而不是继续把字符表写进 widget。
+
+```mermaid
+classDiagram
+  class ImeWidget {
+    +setMode(mode)
+    +handle_key(event)
+    +refresh_labels()
+  }
+
+  class InputModeDescriptor {
+    +kind
+    +ime_id
+    +display_name
+    +keyboard_layout
+  }
+
+  class KeyboardLayoutDescriptor {
+    +layout_id
+    +mode_label
+    +touch_hint_key
+    +touch_map
+    +font_probe_text
+  }
+
+  class ImePackInfo {
+    +id
+    +backend
+    +layout
+    +candidate_count
+  }
+
+  class InputModeAdapter {
+    +describe(ime)
+  }
+
+  ImeWidget --> InputModeDescriptor
+  InputModeDescriptor --> KeyboardLayoutDescriptor
+  InputModeAdapter --> ImePackInfo
+  InputModeAdapter --> InputModeDescriptor
+```
+
 `translation_status` 仍然独立决定 locale 是否进入普通用户语言选择器。
 `review` locale 可以依赖真实 IME 以便运行时完整校验和安装该能力，但不能因此被当成 release UI locale。
 

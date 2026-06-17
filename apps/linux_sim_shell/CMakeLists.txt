@@ -397,6 +397,18 @@ if(BUILD_TESTING)
     add_test(NAME trailmate_ui_presentation_screen_binding_registry_smoke
              COMMAND trailmate_ui_presentation_screen_binding_registry_smoke)
 
+    add_executable(trailmate_ime_input_mode_descriptor_smoke
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/test_ime_input_mode_descriptor.cpp"
+        "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/src/ui/widgets/ime/ime_input_mode_descriptor.cpp")
+    target_include_directories(trailmate_ime_input_mode_descriptor_smoke
+        PRIVATE
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/include"
+            "${TRAIL_MATE_REPO_ROOT}/modules/ui_shared/tests/stubs")
+    target_compile_features(trailmate_ime_input_mode_descriptor_smoke
+        PRIVATE cxx_std_17)
+    add_test(NAME trailmate_ime_input_mode_descriptor_smoke
+             COMMAND trailmate_ime_input_mode_descriptor_smoke)
+
     add_executable(trailmate_timezone_profile_smoke
         "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/tests/test_timezone_profile.cpp"
         "${TRAIL_MATE_REPO_ROOT}/modules/core_sys/src/platform/ui/timezone_profile.cpp")

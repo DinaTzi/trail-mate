@@ -256,12 +256,14 @@ layout=ru-cyrillic
 backend 的真实实现位于固件代码中。IME pack manifest 是把它注册进运行时并暴露出来的那一层。
 `layout` 是直接键盘布局后端的目标布局名；转换型后端例如拼音可以不声明 `layout`。
 `builtin-candidate-picker` 是通用候选列表后端：候选来源可以是内建的 `symbol-picker`，也可以是扩展包的 `candidates.txt`。
+`builtin-keyboard-layout` 必须通过 `layout` 指向一个固件已知的 keyboard layout descriptor。descriptor 拥有触摸键盘 map、按键标签字体 probe 和模式标签；IME pack 只引用 descriptor，不复制这些展示资源。
 
 硬规则：
 
 - 只有已经有真实输入引擎和正确候选词表的 IME 才能出现在 runtime payload 中。
 - 候选列表 IME 进入时必须打开共享全屏候选页，最多展示 100 个候选；候选顺序按预估使用频率排列，超出 100 的低频候选必须裁掉。
 - 页面不得为符号或 emoji 编写专属 picker。Chat、Contacts、Settings 文本弹窗等文本输入只允许接入共享 `ImeWidget`。
+- 直接键盘布局不得把具体字符表、字体 probe 或 layout id 判断写进 `ImeWidget`。新增布局时只能扩展 keyboard layout descriptor registry。
 - 未实现的假名、韩文、阿拉伯、繁中注音/仓颉和泛 Latin 软键盘，不得用 `backend=builtin-*` 提前占位。
 - 西里尔输入只有 `ru-cyrillic-keyboard` 当前可发布；它是直接键盘布局，不是候选词转换引擎。
 - 台湾繁中不得默认拼音。未来 `zh-Hant-TW` 的首选输入法应是注音，仓颉/速成可以作为可选扩展。

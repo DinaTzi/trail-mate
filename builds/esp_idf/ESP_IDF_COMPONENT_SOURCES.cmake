@@ -305,6 +305,7 @@ set(TRAILMATE_ESP_IDF_UI_SHARED_SOURCES
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/team_presentation/team_rich_payload_projector.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/team_presence/team_presence_model.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/widgets/busy_overlay.cpp"
+    "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/widgets/ime/ime_input_mode_descriptor.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/widgets/ime/ime_widget.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/widgets/ime/pinyin_ime.cpp"
     "${TRAILMATE_ROOT}/modules/ui_shared/src/ui/widgets/map/map_viewport.cpp"
