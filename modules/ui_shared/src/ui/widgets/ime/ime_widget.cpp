@@ -17,6 +17,7 @@
 #include <cctype>
 #include <cstring>
 #include <string>
+#include <vector>
 
 namespace ui
 {
@@ -35,7 +36,15 @@ enum class ScriptInputKind
 {
     None,
     Pinyin,
-    RuCyrillicKeyboard
+    RuCyrillicKeyboard,
+    CandidatePicker
+};
+
+struct ScriptInputDescriptor
+{
+    ScriptInputKind kind = ScriptInputKind::None;
+    const char* ime_id = nullptr;
+    const char* display_name = nullptr;
 };
 
 const ::ui::i18n::ImeInfo* active_ime_info()
@@ -58,9 +67,8 @@ const ::ui::i18n::ImeInfo* active_ime_info()
     return nullptr;
 }
 
-ScriptInputKind active_script_input_kind()
+ScriptInputKind script_input_kind_for_ime(const ::ui::i18n::ImeInfo* ime)
 {
-    const ::ui::i18n::ImeInfo* ime = active_ime_info();
     if (!ime || !ime->id || !ime->backend)
     {
         return ScriptInputKind::None;
@@ -77,7 +85,71 @@ ScriptInputKind active_script_input_kind()
     {
         return ScriptInputKind::RuCyrillicKeyboard;
     }
+    if (std::strcmp(ime->backend, "builtin-candidate-picker") == 0 &&
+        ime->candidate_count > 0)
+    {
+        return ScriptInputKind::CandidatePicker;
+    }
     return ScriptInputKind::None;
+}
+
+void append_unique_script_input(std::vector<ScriptInputDescriptor>& inputs,
+                                const ::ui::i18n::ImeInfo* ime)
+{
+    const ScriptInputKind kind = script_input_kind_for_ime(ime);
+    if (kind == ScriptInputKind::None)
+    {
+        return;
+    }
+    const char* ime_id = ime && ime->id ? ime->id : "";
+    const auto existing = std::find_if(
+        inputs.begin(),
+        inputs.end(),
+        [&](const ScriptInputDescriptor& input)
+        {
+            return input.ime_id != nullptr && std::strcmp(input.ime_id, ime_id) == 0;
+        });
+    if (existing == inputs.end())
+    {
+        inputs.push_back({kind, ime_id, ime && ime->display_name ? ime->display_name : ime_id});
+    }
+}
+
+std::vector<ScriptInputDescriptor> available_script_inputs()
+{
+    std::vector<ScriptInputDescriptor> inputs;
+    append_unique_script_input(inputs, active_ime_info());
+
+    const std::size_t count = ::ui::i18n::ime_count();
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        const ::ui::i18n::ImeInfo* ime = ::ui::i18n::ime_at(index);
+        if (ime == nullptr || ime->id == nullptr || !::ui::i18n::ime_enabled(ime->id))
+        {
+            continue;
+        }
+        append_unique_script_input(inputs, ime);
+    }
+    return inputs;
+}
+
+ScriptInputDescriptor selected_script_input(int script_input_index)
+{
+    const std::vector<ScriptInputDescriptor> inputs = available_script_inputs();
+    if (inputs.empty())
+    {
+        return {};
+    }
+    if (script_input_index < 0 || script_input_index >= static_cast<int>(inputs.size()))
+    {
+        script_input_index = 0;
+    }
+    return inputs[static_cast<std::size_t>(script_input_index)];
+}
+
+ScriptInputKind selected_script_input_kind(int script_input_index)
+{
+    return selected_script_input(script_input_index).kind;
 }
 
 bool script_mode(ImeWidget::Mode mode)
@@ -113,9 +185,58 @@ static const char* kTouchRuCyrillicMap[] = {
     "я", "ч", "с", "м", "и", "т", "ь", "б", "ю", ",", ".", "?", "\n",
     "Space", ""};
 
+static const char* kTouchCandidatePickerMap[] = {
+    "Prev", "Pick", "Next", "Bksp", "\n",
+    "Space", "Enter", ""};
+
 static constexpr const char* kRuCyrillicFontProbe =
     "йцукенгшщзхъфывапролджэячсмитьбю";
 #endif
+
+const char* candidate_picker_ime_id(int script_input_index)
+{
+    const ScriptInputDescriptor input = selected_script_input(script_input_index);
+    return input.kind == ScriptInputKind::CandidatePicker ? input.ime_id : nullptr;
+}
+
+const char* candidate_picker_display_name(int script_input_index)
+{
+    const ScriptInputDescriptor input = selected_script_input(script_input_index);
+    return input.kind == ScriptInputKind::CandidatePicker ? input.display_name : nullptr;
+}
+
+int candidate_picker_candidate_count(int script_input_index)
+{
+    const char* ime_id = candidate_picker_ime_id(script_input_index);
+    return static_cast<int>(::ui::i18n::ime_candidate_count(ime_id));
+}
+
+const char* candidate_picker_candidate_at(int script_input_index, int index)
+{
+    if (index < 0)
+    {
+        return nullptr;
+    }
+    const char* ime_id = candidate_picker_ime_id(script_input_index);
+    return ::ui::i18n::ime_candidate_at(ime_id, static_cast<std::size_t>(index));
+}
+
+std::vector<std::string> candidate_picker_candidates_vector(int script_input_index)
+{
+    std::vector<std::string> candidates;
+    candidates.reserve(static_cast<std::size_t>(
+        candidate_picker_candidate_count(script_input_index)));
+    const int count = candidate_picker_candidate_count(script_input_index);
+    for (int index = 0; index < count; ++index)
+    {
+        const char* candidate = candidate_picker_candidate_at(script_input_index, index);
+        if (candidate != nullptr && candidate[0] != '\0')
+        {
+            candidates.emplace_back(candidate);
+        }
+    }
+    return candidates;
+}
 std::string make_candidates_text(const std::vector<std::string>& candidates,
                                  int active_idx,
                                  int max_show = kCandidatesPerPage,
@@ -236,6 +357,9 @@ bool touch_token_is_action(const char* token)
     return token != nullptr &&
            (std::strcmp(token, "Bksp") == 0 ||
             std::strcmp(token, "Enter") == 0 ||
+            std::strcmp(token, "Prev") == 0 ||
+            std::strcmp(token, "Next") == 0 ||
+            std::strcmp(token, "Pick") == 0 ||
             std::strcmp(token, "Space") == 0);
 }
 
@@ -531,14 +655,22 @@ void ImeWidget::detach()
 
 void ImeWidget::setMode(Mode mode)
 {
-    const ScriptInputKind requested_kind = active_script_input_kind();
+    const std::vector<ScriptInputDescriptor> script_inputs = available_script_inputs();
+    if (script_input_index_ < 0 ||
+        script_input_index_ >= static_cast<int>(script_inputs.size()))
+    {
+        script_input_index_ = 0;
+    }
+    const ScriptInputKind requested_kind =
+        script_inputs.empty() ? ScriptInputKind::None
+                              : script_inputs[static_cast<std::size_t>(script_input_index_)].kind;
     if (script_mode(mode) && requested_kind == ScriptInputKind::None)
     {
         mode = Mode::EN;
     }
 
     mode_ = mode;
-    const bool use_pinyin = pinyin_mode();
+    const bool use_pinyin = script_mode(mode_) && requested_kind == ScriptInputKind::Pinyin;
     ime_.setEnabled(use_pinyin);
     if (textarea_)
     {
@@ -547,6 +679,10 @@ void ImeWidget::setMode(Mode mode)
         if (use_pinyin)
         {
             ime_.reset();
+            lv_textarea_set_accepted_chars(textarea_, "");
+        }
+        else if (script_mode(mode_) && requested_kind == ScriptInputKind::CandidatePicker)
+        {
             lv_textarea_set_accepted_chars(textarea_, "");
         }
         else
@@ -566,18 +702,26 @@ ImeWidget::Mode ImeWidget::mode() const
 
 bool ImeWidget::pinyin_mode() const
 {
-    return script_mode(mode_) && active_script_input_kind() == ScriptInputKind::Pinyin;
+    return script_mode(mode_) &&
+           selected_script_input_kind(script_input_index_) == ScriptInputKind::Pinyin;
 }
 
 bool ImeWidget::direct_keyboard_mode() const
 {
     return script_mode(mode_) &&
-           active_script_input_kind() == ScriptInputKind::RuCyrillicKeyboard;
+           selected_script_input_kind(script_input_index_) == ScriptInputKind::RuCyrillicKeyboard;
+}
+
+bool ImeWidget::candidate_picker_mode() const
+{
+    return script_mode(mode_) &&
+           selected_script_input_kind(script_input_index_) == ScriptInputKind::CandidatePicker;
 }
 
 void ImeWidget::cycleMode()
 {
-    if (active_script_input_kind() == ScriptInputKind::None)
+    const std::vector<ScriptInputDescriptor> script_inputs = available_script_inputs();
+    if (script_inputs.empty())
     {
         setMode(mode_ == Mode::EN ? Mode::NUM : Mode::EN);
         return;
@@ -585,11 +729,20 @@ void ImeWidget::cycleMode()
 
     if (mode_ == Mode::EN)
     {
+        script_input_index_ = 0;
         setMode(Mode::SCRIPT);
     }
     else if (script_mode(mode_))
     {
-        setMode(Mode::NUM);
+        if ((script_input_index_ + 1) < static_cast<int>(script_inputs.size()))
+        {
+            ++script_input_index_;
+            setMode(Mode::SCRIPT);
+        }
+        else
+        {
+            setMode(Mode::NUM);
+        }
     }
     else
     {
@@ -599,6 +752,24 @@ void ImeWidget::cycleMode()
 
 bool ImeWidget::commit_candidate(int candidate_index)
 {
+    if (candidate_picker_mode())
+    {
+        if (candidate_index < 0 ||
+            candidate_index >= candidate_picker_candidate_count(script_input_index_))
+        {
+            return false;
+        }
+        const char* candidate = candidate_picker_candidate_at(script_input_index_, candidate_index);
+        if (candidate == nullptr || candidate[0] == '\0')
+        {
+            return false;
+        }
+        committed_text_ += candidate;
+        sync_textarea();
+        refresh_labels();
+        return true;
+    }
+
     std::string out;
     if (!ime_.commitCandidate(candidate_index, out))
     {
@@ -719,6 +890,47 @@ bool ImeWidget::handle_key_code(uint32_t key)
             }
         }
     }
+    else if (candidate_picker_mode())
+    {
+        const int count = candidate_picker_candidate_count(script_input_index_);
+        if (key == LV_KEY_BACKSPACE)
+        {
+            erase_last_utf8_char(committed_text_);
+            update_text = true;
+            consumed = true;
+        }
+        else if (key == LV_KEY_UP || key == LV_KEY_LEFT)
+        {
+            if (candidate_picker_index_ > 0)
+            {
+                --candidate_picker_index_;
+            }
+            consumed = true;
+        }
+        else if (key == LV_KEY_DOWN || key == LV_KEY_RIGHT)
+        {
+            if (candidate_picker_index_ + 1 < count)
+            {
+                ++candidate_picker_index_;
+            }
+            consumed = true;
+        }
+        else if (key == LV_KEY_ENTER || key == ' ')
+        {
+            if (candidate_picker_index_ < 0 || candidate_picker_index_ >= count)
+            {
+                candidate_picker_index_ = 0;
+            }
+            const char* candidate =
+                candidate_picker_candidate_at(script_input_index_, candidate_picker_index_);
+            if (candidate != nullptr && candidate[0] != '\0')
+            {
+                committed_text_ += candidate;
+                update_text = true;
+            }
+            consumed = true;
+        }
+    }
     else
     {
         if (key == LV_KEY_BACKSPACE)
@@ -760,7 +972,8 @@ bool ImeWidget::handle_key_code(uint32_t key)
 
 bool ImeWidget::handle_text_token(const char* token)
 {
-    if (!textarea_ || !token || token[0] == '\0' || !direct_keyboard_mode())
+    if (!textarea_ || !token || token[0] == '\0' ||
+        (!direct_keyboard_mode() && !candidate_picker_mode()))
     {
         return false;
     }
@@ -835,6 +1048,12 @@ void ImeWidget::refresh_touch_keyboard()
         map = kTouchRuCyrillicMap;
         font = ::ui::fonts::content_font(kRuCyrillicFontProbe, ::ui::fonts::ui_chrome_font());
     }
+    else if (candidate_picker_mode())
+    {
+        map = kTouchCandidatePickerMap;
+        const char* first_candidate = candidate_picker_candidate_at(script_input_index_, 0);
+        font = ::ui::fonts::content_font(first_candidate ? first_candidate : "", ::ui::fonts::ui_chrome_font());
+    }
     lv_obj_set_style_text_font(keyboard_matrix_, font, LV_PART_ITEMS);
     lv_btnmatrix_set_map(keyboard_matrix_, map);
 }
@@ -846,7 +1065,7 @@ void ImeWidget::refresh_touch_candidates()
         return;
     }
 
-    const bool show_candidates = pinyin_mode();
+    const bool show_candidates = pinyin_mode() || candidate_picker_mode();
     if (!show_candidates)
     {
         lv_obj_add_flag(candidate_row_, LV_OBJ_FLAG_HIDDEN);
@@ -854,9 +1073,20 @@ void ImeWidget::refresh_touch_candidates()
     }
     lv_obj_clear_flag(candidate_row_, LV_OBJ_FLAG_HIDDEN);
 
-    const auto& candidates = ime_.candidates();
+    const std::vector<std::string> picker_candidates =
+        candidate_picker_mode() ? candidate_picker_candidates_vector(script_input_index_)
+                                : std::vector<std::string>{};
+    const auto& candidates = candidate_picker_mode() ? picker_candidates : ime_.candidates();
     const int total = static_cast<int>(candidates.size());
-    const int active = ime_.candidateIndex();
+    int active = candidate_picker_mode() ? candidate_picker_index_ : ime_.candidateIndex();
+    if (active < 0 || active >= total)
+    {
+        active = 0;
+        if (candidate_picker_mode())
+        {
+            candidate_picker_index_ = 0;
+        }
+    }
     const int visible_count = static_cast<int>(candidate_btns_.size());
 
     if (total <= 0)
@@ -932,7 +1162,7 @@ void ImeWidget::refresh_labels()
         return;
     }
 
-    if (script_mode(mode_) && active_script_input_kind() == ScriptInputKind::None)
+    if (script_mode(mode_) && selected_script_input_kind(script_input_index_) == ScriptInputKind::None)
     {
         mode_ = Mode::EN;
         ime_.setEnabled(false);
@@ -940,7 +1170,7 @@ void ImeWidget::refresh_labels()
 
     if (textarea_)
     {
-        if (pinyin_mode() && ime_.hasBuffer())
+        if ((pinyin_mode() && ime_.hasBuffer()) || candidate_picker_mode())
         {
             if (lv_group_t* g = lv_group_get_default())
             {
@@ -992,7 +1222,7 @@ void ImeWidget::refresh_labels()
         return;
     }
 
-    const ScriptInputKind script_kind = active_script_input_kind();
+    const ScriptInputKind script_kind = selected_script_input_kind(script_input_index_);
     if (script_kind == ScriptInputKind::RuCyrillicKeyboard)
     {
         lv_label_set_text(toggle_label_, "RU");
@@ -1006,6 +1236,26 @@ void ImeWidget::refresh_labels()
         }
 #endif
         set_candidates_label_text(candidates_label_, "");
+        return;
+    }
+
+    if (script_kind == ScriptInputKind::CandidatePicker)
+    {
+        lv_label_set_text(toggle_label_, "IM");
+#if UI_SHARED_TOUCH_IME_ENABLED
+        if (touch_keyboard_enabled_)
+        {
+            const char* display_name = candidate_picker_display_name(script_input_index_);
+            set_candidates_label_text(candidates_label_,
+                                      display_name && display_name[0] != '\0'
+                                          ? display_name
+                                          : ::ui::i18n::tr("Input picker"));
+            refresh_touch_keyboard();
+            refresh_touch_candidates();
+            return;
+        }
+#endif
+        refresh_candidates();
         return;
     }
 
@@ -1034,7 +1284,24 @@ void ImeWidget::refresh_candidates()
     }
     if (!pinyin_mode() || !ime_.hasBuffer())
     {
-        set_candidates_label_text(candidates_label_, "");
+        if (candidate_picker_mode())
+        {
+            if (candidate_picker_index_ < 0 ||
+                candidate_picker_index_ >= candidate_picker_candidate_count(script_input_index_))
+            {
+                candidate_picker_index_ = 0;
+            }
+            std::string text =
+                make_candidates_text(candidate_picker_candidates_vector(script_input_index_),
+                                     candidate_picker_index_,
+                                     kCompactCandidatesPerPage,
+                                     " ");
+            set_candidates_label_text(candidates_label_, text.c_str());
+        }
+        else
+        {
+            set_candidates_label_text(candidates_label_, "");
+        }
         return;
     }
     std::string text =
@@ -1080,10 +1347,34 @@ void ImeWidget::on_touch_key_event(lv_event_t* e)
     }
 
     const char* token = lv_btnmatrix_get_btn_text(self->keyboard_matrix_, button_id);
-    if (self->direct_keyboard_mode() && !touch_token_is_action(token))
+    if ((self->direct_keyboard_mode() || self->candidate_picker_mode()) &&
+        !touch_token_is_action(token))
     {
         (void)self->handle_text_token(token);
         return;
+    }
+    if (self->candidate_picker_mode() && token != nullptr)
+    {
+        if (std::strcmp(token, "Prev") == 0)
+        {
+            self->handle_key_code(LV_KEY_LEFT);
+            return;
+        }
+        if (std::strcmp(token, "Next") == 0)
+        {
+            self->handle_key_code(LV_KEY_RIGHT);
+            return;
+        }
+        if (std::strcmp(token, "Pick") == 0)
+        {
+            self->handle_key_code(LV_KEY_ENTER);
+            return;
+        }
+        if (std::strcmp(token, "Space") == 0)
+        {
+            (void)self->handle_text_token(" ");
+            return;
+        }
     }
 
     uint32_t key = 0;

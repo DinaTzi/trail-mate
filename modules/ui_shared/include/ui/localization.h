@@ -28,6 +28,7 @@ struct ImeInfo
     const char* display_name = nullptr;
     const char* backend = nullptr;
     const char* layout = nullptr;
+    std::size_t candidate_count = 0;
     bool builtin = true;
 };
 
@@ -46,6 +47,8 @@ const lv_font_t* locale_preview_font(const char* locale_id, const lv_font_t* asc
 bool ensure_content_font_for_text(const char* text);
 std::size_t ime_count();
 const ImeInfo* ime_at(std::size_t index);
+std::size_t ime_candidate_count(const char* ime_id);
+const char* ime_candidate_at(const char* ime_id, std::size_t index);
 std::size_t enabled_ime_count();
 bool ime_enabled(const char* ime_id);
 bool set_ime_enabled(const char* ime_id, bool enabled, bool persist = true);

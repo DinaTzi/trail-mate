@@ -62,6 +62,7 @@ class ImeWidget
     bool commit_candidate(int candidate_index);
     bool pinyin_mode() const;
     bool direct_keyboard_mode() const;
+    bool candidate_picker_mode() const;
 
     static void on_toggle_clicked(lv_event_t* e);
     static void on_touch_key_event(lv_event_t* e);
@@ -85,6 +86,8 @@ class ImeWidget
     std::string committed_text_;
     bool touch_keyboard_enabled_ = false;
     int candidate_window_start_ = 0;
+    int script_input_index_ = 0;
+    int candidate_picker_index_ = 0;
 };
 
 } // namespace widgets

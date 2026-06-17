@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "archive_layout": "trailmate-pack-v1",
-  "generated_at": "2026-06-13T13:06:44.045861Z",
+  "generated_at": "2026-06-16T21:20:43.050954Z",
   "packages": [
     {
       "id": "ar",
@@ -58,6 +58,63 @@
         "path": "assets/packs/ar-1.1.1.zip",
         "size_bytes": 32776,
         "sha256": "ff8bc2e051ff4b113335ed1f100e40e5ebaa17d598b0d7b8efa8ac24a772bd8f"
+      },
+      "files": {
+        "package_manifest": "package.ini",
+        "description": "DESCRIPTION.txt",
+        "readme": "README.md"
+      }
+    },
+    {
+      "id": "emoji",
+      "package_type": "content-bundle",
+      "version": "1.0.0",
+      "display_name": "Emoji",
+      "summary": "Optional common emoji font supplement and emoji picker input method for chat reactions.",
+      "description": "Emoji installs an optional common-emoji content supplement font pack and a\nsmall emoji picker input method.\n\nIt is not a locale. It does not change translated UI text or the active\nlanguage. The font pack exists so received chat messages containing common\nreaction emoji can render instead of showing missing-glyph boxes. The IME pack\nexists so devices with the shared compose widget can insert the same basic\nreaction set.\n\nIncluded payload:\n- emoji-core: content-only LVGL binfont generated from Noto Emoji Monochrome\n  with a small reaction-focused charset.\n- emoji-picker: generic candidate picker backend with candidates stored in\n  pack payload.\n\nThis package is intentionally distributed as an Extensions download. It is not\npart of the default firmware image.",
+      "author": "Trail Mate",
+      "homepage": "https://vicliu624.github.io/trail-mate/",
+      "min_firmware_version": "0.1.30-alpha",
+      "supported_memory_profiles": [
+        "standard",
+        "extended"
+      ],
+      "tags": [
+        "emoji",
+        "chat",
+        "input",
+        "content"
+      ],
+      "provides": {
+        "locales": [],
+        "fonts": [
+          {
+            "id": "emoji-core",
+            "display_name": "Emoji Core",
+            "usage": "content",
+            "estimated_ram_bytes": 4096
+          }
+        ],
+        "ime": [
+          {
+            "id": "emoji-picker",
+            "display_name": "Emoji Picker",
+            "backend": "builtin-candidate-picker",
+            "layout": ""
+          }
+        ]
+      },
+      "runtime": {
+        "estimated_unique_font_ram_bytes": 4096,
+        "locale_count": 0,
+        "font_count": 1,
+        "ime_count": 1
+      },
+      "archive": {
+        "layout": "trailmate-pack-v1",
+        "path": "assets/packs/emoji-1.0.0.zip",
+        "size_bytes": 4880,
+        "sha256": "fa30d0b7566c4945ea7f251b873b2aa90d0d3c29b5bbd18c6e3c3dde7d9c4e48"
       },
       "files": {
         "package_manifest": "package.ini",

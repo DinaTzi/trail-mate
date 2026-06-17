@@ -1,0 +1,17 @@
+Emoji installs an optional common-emoji content supplement font pack and a
+small emoji picker input method.
+
+It is not a locale. It does not change translated UI text or the active
+language. The font pack exists so received chat messages containing common
+reaction emoji can render instead of showing missing-glyph boxes. The IME pack
+exists so devices with the shared compose widget can insert the same basic
+reaction set.
+
+Included payload:
+- emoji-core: content-only LVGL binfont generated from Noto Emoji Monochrome
+  with a small reaction-focused charset.
+- emoji-picker: generic candidate picker backend with candidates stored in
+  pack payload.
+
+This package is intentionally distributed as an Extensions download. It is not
+part of the default firmware image.

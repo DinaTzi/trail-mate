@@ -155,9 +155,12 @@ std::string join_values(const std::vector<std::string>& values)
     return joined;
 }
 
-bool is_language_package(const packs::PackageRecord& package)
+bool is_extension_package(const packs::PackageRecord& package)
 {
-    return package.package_type.empty() || package.package_type == "locale-bundle";
+    return package.package_type.empty() ||
+           package.package_type == "locale-bundle" ||
+           package.package_type == "content-bundle" ||
+           package.package_type == "input-bundle";
 }
 
 bool can_install_or_update(const packs::PackageRecord& package)
@@ -460,7 +463,7 @@ void rebuild_filtered_indices()
     s_runtime.filtered_indices.clear();
     for (std::size_t i = 0; i < s_runtime.packages.size(); ++i)
     {
-        if (is_language_package(s_runtime.packages[i]))
+        if (is_extension_package(s_runtime.packages[i]))
         {
             s_runtime.filtered_indices.push_back(i);
         }
@@ -822,7 +825,7 @@ void render_current_view()
     if (s_runtime.view == MainView::Detail)
     {
         const std::size_t selected_index = find_package_index(s_runtime.selected_package_id);
-        if (selected_index != kInvalidIndex && is_language_package(s_runtime.packages[selected_index]))
+        if (selected_index != kInvalidIndex && is_extension_package(s_runtime.packages[selected_index]))
         {
             render_detail_view(selected_index);
             return;
@@ -878,7 +881,7 @@ void create_filter_panel(lv_obj_t* parent)
     lv_obj_add_event_cb(s_runtime.filter_btn, on_focus_scroll, LV_EVENT_FOCUSED, nullptr);
 
     lv_obj_t* label = lv_label_create(s_runtime.filter_btn);
-    ::ui::i18n::set_label_text(label, "Language");
+    ::ui::i18n::set_label_text(label, "Packs");
     two_pane_styles::apply_label_primary(label);
     lv_obj_center(label);
 }

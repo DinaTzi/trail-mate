@@ -1,6 +1,6 @@
 # Locale Pack Release Specification
 
-本文档定义 Trail Mate 语言包的打包、发布、更新与回滚规则。
+本文档定义 Trail Mate 语言/内容/输入扩展包的打包、发布、更新与回滚规则。
 
 它回答的问题不是“如何翻译一句话”，而是：
 
@@ -17,7 +17,7 @@
 
 ## 1. 发布对象
 
-语言包发布涉及五个对象：
+语言/内容/输入扩展包发布涉及五个对象：
 
 1. source bundle
    - 仓库中的 `packs/<bundle-id>/`。
@@ -37,6 +37,8 @@
 ## 2. 包状态
 
 locale manifest 的 `translation_status` 控制运行时是否能采用该 locale。
+没有 locale 的 `content-bundle` / `input-bundle` 不参与 `translation_status`
+判定，但仍必须通过 font/IME payload 校验。
 
 1. `release`
    - 可以出现在语言选择器。
@@ -123,7 +125,13 @@ payload/locales/<locale-id>/strings.tsv
 payload/ime/<ime-pack-id>/manifest.ini
 ```
 
-其中 `payload/ime/...` 只允许包含真实可运行 IME。未实现输入法不得进入 archive。
+其中 `payload/locales/...` 与 `payload/ime/...` 按 package 类型可选：
+
+1. `locale-bundle` 必须至少提供一个 locale。
+2. `content-bundle` 可以不提供 locale，但必须至少提供一个 font 或 IME。
+3. `input-bundle` 可以不提供 locale，但必须至少提供一个真实可运行 IME。
+
+`payload/ime/...` 只允许包含真实可运行 IME。未实现输入法不得进入 archive。
 
 archive 不得包含：
 
@@ -138,7 +146,9 @@ archive 不得包含：
 
 ## 6. Catalog 规则
 
-`site/data/packs.json` 是用户看到可安装/可更新语言包的 catalog。
+`site/data/packs.json` 是用户看到可安装/可更新扩展包的 catalog。
+Extensions UI 必须把 `locale-bundle`、`content-bundle` 与 `input-bundle`
+都视为可安装扩展，而不是只显示语言包。
 
 每次 package version 或 archive 内容变化，都必须重建 catalog，使以下字段同步：
 
@@ -178,6 +188,14 @@ archive 不得包含：
 4. `content_font_pack` 存在且可解析。
 5. `ime_pack` 只指向真实 runtime IME。
 6. RTL locale 必须声明 `direction=rtl`。
+
+每个 font/IME-only package 必须校验：
+
+1. package type 不是空值且不是伪装的 `locale-bundle`。
+2. 没有 locale 时仍至少提供一个 font 或 IME record。
+3. IME backend 已被当前固件运行时支持；`builtin-candidate-picker` 这类通用候选列表后端必须带候选 payload。
+4. font `usage` 与包语义匹配；emoji 这类内容补充必须使用 `usage=content`。
+5. 如果 IME 需要候选表或布局表，这些数据必须作为 pack payload 文件发布，不能写进固件代码，也不能靠固件按 package id 补齐。
 
 每个 package manifest 必须校验：
 

@@ -366,6 +366,64 @@ English 必须在没有任何外部 pack 的情况下仍可工作。
 
 这条规则的目标是保护 UI 实时域：联系人页、聊天页、地图 overlay、节点详情页等内容页面不得因为遇到中文/日文/韩文/阿拉伯文本而把 UI 线程拖入 SD 阻塞 IO。
 
+#### Small content supplement preload
+
+ESP 上允许一个非常窄的例外：如果 content supplement 的 manifest 中的
+`estimated_ram_bytes` 不超过固件规定的小 supplement 上限，registry 可以在
+`reload_language()` / 安装完成后的重新编目阶段预加载它，并把它加入 content font chain。
+
+这个例外只用于类似 `emoji-core` 这种小型、可选、用户安装后的内容补充包。它不适用于：
+
+1. 大型 locale 字体。
+2. locale 激活之外的 UI 字体替换。
+3. 任何需要反复探测缺失文件的失败路径。
+4. 页面渲染、列表构建、LVGL 事件或 timer 路径中的 SD-backed `font.bin` 同步读取。
+
+因此，安装到当前运行时 pack root 的小型内容扩展可以在 registry 阶段进入可用字体链；之后聊天内容第一次遇到对应字符时，内容热路径只选择已经 loaded 的字体链，不再为了该字符直接读取 SD。
+
+### 4.5.2 Emoji Extension Boundary
+
+Emoji 支持不是一个 locale。
+
+它由两个可下载扩展对象组成：
+
+1. `emoji-core`
+   - `kind=font`
+   - `usage=content`
+   - 作为 content supplement font pack 参与内容字体链。
+2. `emoji-picker`
+   - `kind=ime`
+   - `backend=builtin-candidate-picker`
+   - `candidates=<file>` 指向 pack payload 中的 UTF-8 候选资源
+   - 作为通用候选列表 IME 后端暴露给共享 compose widget。
+
+合法依赖方向是：
+
+```mermaid
+flowchart LR
+  ChatText["Chat / content text"] --> FontResolver["Content font resolver"]
+  FontResolver --> EmojiFont["emoji-core supplement"]
+  ComposeWidget["Compose widget"] --> ImeRegistry["IME registry"]
+  ImeRegistry --> EmojiIme["emoji-picker"]
+  EmojiIme --> TextInsert["UTF-8 text insertion"]
+```
+
+非法做法：
+
+1. 在聊天页面硬编码 emoji 替换表。
+2. 把 emoji 声明成一个假 locale。
+3. 让 `emoji-picker` 在没有 runtime 后端或候选资源为空时出现在设置页。
+4. 为了显示 emoji 而把所有 `1Fxxx` 字符映射到同一个内置图标。
+5. 在 UI 热路径同步读取 SD 上的 emoji font。
+
+安装边界：
+
+1. 默认固件不携带 `emoji-core/font.bin`；只有安装扩展后 registry 才能发现 `emoji-picker`。
+2. Extensions 安装包负责下载并解包 font/IME payload。
+3. 安装后 `reload_language()` 重新编目，IME 设置页才能看到 `emoji-picker`。
+4. 删除扩展包后，registry 必须回到“无 emoji 字库/IME”的解释状态。
+5. 固件代码只允许包含 `builtin-candidate-picker` 这种通用候选列表后端逻辑，不得内置具体 emoji 候选表，也不得按 `emoji-picker` id 做业务分支。
+
 ### 4.6 Persistence Contract
 
 当前 locale 的持久化 key 是：
@@ -409,8 +467,8 @@ English 必须在没有任何外部 pack 的情况下仍可工作。
 3. 重新选择 active locale
 4. 按需加载字体
 
-当前 Arduino/ESP32 安装器默认把下载得到的 payload 解到 Flash pack 根。
-与此同时，手工把 runtime payload 拷贝到 SD 仍然是合法安装方式，因为运行时会同时编目当前支持的 Flash/SD 根。
+当前 Arduino/ESP32 安装器把下载得到的 payload 解到当前平台定义的 pack root。
+运行时会同时编目当前支持的 Flash/SD 根，因此手工把 runtime payload 拷贝到任一受支持根仍然是合法安装方式。
 
 禁止让运行时 registry 直接承担网络下载或 zip 解释职责。
 

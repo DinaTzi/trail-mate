@@ -54,6 +54,7 @@ constexpr const char* kDisabledImeSentinel = "__none__";
 constexpr std::size_t kFontLoadOverlayThresholdBytes = 64U * 1024U;
 constexpr unsigned kMaxMissingFontDiagnostics = 20;
 constexpr uint32_t kFontLoadFailureBackoffMs = 5U * 60U * 1000U;
+constexpr std::size_t kSmallContentSupplementMaxBytes = 16U * 1024U;
 
 #if defined(LV_USE_FS_POSIX) && LV_USE_FS_POSIX
 constexpr bool kLvFsPosixEnabled = true;
@@ -108,6 +109,7 @@ struct ImePackRecord
     std::string display_name;
     std::string backend;
     std::string layout;
+    std::vector<std::string> candidates;
     bool builtin = false;
 };
 
@@ -574,9 +576,52 @@ bool ime_backend_supports_runtime_input(const ImePackRecord& pack)
     {
         return true;
     }
+    if (pack.backend == "builtin-candidate-picker")
+    {
+        return !pack.candidates.empty();
+    }
     return pack.id == "ru-cyrillic-keyboard" &&
            pack.backend == "builtin-keyboard-layout" &&
            pack.layout == "ru-cyrillic";
+}
+
+bool parse_ime_candidate_file(const std::string& path, std::vector<std::string>& out)
+{
+    out.clear();
+
+    std::string contents;
+    if (!::ui::fs::read_text_file(path.c_str(), contents))
+    {
+        return false;
+    }
+
+    std::size_t token_start = 0;
+    while (token_start <= contents.size())
+    {
+        const std::size_t token_end = contents.find_first_of(",\r\n", token_start);
+        std::string token = contents.substr(
+            token_start,
+            token_end == std::string::npos ? std::string::npos : (token_end - token_start));
+        const std::size_t comment = token.find('#');
+        if (comment != std::string::npos)
+        {
+            token.resize(comment);
+        }
+        trim_in_place(token);
+        if (!token.empty() &&
+            std::find(out.begin(), out.end(), token) == out.end())
+        {
+            out.push_back(std::move(token));
+        }
+
+        if (token_end == std::string::npos)
+        {
+            break;
+        }
+        token_start = token_end + 1U;
+    }
+
+    return !out.empty();
 }
 
 bool ime_backend_can_be_enabled(const ImePackRecord& pack)
@@ -1207,10 +1252,35 @@ bool ensure_font_pack_loaded(FontPackRecord* pack)
     return load_font_pack(*pack);
 }
 
+bool path_has_prefix(const std::string& path, const char* prefix)
+{
+    if (path.empty() || prefix == nullptr || prefix[0] == '\0')
+    {
+        return false;
+    }
+    return path.rfind(prefix, 0) == 0;
+}
+
+bool is_flash_pack_font_source(const FontPackRecord& pack)
+{
+#if UI_FS_HAS_FLASH_PACK_STORAGE
+    return path_has_prefix(pack.source_path, "F:/trailmate/packs/");
+#else
+    (void)pack;
+    return false;
+#endif
+}
+
 bool can_load_font_from_content_hot_path(const FontPackRecord& pack)
 {
 #if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
-    return pack.builtin;
+    // UI render paths must not synchronously touch SD-backed external fonts.
+    // Small Flash-installed content supplements are allowed to become visible
+    // after install without reintroducing the shared SD/display SPI stall class.
+    return pack.builtin ||
+           (is_flash_pack_font_source(pack) &&
+            pack.estimated_ram_bytes > 0 &&
+            pack.estimated_ram_bytes <= kSmallContentSupplementMaxBytes);
 #else
     (void)pack;
     return true;
@@ -1225,6 +1295,22 @@ bool can_load_font_from_activation_path(const FontPackRecord& pack)
     (void)pack;
     return true;
 #endif
+}
+
+bool can_add_content_supplement(const FontPackRecord& pack);
+
+bool can_preload_small_content_supplement(const FontPackRecord& pack)
+{
+    if (pack.builtin || is_font_runtime_loaded(pack))
+    {
+        return false;
+    }
+    if (!font_pack_supports_content(pack) || pack.coverage.empty())
+    {
+        return false;
+    }
+    return pack.estimated_ram_bytes > 0 &&
+           pack.estimated_ram_bytes <= kSmallContentSupplementMaxBytes;
 }
 
 std::vector<FontPackRecord*> current_content_pack_sequence()
@@ -1247,6 +1333,34 @@ void rebuild_runtime_font_chains()
     rebuild_font_chain(s_ui_font_chain, ui_packs);
     rebuild_font_chain(s_content_font_chain, current_content_pack_sequence());
     ::ui::fonts::refresh_locale_font_bindings();
+}
+
+bool preload_small_content_supplements()
+{
+    bool changed = false;
+    for (FontPackRecord& pack : s_font_packs)
+    {
+        if (!can_preload_small_content_supplement(pack) || !can_add_content_supplement(pack))
+        {
+            continue;
+        }
+        if (!ensure_font_pack_loaded(&pack))
+        {
+            continue;
+        }
+        append_unique_pack(s_content_supplement_packs, &pack);
+        changed = true;
+        std::printf("%s font preload id=%s role=content_supplement bytes=%lu source=%s\n",
+                    kLogTag,
+                    pack.id.c_str(),
+                    static_cast<unsigned long>(pack.estimated_ram_bytes),
+                    pack.source_path.empty() ? "<none>" : pack.source_path.c_str());
+    }
+    if (changed)
+    {
+        rebuild_runtime_font_chains();
+    }
+    return changed;
 }
 
 bool ensure_active_content_pack_loaded()
@@ -1548,6 +1662,7 @@ void rebuild_ime_views()
         view.display_name = pack.display_name.c_str();
         view.backend = pack.backend.c_str();
         view.layout = pack.layout.empty() ? nullptr : pack.layout.c_str();
+        view.candidate_count = pack.candidates.size();
         view.builtin = pack.builtin;
         s_ime_views.push_back(view);
     }
@@ -1748,12 +1863,24 @@ bool catalog_external_ime_pack(const std::string& pack_dir)
     {
         pack.layout = layout;
     }
+    if (const char* candidates = manifest_value(manifest, "candidates"))
+    {
+        const std::string candidates_path = resolve_pack_file_path(pack_dir, candidates);
+        if (!parse_ime_candidate_file(candidates_path, pack.candidates))
+        {
+            std::printf("%s ime pack candidates unavailable id=%s path=%s\n",
+                        kLogTag,
+                        pack.id.c_str(),
+                        candidates_path.empty() ? "<none>" : candidates_path.c_str());
+        }
+    }
 
-    std::printf("%s ime pack catalog id=%s backend=%s layout=%s\n",
+    std::printf("%s ime pack catalog id=%s backend=%s layout=%s candidates=%lu\n",
                 kLogTag,
                 pack.id.c_str(),
                 pack.backend.c_str(),
-                pack.layout.empty() ? "<none>" : pack.layout.c_str());
+                pack.layout.empty() ? "<none>" : pack.layout.c_str(),
+                static_cast<unsigned long>(pack.candidates.size()));
     s_ime_packs.push_back(std::move(pack));
     return true;
 }
@@ -2453,6 +2580,7 @@ void rebuild_registry()
     s_allow_sync_external_font_activation = true;
     (void)activate_locale(resolve_active_locale(preferred_locale));
     s_allow_sync_external_font_activation = false;
+    (void)preload_small_content_supplements();
     std::printf("%s registry rebuild end active_locale=%s locale_count=%lu ime_count=%lu enabled_ime=%lu active_ime=%s ui_chain=%s content_chain=%s\n",
                 kLogTag,
                 s_active_locale ? s_active_locale->id.c_str() : "<none>",
@@ -2707,7 +2835,9 @@ bool ensure_content_font_for_text(const char* text)
         {
             break;
         }
-        if (!kAllowSynchronousContentSupplementFontLoad && !is_font_runtime_loaded(*candidate))
+        if (!is_font_runtime_loaded(*candidate) &&
+            !kAllowSynchronousContentSupplementFontLoad &&
+            !can_load_font_from_content_hot_path(*candidate))
         {
             log_font_load_deferred(*candidate, "content_supplement", "ui_hot_path");
             break;
@@ -2757,6 +2887,24 @@ const ImeInfo* ime_at(std::size_t index)
         return nullptr;
     }
     return &s_ime_views[index];
+}
+
+std::size_t ime_candidate_count(const char* ime_id)
+{
+    ensure_registry();
+    const ImePackRecord* pack = find_pack_by_id(s_ime_packs, ime_id);
+    return pack ? pack->candidates.size() : 0;
+}
+
+const char* ime_candidate_at(const char* ime_id, std::size_t index)
+{
+    ensure_registry();
+    const ImePackRecord* pack = find_pack_by_id(s_ime_packs, ime_id);
+    if (pack == nullptr || index >= pack->candidates.size())
+    {
+        return nullptr;
+    }
+    return pack->candidates[index].c_str();
 }
 
 std::size_t enabled_ime_count()
