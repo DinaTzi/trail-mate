@@ -1,6 +1,7 @@
 #include "ui/widgets/text_candidate_data.h"
 
 #include "ui/widgets/text_candidate_builtin_emoji_data.h"
+#include "ui/widgets/text_candidate_builtin_symbol_data.h"
 
 namespace ui::widgets::text_candidates
 {
@@ -69,6 +70,16 @@ std::uint8_t* emoji_core_binfont_data()
 std::size_t emoji_core_binfont_size()
 {
     return text_candidate_data::kEmojiCoreBinfontSize;
+}
+
+std::uint8_t* symbol_core_binfont_data()
+{
+    return text_candidate_data::kSymbolCoreBinfont;
+}
+
+std::size_t symbol_core_binfont_size()
+{
+    return text_candidate_data::kSymbolCoreBinfontSize;
 }
 
 } // namespace ui::widgets::text_candidates

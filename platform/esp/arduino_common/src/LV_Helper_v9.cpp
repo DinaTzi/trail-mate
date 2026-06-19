@@ -14,9 +14,11 @@
 #include "screen_sleep.h"
 #include "ui/LV_Helper.h"
 #include "ui/app_runtime.h"
+#include "ui/menu/menu_runtime.h"
 #include "ui/support/lvgl_fs_utils.h"
 #include "walkie/walkie_service.h"
 #include <Arduino.h>
+#include <cstring>
 #include <dirent.h>
 #include <errno.h>
 #include <esp_heap_caps.h>
@@ -935,7 +937,24 @@ static void keypad_read(lv_indev_t* drv, lv_indev_data_t* data)
     // Screen is awake, process input normally
     if (!from_nav && (state == KEYBOARD_PRESSED || state == KEYBOARD_RELEASED))
     {
-        walkie::on_key_event(c, state);
+        AppScreen* active_app = ui_get_active_app();
+        const bool on_menu = active_app == nullptr;
+        const bool on_walkie_page =
+            active_app != nullptr && active_app->stable_id() != nullptr &&
+            std::strcmp(active_app->stable_id(), "walkie_talkie") == 0;
+
+        if (on_menu && ui::menu_runtime::handleWalkieKey(c, state))
+        {
+            updateUserActivity();
+            plane->feedback((void*)drv);
+            data->state = LV_INDEV_STATE_REL;
+            return;
+        }
+
+        if (on_walkie_page)
+        {
+            walkie::on_key_event(c, state);
+        }
     }
 
 #if defined(ARDUINO_T_DECK) || defined(ARDUINO_T_DECK_PRO)

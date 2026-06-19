@@ -58,6 +58,8 @@ constexpr uint32_t kFontLoadOverlayPresentFrameDelayMs = 16;
 constexpr unsigned kMaxMissingFontDiagnostics = 20;
 constexpr uint32_t kFontLoadFailureBackoffMs = 5U * 60U * 1000U;
 constexpr std::size_t kSmallContentSupplementMaxBytes = 16U * 1024U;
+constexpr const char* kBuiltinSymbolFontPackId = "builtin-symbol-core";
+constexpr const char* kBuiltinEmojiFontPackId = "builtin-emoji-core";
 
 #if defined(LV_USE_FS_POSIX) && LV_USE_FS_POSIX
 constexpr bool kLvFsPosixEnabled = true;
@@ -163,6 +165,9 @@ std::vector<FontPackRecord*> s_content_supplement_packs;
 
 bool s_registry_ready = false;
 unsigned s_missing_content_font_diagnostics = 0;
+unsigned s_content_route_diagnostics = 0;
+unsigned s_ui_helper_route_diagnostics = 0;
+unsigned s_direct_route_diagnostics = 0;
 bool s_allow_sync_external_font_activation = false;
 bool s_force_font_load_overlay = false;
 
@@ -293,6 +298,31 @@ class ScopedForcedFontLoadOverlay
 const char* safe_text(const char* value)
 {
     return value ? value : "<null>";
+}
+
+bool route_text_is_interesting(const char* text)
+{
+    return ::ui::fonts::utf8_has_non_ascii(text);
+}
+
+void log_limited_route(unsigned& counter,
+                       unsigned max_count,
+                       const char* route,
+                       const char* via,
+                       const char* text,
+                       const char* extra)
+{
+    if (counter >= max_count)
+    {
+        return;
+    }
+    ++counter;
+    std::printf("%s[route] route=%s via=%s %s text='%.32s'\n",
+                kLogTag,
+                safe_text(route),
+                safe_text(via),
+                safe_text(extra),
+                text ? text : "");
 }
 
 const char* usage_name(FontPackUsage usage)
@@ -1005,6 +1035,12 @@ bool decode_next_utf8(const unsigned char*& ptr, uint32_t& out_codepoint)
     return true;
 }
 
+bool codepoint_requires_no_glyph(uint32_t codepoint)
+{
+    return (codepoint >= 0xFE00U && codepoint <= 0xFE0FU) ||
+           codepoint == 0x200DU;
+}
+
 void collect_non_ascii_codepoints(const char* text, std::vector<uint32_t>& out)
 {
     out.clear();
@@ -1021,7 +1057,7 @@ void collect_non_ascii_codepoints(const char* text, std::vector<uint32_t>& out)
         {
             break;
         }
-        if (codepoint >= 0x80U)
+        if (codepoint >= 0x80U && !codepoint_requires_no_glyph(codepoint))
         {
             out.push_back(codepoint);
         }
@@ -1051,6 +1087,10 @@ void append_candidate_set_coverage(FontPackRecord& pack,
         uint32_t codepoint = 0;
         while (decode_next_utf8(ptr, codepoint))
         {
+            if (codepoint_requires_no_glyph(codepoint))
+            {
+                continue;
+            }
             CodepointRange range;
             range.first = codepoint;
             range.last = codepoint;
@@ -1088,6 +1128,12 @@ bool content_supplement_contains(const FontPackRecord* pack)
         }
     }
     return false;
+}
+
+bool is_builtin_text_candidate_font(const FontPackRecord& pack)
+{
+    return pack.builtin &&
+           (pack.id == kBuiltinSymbolFontPackId || pack.id == kBuiltinEmojiFontPackId);
 }
 
 void append_unique_pack(std::vector<FontPackRecord*>& packs, FontPackRecord* pack)
@@ -1282,6 +1328,11 @@ bool load_font_pack(FontPackRecord& pack)
                 pack.id.c_str(),
                 pack.source_path.c_str(),
                 static_cast<unsigned long>(pack.estimated_ram_bytes));
+    std::printf("%s[route] route=pack_load state=begin id=%s builtin=0 source=%s ram=%lu\n",
+                kLogTag,
+                pack.id.c_str(),
+                pack.source_path.c_str(),
+                static_cast<unsigned long>(pack.estimated_ram_bytes));
     ScopedFontLoadOverlay overlay(pack);
     pack.owned_font = lv_binfont_create(pack.source_path.c_str());
     if (pack.owned_font == nullptr)
@@ -1291,6 +1342,11 @@ bool load_font_pack(FontPackRecord& pack)
                     kLogTag,
                     pack.id.c_str(),
                     pack.source_path.c_str());
+        std::printf("%s[route] route=pack_load state=failed id=%s source=%s failures=%u\n",
+                    kLogTag,
+                    pack.id.c_str(),
+                    pack.source_path.c_str(),
+                    static_cast<unsigned>(pack.load_failure_count));
         return false;
     }
 
@@ -1299,6 +1355,11 @@ bool load_font_pack(FontPackRecord& pack)
                 pack.id.c_str(),
                 pack.source_path.c_str(),
                 static_cast<unsigned long>(pack.estimated_ram_bytes));
+    std::printf("%s[route] route=pack_load state=ready id=%s source=%s font=%p\n",
+                kLogTag,
+                pack.id.c_str(),
+                pack.source_path.c_str(),
+                static_cast<void*>(pack.owned_font));
     clear_font_load_failure(pack);
     return true;
 #else
@@ -1403,9 +1464,16 @@ bool can_preload_small_content_supplement(const FontPackRecord& pack)
 std::vector<FontPackRecord*> current_content_pack_sequence()
 {
     std::vector<FontPackRecord*> packs;
-    packs.reserve(2U + s_content_supplement_packs.size());
+    packs.reserve(4U + s_content_supplement_packs.size());
     append_unique_pack(packs, s_active_content_font_pack);
     append_unique_pack(packs, s_active_ui_font_pack);
+    for (FontPackRecord& pack : s_font_packs)
+    {
+        if (is_builtin_text_candidate_font(pack))
+        {
+            append_unique_pack(packs, &pack);
+        }
+    }
     for (FontPackRecord* pack : s_content_supplement_packs)
     {
         append_unique_pack(packs, pack);
@@ -1419,6 +1487,18 @@ void rebuild_runtime_font_chains()
     append_unique_pack(ui_packs, s_active_ui_font_pack);
     rebuild_font_chain(s_ui_font_chain, ui_packs);
     rebuild_font_chain(s_content_font_chain, current_content_pack_sequence());
+    static std::string last_ui_chain;
+    static std::string last_content_chain;
+    if (s_ui_font_chain.desc != last_ui_chain ||
+        s_content_font_chain.desc != last_content_chain)
+    {
+        std::printf("%s[route] route=font_chain ui_chain=%s content_chain=%s\n",
+                    kLogTag,
+                    s_ui_font_chain.desc.empty() ? "<none>" : s_ui_font_chain.desc.c_str(),
+                    s_content_font_chain.desc.empty() ? "<none>" : s_content_font_chain.desc.c_str());
+        last_ui_chain = s_ui_font_chain.desc;
+        last_content_chain = s_content_font_chain.desc;
+    }
     ::ui::fonts::refresh_locale_font_bindings();
 }
 
@@ -1565,7 +1645,7 @@ std::size_t content_supplement_ram_bytes()
     std::size_t total = 0;
     for (const FontPackRecord* pack : s_content_supplement_packs)
     {
-        if (pack)
+        if (pack && !pack->builtin)
         {
             total += pack->estimated_ram_bytes;
         }
@@ -1575,6 +1655,11 @@ std::size_t content_supplement_ram_bytes()
 
 bool can_add_content_supplement(const FontPackRecord& pack)
 {
+    if (pack.builtin)
+    {
+        return true;
+    }
+
     const auto& profile = ::ui::runtime::current_memory_profile();
     if (profile.max_content_supplement_packs == 0 || profile.max_content_supplement_ram_bytes == 0)
     {
@@ -1589,7 +1674,16 @@ bool can_add_content_supplement(const FontPackRecord& pack)
         }
     }
 
-    if (s_content_supplement_packs.size() >= profile.max_content_supplement_packs)
+    std::size_t external_pack_count = 0;
+    for (const FontPackRecord* existing : s_content_supplement_packs)
+    {
+        if (existing && !existing->builtin)
+        {
+            ++external_pack_count;
+        }
+    }
+
+    if (external_pack_count >= profile.max_content_supplement_packs)
     {
         return false;
     }
@@ -1615,6 +1709,10 @@ FontPackRecord* choose_content_supplement(const std::vector<uint32_t>& missing)
         for (FontPackRecord* pack : candidates)
         {
             if (!pack || pack == s_active_content_font_pack || pack == s_active_ui_font_pack)
+            {
+                continue;
+            }
+            if (pack->builtin)
             {
                 continue;
             }
@@ -1678,6 +1776,10 @@ FontPackRecord* choose_content_supplement(const std::vector<uint32_t>& missing)
     for (auto& pack : s_font_packs)
     {
         if (&pack == s_active_content_font_pack || &pack == s_active_ui_font_pack)
+        {
+            continue;
+        }
+        if (pack.builtin)
         {
             continue;
         }
@@ -1766,6 +1868,30 @@ void add_builtin_font_packs()
     s_font_packs.push_back(std::move(latin_pack));
 
 #if UI_I18N_HAVE_BINFONT
+    static lv_font_t* s_builtin_symbol_font = nullptr;
+    if (s_builtin_symbol_font == nullptr)
+    {
+        s_builtin_symbol_font = lv_binfont_create_from_buffer(
+            ::ui::widgets::text_candidates::symbol_core_binfont_data(),
+            static_cast<uint32_t>(
+                ::ui::widgets::text_candidates::symbol_core_binfont_size()));
+    }
+    if (s_builtin_symbol_font != nullptr)
+    {
+        FontPackRecord symbol_pack{};
+        symbol_pack.id = kBuiltinSymbolFontPackId;
+        symbol_pack.display_name = "Symbol Core";
+        symbol_pack.usage = FontPackUsage::ContentOnly;
+        symbol_pack.builtin = true;
+        symbol_pack.builtin_font = s_builtin_symbol_font;
+        symbol_pack.estimated_ram_bytes =
+            ::ui::widgets::text_candidates::symbol_core_binfont_size();
+        append_candidate_set_coverage(
+            symbol_pack,
+            ::ui::widgets::text_candidates::CandidateSet::Symbols);
+        s_font_packs.push_back(std::move(symbol_pack));
+    }
+
     static lv_font_t* s_builtin_emoji_font = nullptr;
     if (s_builtin_emoji_font == nullptr)
     {
@@ -1777,7 +1903,7 @@ void add_builtin_font_packs()
     if (s_builtin_emoji_font != nullptr)
     {
         FontPackRecord emoji_pack{};
-        emoji_pack.id = "builtin-emoji-core";
+        emoji_pack.id = kBuiltinEmojiFontPackId;
         emoji_pack.display_name = "Emoji Core";
         emoji_pack.usage = FontPackUsage::ContentOnly;
         emoji_pack.builtin = true;
@@ -1931,6 +2057,14 @@ bool catalog_external_font_pack(const std::string& pack_dir)
                 pack.id.c_str(),
                 pack.builtin ? 1 : 0,
                 usage_name(pack.usage),
+                static_cast<unsigned long>(pack.estimated_ram_bytes),
+                pack.source_path.empty() ? "<none>" : pack.source_path.c_str());
+    std::printf("%s[route] route=pack_catalog id=%s builtin=%d usage=%s coverage=%lu ram=%lu source=%s\n",
+                kLogTag,
+                pack.id.c_str(),
+                pack.builtin ? 1 : 0,
+                usage_name(pack.usage),
+                static_cast<unsigned long>(pack.coverage.size()),
                 static_cast<unsigned long>(pack.estimated_ram_bytes),
                 pack.source_path.empty() ? "<none>" : pack.source_path.c_str());
     s_font_packs.push_back(std::move(pack));
@@ -2923,6 +3057,7 @@ bool ensure_content_font_for_text(const char* text)
         return true;
     }
 
+    const bool interesting_text = route_text_is_interesting(text);
     ScopedForcedFontLoadOverlay forced_overlay;
     bool changed = false;
     changed |= ensure_active_content_pack_loaded();
@@ -2966,6 +3101,26 @@ bool ensure_content_font_for_text(const char* text)
     if (changed)
     {
         rebuild_runtime_font_chains();
+    }
+
+    if (interesting_text && s_content_route_diagnostics < 80)
+    {
+        char extra[192];
+        std::snprintf(extra,
+                      sizeof(extra),
+                      "result=%s changed=%d missing=%lu first=%s active_locale=%s content_chain=%s",
+                      missing.empty() ? "ready" : "missing",
+                      changed ? 1 : 0,
+                      static_cast<unsigned long>(missing.size()),
+                      missing.empty() ? "<none>" : "see_missing_log",
+                      s_active_locale ? s_active_locale->id.c_str() : "<none>",
+                      s_content_font_chain.desc.empty() ? "<none>" : s_content_font_chain.desc.c_str());
+        log_limited_route(s_content_route_diagnostics,
+                          80,
+                          "content_ensure",
+                          "ensure_content_font_for_text",
+                          text,
+                          extra);
     }
 
     if (!missing.empty() && s_missing_content_font_diagnostics < kMaxMissingFontDiagnostics)
@@ -3125,6 +3280,22 @@ void set_label_text_raw(lv_obj_t* label, const char* text)
     if (label)
     {
         const char* value = text ? text : "";
+        if (route_text_is_interesting(value))
+        {
+            char extra[160];
+            std::snprintf(extra,
+                          sizeof(extra),
+                          "label=%p active_locale=%s ui_chain=%s",
+                          static_cast<void*>(label),
+                          s_active_locale ? s_active_locale->id.c_str() : "<none>",
+                          s_ui_font_chain.desc.empty() ? "<none>" : s_ui_font_chain.desc.c_str());
+            log_limited_route(s_ui_helper_route_diagnostics,
+                              80,
+                              "ui_helper",
+                              "set_label_text_raw",
+                              value,
+                              extra);
+        }
         lv_label_set_text(label, value);
         ::ui::fonts::apply_localized_font(label, value, lv_obj_get_style_text_font(label, LV_PART_MAIN));
     }
@@ -3145,6 +3316,22 @@ void set_content_label_text_raw(lv_obj_t* label, const char* text)
     if (label)
     {
         const char* value = text ? text : "";
+        if (route_text_is_interesting(value))
+        {
+            char extra[192];
+            std::snprintf(extra,
+                          sizeof(extra),
+                          "label=%p active_locale=%s content_chain=%s",
+                          static_cast<void*>(label),
+                          s_active_locale ? s_active_locale->id.c_str() : "<none>",
+                          s_content_font_chain.desc.empty() ? "<none>" : s_content_font_chain.desc.c_str());
+            log_limited_route(s_content_route_diagnostics,
+                              80,
+                              "content_helper",
+                              "set_content_label_text_raw",
+                              value,
+                              extra);
+        }
         lv_label_set_text(label, value);
         ::ui::fonts::apply_content_font(label, value, lv_obj_get_style_text_font(label, LV_PART_MAIN));
     }
@@ -3162,6 +3349,30 @@ void set_label_text_fmt(lv_obj_t* label, const char* english_fmt, ...)
     const std::string text = vformat(english_fmt, args);
     va_end(args);
     set_label_text_raw(label, text.c_str());
+}
+
+void log_direct_text_route(const char* owner, const void* label, const char* text)
+{
+    if (!route_text_is_interesting(text))
+    {
+        return;
+    }
+
+    char extra[192];
+    std::snprintf(extra,
+                  sizeof(extra),
+                  "owner=%s label=%p active_locale=%s ui_chain=%s content_chain=%s",
+                  safe_text(owner),
+                  label,
+                  s_active_locale ? s_active_locale->id.c_str() : "<none>",
+                  s_ui_font_chain.desc.empty() ? "<none>" : s_ui_font_chain.desc.c_str(),
+                  s_content_font_chain.desc.empty() ? "<none>" : s_content_font_chain.desc.c_str());
+    log_limited_route(s_direct_route_diagnostics,
+                      80,
+                      "direct_lvgl",
+                      "lv_label_set_text",
+                      text,
+                      extra);
 }
 
 } // namespace ui::i18n

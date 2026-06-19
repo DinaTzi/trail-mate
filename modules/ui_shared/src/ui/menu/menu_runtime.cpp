@@ -11,6 +11,7 @@
 #include "app/app_facade_access.h"
 #include "platform/ui/device_runtime.h"
 #include "platform/ui/time_runtime.h"
+#include "platform/ui/walkie_runtime.h"
 #include "ui/formatters.h"
 #include "ui/menu/menu_layout.h"
 #include "ui/menu/menu_profile.h"
@@ -28,6 +29,7 @@ namespace
 #if defined(ESP_PLATFORM)
 constexpr const char* kTag = "ui-menu-runtime";
 #endif
+constexpr int kWalkieRecordBarCount = 7;
 
 struct RuntimeState
 {
@@ -39,8 +41,13 @@ struct RuntimeState
     lv_obj_t* battery_label = nullptr;
     lv_timer_t* time_timer = nullptr;
     lv_timer_t* battery_timer = nullptr;
+    lv_timer_t* walkie_record_timer = nullptr;
+    lv_obj_t* walkie_record_overlay = nullptr;
+    lv_obj_t* walkie_record_bars[kWalkieRecordBarCount]{};
     int watch_face_battery = -1;
     bool menu_active = true;
+    bool walkie_recording = false;
+    uint8_t walkie_record_phase = 0;
     Scene scene = Scene::Menu;
 };
 
@@ -321,6 +328,127 @@ void refreshBatteryLabel()
     refreshBottomBar();
 }
 
+void updateWalkieRecordBars()
+{
+    if (s_runtime.walkie_record_overlay == nullptr)
+    {
+        return;
+    }
+
+    const auto status = platform::ui::walkie::get_status();
+    uint8_t level = status.tx_level;
+    if (level < 8)
+    {
+        level = static_cast<uint8_t>(18 + ((s_runtime.walkie_record_phase * 7U) % 44U));
+    }
+
+    static constexpr uint8_t kBarBias[kWalkieRecordBarCount] = {18, 42, 70, 52, 88, 36, 62};
+    for (int i = 0; i < kWalkieRecordBarCount; ++i)
+    {
+        lv_obj_t* bar = s_runtime.walkie_record_bars[i];
+        if (bar == nullptr)
+        {
+            continue;
+        }
+        const uint8_t wave =
+            static_cast<uint8_t>((level + kBarBias[i] + s_runtime.walkie_record_phase * (i + 3)) % 100);
+        lv_coord_t height = static_cast<lv_coord_t>(5 + (wave * 19) / 100);
+        if (height > 24)
+        {
+            height = 24;
+        }
+        lv_obj_set_height(bar, height);
+    }
+    s_runtime.walkie_record_phase = static_cast<uint8_t>(s_runtime.walkie_record_phase + 1);
+}
+
+void walkieRecordTimerCb(lv_timer_t*)
+{
+    updateWalkieRecordBars();
+}
+
+void ensureWalkieRecordOverlay()
+{
+    if (s_runtime.walkie_record_overlay != nullptr || s_runtime.menu_panel == nullptr)
+    {
+        return;
+    }
+
+    lv_obj_t* overlay = lv_obj_create(s_runtime.menu_panel);
+    s_runtime.walkie_record_overlay = overlay;
+    lv_obj_set_size(overlay, 118, 34);
+    lv_obj_align(overlay, LV_ALIGN_BOTTOM_MID, 0, -28);
+    lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(overlay, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    lv_obj_clear_flag(overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(overlay, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(overlay, lv_color_hex(0xFFF1D5), 0);
+    lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(overlay, 1, 0);
+    lv_obj_set_style_border_color(overlay, lv_color_hex(0xD28B2E), 0);
+    lv_obj_set_style_radius(overlay, 8, 0);
+    lv_obj_set_style_shadow_width(overlay, 0, 0);
+    lv_obj_set_style_pad_left(overlay, 10, 0);
+    lv_obj_set_style_pad_right(overlay, 10, 0);
+    lv_obj_set_style_pad_top(overlay, 4, 0);
+    lv_obj_set_style_pad_bottom(overlay, 4, 0);
+    lv_obj_set_style_pad_column(overlay, 5, 0);
+    lv_obj_set_flex_flow(overlay, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(overlay, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+
+    for (int i = 0; i < kWalkieRecordBarCount; ++i)
+    {
+        lv_obj_t* bar = lv_obj_create(overlay);
+        s_runtime.walkie_record_bars[i] = bar;
+        lv_obj_set_size(bar, 7, 6);
+        lv_obj_set_style_bg_color(bar, lv_color_hex(0xE55F2A), 0);
+        lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(bar, 0, 0);
+        lv_obj_set_style_radius(bar, 3, 0);
+        lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_clear_flag(bar, LV_OBJ_FLAG_CLICKABLE);
+    }
+}
+
+void setWalkieRecording(bool recording)
+{
+    if (s_runtime.walkie_recording == recording)
+    {
+        return;
+    }
+
+    s_runtime.walkie_recording = recording;
+    if (recording)
+    {
+        ensureWalkieRecordOverlay();
+        if (s_runtime.walkie_record_overlay != nullptr)
+        {
+            lv_obj_clear_flag(s_runtime.walkie_record_overlay, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(s_runtime.walkie_record_overlay);
+        }
+        if (s_runtime.walkie_record_timer == nullptr)
+        {
+            s_runtime.walkie_record_timer = lv_timer_create(walkieRecordTimerCb, 90, nullptr);
+            lv_timer_set_repeat_count(s_runtime.walkie_record_timer, -1);
+        }
+        else
+        {
+            lv_timer_resume(s_runtime.walkie_record_timer);
+        }
+        updateWalkieRecordBars();
+        return;
+    }
+
+    if (s_runtime.walkie_record_overlay != nullptr)
+    {
+        lv_obj_add_flag(s_runtime.walkie_record_overlay, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_runtime.walkie_record_timer != nullptr)
+    {
+        lv_timer_pause(s_runtime.walkie_record_timer);
+    }
+}
+
 void createTopBar()
 {
     const auto& profile = ui::menu_profile::current();
@@ -381,8 +509,12 @@ void createTopBar()
     lv_obj_t* menu_team_icon = nullptr;
     lv_obj_t* menu_msg_icon = nullptr;
     lv_obj_t* menu_ble_icon = nullptr;
+    lv_obj_t* menu_radio_mod_icon = nullptr;
+    lv_obj_t* menu_walkie_monitor_icon = nullptr;
     if (use_menu_status_icons())
     {
+        menu_radio_mod_icon = lv_image_create(menu_status_row);
+        menu_walkie_monitor_icon = lv_image_create(menu_status_row);
         menu_route_icon = lv_image_create(menu_status_row);
         menu_tracker_icon = lv_image_create(menu_status_row);
         menu_gps_icon = lv_image_create(menu_status_row);
@@ -390,6 +522,8 @@ void createTopBar()
         menu_team_icon = lv_image_create(menu_status_row);
         menu_msg_icon = lv_image_create(menu_status_row);
         menu_ble_icon = lv_image_create(menu_status_row);
+        lv_obj_add_flag(menu_radio_mod_icon, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(menu_walkie_monitor_icon, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(menu_route_icon, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(menu_tracker_icon, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(menu_gps_icon, LV_OBJ_FLAG_HIDDEN);
@@ -411,7 +545,9 @@ void createTopBar()
         menu_wifi_icon,
         menu_team_icon,
         menu_msg_icon,
-        menu_ble_icon);
+        menu_ble_icon,
+        menu_radio_mod_icon,
+        menu_walkie_monitor_icon);
 }
 
 void initWatchFace()
@@ -500,6 +636,11 @@ void onWakeFromSleep()
 void setMenuActive(bool active)
 {
     s_runtime.menu_active = active;
+    if (!active)
+    {
+        platform::ui::walkie::set_ptt(false);
+        setWalkieRecording(false);
+    }
 
     if (s_runtime.time_timer != nullptr)
     {
@@ -531,6 +672,29 @@ void setMenuActive(bool active)
         refreshBatteryLabel();
         refreshBottomBar();
     }
+}
+
+bool handleWalkieKey(char key, int state)
+{
+    if (key != ' ' || currentScene() != Scene::Menu)
+    {
+        return false;
+    }
+
+    const auto status = platform::ui::walkie::get_status();
+    if (!status.monitor_enabled || !status.active)
+    {
+        if (state == 0)
+        {
+            setWalkieRecording(false);
+        }
+        return false;
+    }
+
+    const bool pressed = state != 0;
+    platform::ui::walkie::set_ptt(pressed);
+    setWalkieRecording(pressed);
+    return true;
 }
 
 void setScene(Scene scene)

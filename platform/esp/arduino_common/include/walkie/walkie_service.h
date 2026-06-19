@@ -6,17 +6,20 @@ namespace walkie
 {
 struct Status
 {
-    bool active;
-    bool tx;
-    uint8_t tx_level;
-    uint8_t rx_level;
-    float freq_mhz;
+    bool active = false;
+    bool tx = false;
+    bool monitor_enabled = false;
+    uint8_t tx_level = 0;
+    uint8_t rx_level = 0;
+    float freq_mhz = 0.0f;
 };
 
 bool start();
 void stop();
 bool is_active();
 void set_ptt(bool pressed);
+bool set_monitor_enabled(bool enabled);
+bool is_monitor_enabled();
 void adjust_volume(int delta);
 int get_volume();
 void on_key_event(char key, int state);

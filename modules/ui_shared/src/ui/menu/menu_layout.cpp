@@ -863,6 +863,7 @@ BottomBarChipUi createBottomBarChip(lv_obj_t* parent,
     lv_obj_set_style_text_font(chip.label, profile.node_id_font, 0);
     lv_label_set_long_mode(chip.label, LV_LABEL_LONG_CLIP);
     lv_label_set_text(chip.label, text ? text : "");
+    ::ui::i18n::log_direct_text_route("menu_bottom_chip", chip.label, text ? text : "");
     lv_obj_center(chip.label);
     return chip;
 }
@@ -906,6 +907,7 @@ void setBottomBarChipText(const BottomBarChipUi& chip, const char* text)
         return;
     }
     lv_label_set_text(chip.label, text ? text : "");
+    ::ui::i18n::log_direct_text_route("menu_bottom_chip_update", chip.label, text ? text : "");
 }
 
 void setBottomBarChipVisible(const BottomBarChipUi& chip, bool visible)

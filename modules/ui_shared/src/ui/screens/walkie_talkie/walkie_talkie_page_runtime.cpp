@@ -8,6 +8,7 @@
 #include "ui/app_runtime.h"
 #include "ui/localization.h"
 #include "ui/ui_common.h"
+#include "ui/ui_status.h"
 #include "ui/runtime/ui_feedback.h"
 #include "ui/widgets/top_bar.h"
 
@@ -32,6 +33,8 @@ lv_obj_t* s_mod_label = nullptr;
 lv_obj_t* s_mode_label = nullptr;
 lv_obj_t* s_left_fill = nullptr;
 lv_obj_t* s_right_fill = nullptr;
+lv_obj_t* s_monitor_switch = nullptr;
+lv_obj_t* s_monitor_label = nullptr;
 lv_obj_t* s_volume_bar = nullptr;
 lv_obj_t* s_volume_label = nullptr;
 lv_timer_t* s_timer = nullptr;
@@ -68,6 +71,24 @@ void root_key_event_cb(lv_event_t* e)
     on_back(nullptr);
 }
 
+void monitor_switch_event_cb(lv_event_t* e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED || s_monitor_switch == nullptr)
+    {
+        return;
+    }
+
+    const bool enabled = lv_obj_has_state(s_monitor_switch, LV_STATE_CHECKED);
+    if (!platform::ui::walkie::set_monitor_enabled(enabled))
+    {
+        lv_obj_clear_state(s_monitor_switch, LV_STATE_CHECKED);
+        const char* detail = platform::ui::walkie::last_error();
+        ::ui::feedback::show_notice((detail && detail[0] != '\0') ? detail : "Monitor unavailable",
+                                    2500);
+    }
+    ::ui::status::force_update();
+}
+
 void update_vu(lv_obj_t* fill, uint8_t level)
 {
     if (!fill)
@@ -99,6 +120,22 @@ void refresh_cb(lv_timer_t*)
     if (s_mode_label)
     {
         ::ui::i18n::set_label_text(s_mode_label, st.tx ? "TALK" : "LISTEN");
+    }
+    if (s_monitor_switch)
+    {
+        const bool checked = lv_obj_has_state(s_monitor_switch, LV_STATE_CHECKED);
+        if (st.monitor_enabled && !checked)
+        {
+            lv_obj_add_state(s_monitor_switch, LV_STATE_CHECKED);
+        }
+        else if (!st.monitor_enabled && checked)
+        {
+            lv_obj_clear_state(s_monitor_switch, LV_STATE_CHECKED);
+        }
+    }
+    if (s_monitor_label)
+    {
+        ::ui::i18n::set_label_text(s_monitor_label, st.monitor_enabled ? "Monitor On" : "Monitor Off");
     }
     update_vu(s_left_fill, st.tx ? st.tx_level : st.rx_level);
     update_vu(s_right_fill, st.tx ? st.tx_level : st.rx_level);
@@ -249,6 +286,29 @@ void enter(const shell::Host* host, lv_obj_t* parent)
     lv_obj_set_style_text_font(s_mode_label, &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_align(s_mode_label, LV_TEXT_ALIGN_CENTER, 0);
 
+    lv_obj_t* monitor_row = lv_obj_create(stack);
+    lv_obj_set_size(monitor_row, LV_SIZE_CONTENT, 30);
+    lv_obj_set_style_bg_opa(monitor_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(monitor_row, 0, 0);
+    lv_obj_set_style_pad_all(monitor_row, 0, 0);
+    lv_obj_set_style_pad_column(monitor_row, 8, 0);
+    lv_obj_set_flex_flow(monitor_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(monitor_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_clear_flag(monitor_row, LV_OBJ_FLAG_SCROLLABLE);
+
+    s_monitor_label = lv_label_create(monitor_row);
+    ::ui::i18n::set_label_text(s_monitor_label, "Monitor Off");
+    lv_obj_set_style_text_font(s_monitor_label, &lv_font_montserrat_14, 0);
+
+    s_monitor_switch = lv_switch_create(monitor_row);
+    lv_obj_set_size(s_monitor_switch, 44, 24);
+    lv_obj_add_event_cb(s_monitor_switch, monitor_switch_event_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    if (app_g && s_monitor_switch)
+    {
+        lv_group_add_obj(app_g, s_monitor_switch);
+    }
+
     lv_obj_t* vu_left = lv_obj_create(content);
     lv_obj_set_size(vu_left, kVuWidth, kVuHeight);
     lv_obj_align(vu_left, LV_ALIGN_LEFT_MID, 16, 0);
@@ -346,6 +406,18 @@ void enter(const shell::Host* host, lv_obj_t* parent)
 
     st = platform::ui::walkie::get_status();
     set_freq_text(st.freq_mhz);
+    if (s_monitor_switch)
+    {
+        const bool checked = lv_obj_has_state(s_monitor_switch, LV_STATE_CHECKED);
+        if (st.monitor_enabled && !checked)
+        {
+            lv_obj_add_state(s_monitor_switch, LV_STATE_CHECKED);
+        }
+        else if (!st.monitor_enabled && checked)
+        {
+            lv_obj_clear_state(s_monitor_switch, LV_STATE_CHECKED);
+        }
+    }
 
     if (!s_timer)
     {
@@ -357,6 +429,8 @@ void enter(const shell::Host* host, lv_obj_t* parent)
 void exit(lv_obj_t* parent)
 {
     (void)parent;
+    const bool keep_monitoring = platform::ui::walkie::monitor_enabled();
+    platform::ui::walkie::set_ptt(false);
     if (s_timer)
     {
         lv_timer_del(s_timer);
@@ -372,12 +446,18 @@ void exit(lv_obj_t* parent)
     s_mode_label = nullptr;
     s_left_fill = nullptr;
     s_right_fill = nullptr;
+    s_monitor_switch = nullptr;
+    s_monitor_label = nullptr;
     s_volume_bar = nullptr;
     s_volume_label = nullptr;
     s_top_bar = {};
     s_started = false;
 
-    platform::ui::walkie::stop();
+    if (!keep_monitoring)
+    {
+        platform::ui::walkie::stop();
+    }
+    ::ui::status::force_update();
     platform::ui::screen::enable_sleep();
     s_host = nullptr;
 }

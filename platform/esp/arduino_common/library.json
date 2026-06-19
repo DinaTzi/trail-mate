@@ -9,8 +9,7 @@
                   "srcDir":  "src",
                   "srcFilter":  [
                                     "+<*>",
-                                    "-<ui/screens/gps/>",
-                                    "-<ui/assets/fonts/lv_font_noto_cjk_16_2bpp.c>"
+                                    "-<ui/screens/gps/>"
                                 ],
                   "flags":  [
                                 "-I../../../platform/shared/include",

@@ -607,6 +607,7 @@ void render_overlay(RuntimeImpl& impl)
         {
             lv_obj_t* label = lv_label_create(impl.widgets.overlay_layer);
             lv_label_set_text(label, item.label.c_str());
+            ::ui::i18n::log_direct_text_route("map_overlay", label, item.label.c_str());
             lv_obj_set_style_text_color(label, overlay_color(item.style), 0);
             lv_obj_set_pos(label,
                            static_cast<lv_coord_t>(point.x + 6),

@@ -425,6 +425,7 @@ lv_obj_t* create_list_item_button(const std::string& text, intptr_t user_data, b
     lv_obj_t* label = lv_label_create(btn);
     lv_obj_align(label, LV_ALIGN_LEFT_MID, page_profile().dense ? 6 : 10, 0);
     lv_label_set_text(label, text.c_str());
+    ::ui::i18n::log_direct_text_route("tracker_list_item", label, text.c_str());
     lv_obj_add_style(label, &s_btn_label, LV_PART_MAIN);
     lv_obj_set_style_text_font(label, ::ui::fonts::localized_font(::ui::fonts::ui_chrome_font()), 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
