@@ -220,9 +220,11 @@ constexpr std::size_t kMapTileCommandQueueCapacity = 48;
 constexpr std::size_t kMapTileEventQueueCapacity = 48;
 constexpr std::size_t kMapTileWorkerScratchBytes = 192U * 1024U;
 constexpr int kMapTileEventsPerUiDrain = 1;
+constexpr int kMapTileRequestsPerUiStep = 2;
 constexpr uint32_t kMapTileUiDrainBudgetMs = 4;
-constexpr uint32_t kMapTileUiEventCooldownMs = 120;
-constexpr uint32_t kMapTileLayerBusyBackoffMs = 5000;
+constexpr uint32_t kMapTileUiEventCooldownMs = 60;
+constexpr uint32_t kMapTileLayerBusyBackoffMs = 900;
+constexpr uint32_t kMapTileLayerTransientBackoffMs = 450;
 constexpr uint32_t kMapTileLayerCacheBackoffMs = 350;
 constexpr uint32_t kMapTileMissingCacheTtlMs = 5U * 60U * 1000U;
 constexpr uint32_t kMapTileGenerationInitial = 1;
@@ -235,7 +237,7 @@ constexpr uint32_t kMapTileDisplaySpiSlowHoldMs = 8;
 constexpr uint32_t kMapTileDisplaySpiNormalCooldownMs = 160;
 constexpr uint32_t kMapTileDisplaySpiSlowCooldownMs = 1500;
 constexpr uint32_t kMapTileDisplayPressureCooldownMs = 1500;
-constexpr uint32_t kMapTileDisplayPressureTileBackoffMs = 3000;
+constexpr uint32_t kMapTileDisplayPressureTileBackoffMs = 450;
 
 uint32_t g_map_tile_decode_log_ms = 0;
 uint32_t g_map_tile_event_log_ms = 0;
@@ -1303,7 +1305,11 @@ class EspMapTileWorkerBackend final : public ui::map_tiles::IMapTileWorkerBacken
             return true;
         }
 
-        map_tile_availability_memory().markMissing(ref);
+        const ui::map_tiles::MapTileLookupResult lookup = source_.lookup(ref);
+        if (lookup.status == ui::map_tiles::MapTileStatus::Missing)
+        {
+            map_tile_availability_memory().markMissing(ref);
+        }
         return false;
     }
 
@@ -2796,6 +2802,16 @@ static bool request_contour_tile_async(MapTile& tile)
         return false;
     }
 
+    if (map_tile_availability_memory().knownMissing(ref))
+    {
+        tile.contour_checked = true;
+        tile.contour_loaded = false;
+        tile.contour_request_pending = false;
+        tile.contour_request_generation = 0;
+        tile.contour_retry_not_before_ms = 0;
+        return false;
+    }
+
     if (DecodedTileCache* cached = find_cached_tile_ref(ref))
     {
         if (render_contour_from_cache(tile, *cached))
@@ -2838,11 +2854,6 @@ static bool apply_map_tile_event(TileContext& ctx, ui::map_tiles::MapTileAsyncEv
         return false;
     }
 
-    if (!is_contour && event.kind == ui::map_tiles::MapTileAsyncEventKind::Failed)
-    {
-        map_tile_availability_memory().markMissing(event.tile);
-    }
-
     MapTile* tile = find_tile(ctx,
                               static_cast<int>(event.tile.x),
                               static_cast<int>(event.tile.y),
@@ -2871,15 +2882,30 @@ static bool apply_map_tile_event(TileContext& ctx, ui::map_tiles::MapTileAsyncEv
     if (event.kind != ui::map_tiles::MapTileAsyncEventKind::Ready)
     {
         log_map_tile_event_failure("worker", event, event.error);
+        const bool confirmed_missing = map_tile_availability_memory().knownMissing(event.tile);
         if (is_contour)
         {
-            tile->contour_checked = true;
-            tile->contour_loaded = false;
+            if (confirmed_missing)
+            {
+                tile->contour_checked = true;
+                tile->contour_loaded = false;
+                retry_not_before = 0;
+            }
+            else
+            {
+                retry_not_before = now_ms + kMapTileLayerTransientBackoffMs;
+            }
         }
         else
         {
-            map_tile_availability_memory().markMissing(event.tile);
-            mark_missing_base_tile(ctx, *tile);
+            if (confirmed_missing)
+            {
+                mark_missing_base_tile(ctx, *tile);
+            }
+            else
+            {
+                retry_not_before = now_ms + kMapTileLayerTransientBackoffMs;
+            }
         }
         release_tile_payload(event);
         update_visible_map_data_flag(ctx);
@@ -3406,12 +3432,6 @@ void calculate_required_tiles(TileContext& ctx, double lat, double lng, int zoom
     }
 
     sync_render_settings(ctx);
-    const uint32_t now_ms = sys::millis_now();
-    if (map_tile_display_under_pressure(now_ms))
-    {
-        log_map_tile_display_pressure_pause(now_ms, "calculate");
-        return;
-    }
 
     GPS_LOG("[GPS] calculate_required_tiles: has_fix=%d, zoom=%d, lat=%.6f, lng=%.6f\n",
             has_fix, zoom, lat, lng);
@@ -3459,11 +3479,6 @@ void tile_loader_step(TileContext& ctx)
     const uint32_t start_ms = sys::millis_now();
     const uint32_t budget_ms = kMapTileUiDrainBudgetMs;
     sync_render_settings(ctx);
-    if (map_tile_display_under_pressure(start_ms))
-    {
-        log_map_tile_display_pressure_pause(start_ms, "loader");
-        return;
-    }
     drain_map_tile_events(ctx, start_ms, budget_ms);
     update_visible_map_data_flag(ctx);
     if (static_cast<uint32_t>(sys::millis_now() - start_ms) >= budget_ms)
@@ -3476,7 +3491,7 @@ void tile_loader_step(TileContext& ctx)
         return;
     }
 
-    const int max_tiles_per_step = 1;
+    const int max_tiles_per_step = kMapTileRequestsPerUiStep;
     MapTile* attempted[max_tiles_per_step] = {NULL};
     int attempted_count = 0;
 

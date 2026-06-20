@@ -128,6 +128,12 @@ Mandatory behavior:
 - Missing tile detection is a worker result, not a UI probe. A missing result is
   cached/backed off so dragging over a sparse map area cannot repeatedly open
   the same missing files from the UI cadence.
+- A transient worker read failure is not a missing tile. Only an explicit
+  not-found classification may populate missing-tile memory. If the platform
+  storage API cannot expose the open/read failure reason directly, the worker
+  may perform a one-time failure-path lookup after a failed read to classify
+  the tile as missing or retryable. The successful read path must remain a
+  single source read.
 - Base and contour tiles use the same async source/event mechanism. Contour
   overlays must not keep a second synchronous `lv_fs_open` path.
 - ESP UI helpers such as `base_tile_available()` are not authoritative storage
@@ -138,12 +144,19 @@ Mandatory behavior:
   return unconditional availability for tiles that the worker has already
   reported missing, because that causes sparse map regions to requeue the same
   nonexistent SD paths and starve the display SPI bus.
-- The ESP worker must read a tile payload in one source operation. It must not
-  perform a separate existence lookup followed by a read for the same tile in
-  the active map path.
+- The ESP worker must read a tile payload in one source operation on the
+  success path. It must not perform a separate existence lookup followed by a
+  read for every tile in the active map path. A failure-path classification
+  lookup is allowed only after read failure and only to decide whether the
+  failure is confirmed missing or retryable pressure/transient failure.
 - The ESP worker may return `ResourceBusy` when display-shared SPI is busy or
   cooling down. `ResourceBusy` is not a tile-missing result; the renderer keeps
   the tile requestable after a short backoff.
+- Display pressure is IO backpressure, not a viewport/layout veto. The UI owner
+  may continue visible tile math, anchor updates, loaded-tile layout, render
+  queue rebuilds, and bounded event draining while display pressure is recent.
+  It must pause or reduce new SD-backed tile requests instead of skipping the
+  map calculation pipeline.
 - UI event draining is bounded. The UI owner may apply at most a small bounded
   number of tile events per tick and must release stale payloads by generation.
 

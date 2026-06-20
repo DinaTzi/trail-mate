@@ -994,6 +994,13 @@ This is the current ESP Arduino map binding. It is conforming only because:
 Moving any of these operations back into a page callback, LVGL timer, input
 handler, or renderer mutation path is a regression.
 
+Display pressure is a storage-worker backpressure signal, not permission to
+stop UI-domain map state work. While pressure is recent, the UI owner may still
+calculate visible tile refs, update anchors, move already-created LVGL tile
+objects, rebuild render queues, and drain a bounded number of already-delivered
+tile events. The pressure signal must reduce or pause new SD-backed worker
+requests; it must not make viewport/layout calculation return early.
+
 ### Lock Health State
 
 ```mermaid
@@ -1024,7 +1031,7 @@ affected by the same physical contention.
 | LVGL SD FS adapter | `platform/esp/arduino_common/src/LV_Helper_v9.cpp` | Uses short bounded acquisitions and returns busy/failed-open instead of retrying. |
 | Map runtime worker contract | `modules/ui_map_runtime/src/map_tiles/map_tile_async_runtime.cpp` | Executes tile commands through `IBusArbiter` and publishes ready/busy/failed events. |
 | ESP map bus arbiter | `platform/esp/arduino_common/src/ui/widgets/map/map_tiles.cpp` | Checks display pressure, applies cooldown, maps runtime policy to short waits, and releases bus after each tile command. |
-| ESP map tile SD adapter | `platform/esp/arduino_common/src/ui/widgets/map/map_tiles.cpp` | Reads tile payload in worker domain and yields the bus between chunks. |
+| ESP map tile SD adapter | `platform/esp/arduino_common/src/ui/widgets/map/map_tiles.cpp` | Reads tile payload in worker domain and yields the bus between chunks. Only confirmed not-found results may enter missing-tile memory; retryable read failures remain requestable after short backoff. |
 
 ### Forbidden Bypasses
 
