@@ -105,6 +105,8 @@ struct SettingsData
     char mc_airtime[16] = "1";
     int mc_flood_max = 16;
     bool mc_multi_acks = false;
+    int mc_send_profile = 1;
+    int mc_forward_profile = 1;
     int mc_channel_slot = 0;
     char mc_channel_name[32] = "Public";
     char mc_channel_key[65] = {};

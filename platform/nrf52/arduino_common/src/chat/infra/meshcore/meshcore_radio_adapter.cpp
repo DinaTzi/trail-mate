@@ -201,6 +201,7 @@ bool MeshCoreRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t portn
 
     uint8_t frame[255] = {};
     size_t frame_len = 0;
+    const ::chat::meshcore::PayloadProfile profile = payloadProfile();
 
     if (dest != 0)
     {
@@ -215,7 +216,8 @@ bool MeshCoreRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t portn
         std::memcpy(&plain[plain_len], payload, body_len);
         plain_len += body_len;
 
-        if (!::chat::meshcore::buildFrameNoTransport(kRouteTypeFlood,
+        if (!::chat::meshcore::buildFrameNoTransport(profile,
+                                                     kRouteTypeFlood,
                                                      kPayloadTypeDirectData,
                                                      nullptr,
                                                      0,
@@ -271,7 +273,8 @@ bool MeshCoreRadioAdapter::sendAppData(::chat::ChannelId channel, uint32_t portn
     std::memcpy(&plain[plain_len], payload, body_len);
     plain_len += body_len;
 
-    if (!::chat::meshcore::buildFrameNoTransport(kRouteTypeFlood,
+    if (!::chat::meshcore::buildFrameNoTransport(profile,
+                                                 kRouteTypeFlood,
                                                  kPayloadTypeGrpData,
                                                  nullptr,
                                                  0,
@@ -328,6 +331,13 @@ bool MeshCoreRadioAdapter::requestNodeInfo(::chat::NodeId dest, bool want_respon
     context.meshcore_discover_node_type = ::chat::meshcore::kMeshCoreAdvertTypeChat;
     context.meshcore_local_modified_epoch = ::chat::now_epoch_seconds();
     return context;
+}
+
+::chat::meshcore::PayloadProfile MeshCoreRadioAdapter::payloadProfile() const
+{
+    return config_.meshcore_send_profile == ::chat::MeshCorePayloadSendProfile::V1Only
+               ? ::chat::meshcore::PayloadProfile::V1
+               : ::chat::meshcore::PayloadProfile::V2;
 }
 
 ::chat::runtime::ProtocolRuntimeBundle MeshCoreRadioAdapter::protocolRuntimeBundle(
@@ -1159,8 +1169,16 @@ bool MeshCoreRadioAdapter::sendPeerRequestPayload(const uint8_t* pubkey, size_t 
 
     uint8_t datagram[kMeshcoreMaxPayloadSize] = {};
     size_t datagram_len = 0;
-    if (!::chat::meshcore::buildPeerDatagramPayload(pubkey[0],
-                                                    public_key_[0],
+    const ::chat::meshcore::PayloadProfile profile = payloadProfile();
+    uint8_t peer_hash[::chat::meshcore::kMeshCoreV2HashBytes] = {};
+    uint8_t self_hash[::chat::meshcore::kMeshCoreV2HashBytes] = {};
+    if (!::chat::meshcore::copyPublicHash(profile, pubkey, len,
+                                          peer_hash, sizeof(peer_hash)) ||
+        !::chat::meshcore::copyPublicHash(profile, public_key_, sizeof(public_key_),
+                                          self_hash, sizeof(self_hash)) ||
+        !::chat::meshcore::buildPeerDatagramPayload(profile,
+                                                    peer_hash,
+                                                    self_hash,
                                                     key16,
                                                     key32,
                                                     plain,
@@ -1175,7 +1193,8 @@ bool MeshCoreRadioAdapter::sendPeerRequestPayload(const uint8_t* pubkey, size_t 
     uint8_t frame[kMeshcoreMaxFrameSize] = {};
     size_t frame_len = 0;
     const uint8_t route_type = force_flood ? kRouteTypeFlood : kRouteTypeFlood;
-    if (!::chat::meshcore::buildFrameNoTransport(route_type,
+    if (!::chat::meshcore::buildFrameNoTransport(profile,
+                                                 route_type,
                                                  kPayloadTypeReq,
                                                  nullptr,
                                                  0,
@@ -1234,13 +1253,15 @@ bool MeshCoreRadioAdapter::sendAnonRequestPayload(const uint8_t* pubkey, size_t 
         return false;
     }
 
+    const ::chat::meshcore::PayloadProfile profile = payloadProfile();
     uint8_t cipher[kMeshcoreMaxPayloadSize] = {};
     const size_t cipher_len = ::chat::meshcore::encryptThenMac(key16,
                                                                key32,
                                                                cipher,
                                                                sizeof(cipher),
                                                                payload,
-                                                               payload_len);
+                                                               payload_len,
+                                                               ::chat::meshcore::payloadMacBytes(profile));
     if (cipher_len == 0)
     {
         return false;
@@ -1248,19 +1269,28 @@ bool MeshCoreRadioAdapter::sendAnonRequestPayload(const uint8_t* pubkey, size_t 
 
     uint8_t datagram[kMeshcoreMaxPayloadSize] = {};
     size_t datagram_len = 0;
-    datagram[datagram_len++] = pubkey[0];
-    std::memcpy(datagram + datagram_len, public_key_, sizeof(public_key_));
-    datagram_len += sizeof(public_key_);
-    if (datagram_len + cipher_len > sizeof(datagram))
+    uint8_t peer_hash[::chat::meshcore::kMeshCoreV2HashBytes] = {};
+    if (!::chat::meshcore::copyPublicHash(profile, pubkey, len,
+                                          peer_hash, sizeof(peer_hash)))
     {
         return false;
     }
+    const size_t hash_bytes = ::chat::meshcore::payloadHashBytes(profile);
+    if (hash_bytes + sizeof(public_key_) + cipher_len > sizeof(datagram))
+    {
+        return false;
+    }
+    std::memcpy(datagram + datagram_len, peer_hash, hash_bytes);
+    datagram_len += hash_bytes;
+    std::memcpy(datagram + datagram_len, public_key_, sizeof(public_key_));
+    datagram_len += sizeof(public_key_);
     std::memcpy(datagram + datagram_len, cipher, cipher_len);
     datagram_len += cipher_len;
 
     uint8_t frame[kMeshcoreMaxFrameSize] = {};
     size_t frame_len = 0;
-    if (!::chat::meshcore::buildFrameNoTransport(kRouteTypeFlood,
+    if (!::chat::meshcore::buildFrameNoTransport(profile,
+                                                 kRouteTypeFlood,
                                                  kPayloadTypeDirectData,
                                                  nullptr,
                                                  0,
@@ -1315,7 +1345,9 @@ bool MeshCoreRadioAdapter::sendTracePath(const uint8_t* path, size_t path_len,
 
     uint8_t frame[kMeshcoreMaxFrameSize] = {};
     size_t frame_len = 0;
-    if (!::chat::meshcore::buildFrameNoTransport(kRouteTypeDirect,
+    const ::chat::meshcore::PayloadProfile profile = payloadProfile();
+    if (!::chat::meshcore::buildFrameNoTransport(profile,
+                                                 kRouteTypeDirect,
                                                  kPayloadTypeTrace,
                                                  nullptr,
                                                  0,
@@ -1348,7 +1380,9 @@ bool MeshCoreRadioAdapter::sendControlData(const uint8_t* payload, size_t payloa
 
     uint8_t frame[kMeshcoreMaxFrameSize] = {};
     size_t frame_len = 0;
-    if (!::chat::meshcore::buildFrameNoTransport(kRouteTypeDirect,
+    const ::chat::meshcore::PayloadProfile profile = payloadProfile();
+    if (!::chat::meshcore::buildFrameNoTransport(profile,
+                                                 kRouteTypeDirect,
                                                  kPayloadTypeControl,
                                                  nullptr,
                                                  0,
@@ -1367,14 +1401,31 @@ bool MeshCoreRadioAdapter::sendRawData(const uint8_t* path, size_t path_len,
                                        const uint8_t* payload, size_t payload_len,
                                        uint32_t* out_est_timeout)
 {
+    return sendRawDataEx(::chat::meshcore::kMeshCorePayloadVer1,
+                         path, path_len, payload, payload_len, out_est_timeout);
+}
+
+bool MeshCoreRadioAdapter::sendRawDataEx(uint8_t raw_profile, const uint8_t* path, size_t path_len,
+                                         const uint8_t* payload, size_t payload_len,
+                                         uint32_t* out_est_timeout)
+{
     if (!payload || payload_len == 0 || path_len > 64 || (path_len > 0 && !path))
+    {
+        return false;
+    }
+    const ::chat::meshcore::PayloadProfile profile =
+        raw_profile == ::chat::meshcore::kMeshCorePayloadVer2
+            ? ::chat::meshcore::PayloadProfile::V2
+            : ::chat::meshcore::PayloadProfile::V1;
+    if (!::chat::meshcore::pathIsWellFormed(profile, path_len))
     {
         return false;
     }
 
     uint8_t frame[kMeshcoreMaxFrameSize] = {};
     size_t frame_len = 0;
-    if (!::chat::meshcore::buildFrameNoTransport(kRouteTypeDirect,
+    if (!::chat::meshcore::buildFrameNoTransport(profile,
+                                                 kRouteTypeDirect,
                                                  kPayloadTypeRawCustom,
                                                  path,
                                                  path_len,
@@ -1392,7 +1443,10 @@ bool MeshCoreRadioAdapter::sendRawData(const uint8_t* path, size_t path_len,
     }
     if (out_est_timeout)
     {
-        *out_est_timeout = estimateTimeoutMs(config_, frame_len, path_len, false);
+        *out_est_timeout = estimateTimeoutMs(config_,
+                                             frame_len,
+                                             ::chat::meshcore::pathHopCount(profile, path_len),
+                                             false);
     }
     return true;
 }
@@ -1409,7 +1463,9 @@ bool MeshCoreRadioAdapter::sendAppAck(uint32_t signature)
 
     uint8_t frame[kMeshcoreMaxFrameSize] = {};
     size_t frame_len = 0;
-    if (!::chat::meshcore::buildFrameNoTransport(kRouteTypeFlood,
+    const ::chat::meshcore::PayloadProfile profile = payloadProfile();
+    if (!::chat::meshcore::buildFrameNoTransport(profile,
+                                                 kRouteTypeFlood,
                                                  kPayloadTypeAck,
                                                  nullptr,
                                                  0,

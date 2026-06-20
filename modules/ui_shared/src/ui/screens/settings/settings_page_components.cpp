@@ -1130,6 +1130,8 @@ static void reset_mesh_settings()
         "mc_airtime",
         "mc_flood_max",
         "mc_multi_acks",
+        "mc_send_prof",
+        "mc_fwd_prof",
         "mc_channel_slot",
         "mc_ch_slot",
     };
@@ -1373,6 +1375,8 @@ static void settings_load()
     float_to_text(mc_cfg.meshcore_airtime_factor, g_settings.mc_airtime, sizeof(g_settings.mc_airtime), 3);
     g_settings.mc_flood_max = mc_cfg.meshcore_flood_max;
     g_settings.mc_multi_acks = mc_cfg.meshcore_multi_acks;
+    g_settings.mc_send_profile = static_cast<int>(static_cast<uint8_t>(mc_cfg.meshcore_send_profile));
+    g_settings.mc_forward_profile = static_cast<int>(static_cast<uint8_t>(mc_cfg.meshcore_forward_profile));
     g_settings.mc_channel_slot = mc_cfg.meshcore_channel_slot;
     strncpy(g_settings.mc_channel_name, mc_cfg.meshcore_channel_name, sizeof(g_settings.mc_channel_name) - 1);
     g_settings.mc_channel_name[sizeof(g_settings.mc_channel_name) - 1] = '\0';
@@ -2622,6 +2626,22 @@ static void on_option_clicked(lv_event_t* e)
         app_ctx.saveConfig();
         app_ctx.applyMeshConfig();
     }
+    if (payload->item->pref_key && strcmp(payload->item->pref_key, "mc_send_prof") == 0)
+    {
+        app::IAppFacade& app_ctx = app::appFacade();
+        app_ctx.getConfig().meshcore_config.meshcore_send_profile =
+            static_cast<chat::MeshCorePayloadSendProfile>(payload->value);
+        app_ctx.saveConfig();
+        app_ctx.applyMeshConfig();
+    }
+    if (payload->item->pref_key && strcmp(payload->item->pref_key, "mc_fwd_prof") == 0)
+    {
+        app::IAppFacade& app_ctx = app::appFacade();
+        app_ctx.getConfig().meshcore_config.meshcore_forward_profile =
+            static_cast<chat::MeshCoreForwardProfile>(payload->value);
+        app_ctx.saveConfig();
+        app_ctx.applyMeshConfig();
+    }
     if (payload->item->pref_key && strcmp(payload->item->pref_key, "mc_channel_slot") == 0)
     {
         app::IAppFacade& app_ctx = app::appFacade();
@@ -3450,6 +3470,15 @@ static const settings::ui::SettingOption kMeshCoreFloodOptions[] = {
     {"48", 48},
     {"64", 64},
 };
+static const settings::ui::SettingOption kMeshCoreSendProfileOptions[] = {
+    {"V1 Only", 0},
+    {"Auto Prefer V2", 1},
+    {"V2 Only", 2},
+};
+static const settings::ui::SettingOption kMeshCoreForwardProfileOptions[] = {
+    {"Any", 0},
+    {"Multibyte Only", 1},
+};
 // Tx power options are populated dynamically based on board limits.
 static const settings::ui::SettingOption kNetUtilOptions[] = {
     {"Auto", 0},
@@ -3568,6 +3597,8 @@ static settings::ui::SettingItem kNetworkItems[] = {
     {"MC Airtime Factor", settings::ui::SettingType::Text, nullptr, 0, nullptr, nullptr, g_settings.mc_airtime, sizeof(g_settings.mc_airtime), false, "mc_airtime"},
     {"MC Flood Max", settings::ui::SettingType::Enum, kMeshCoreFloodOptions, sizeof(kMeshCoreFloodOptions) / sizeof(kMeshCoreFloodOptions[0]), &g_settings.mc_flood_max, nullptr, nullptr, 0, false, "mc_flood_max"},
     {"MC Multi ACKs", settings::ui::SettingType::Toggle, nullptr, 0, nullptr, &g_settings.mc_multi_acks, nullptr, 0, false, "mc_multi_acks"},
+    {"MC Send Profile", settings::ui::SettingType::Enum, kMeshCoreSendProfileOptions, sizeof(kMeshCoreSendProfileOptions) / sizeof(kMeshCoreSendProfileOptions[0]), &g_settings.mc_send_profile, nullptr, nullptr, 0, false, "mc_send_prof"},
+    {"MC Forward Profile", settings::ui::SettingType::Enum, kMeshCoreForwardProfileOptions, sizeof(kMeshCoreForwardProfileOptions) / sizeof(kMeshCoreForwardProfileOptions[0]), &g_settings.mc_forward_profile, nullptr, nullptr, 0, false, "mc_fwd_prof"},
     {"MC Channel Slot", settings::ui::SettingType::Enum, kMeshCoreChannelSlotOptions, sizeof(kMeshCoreChannelSlotOptions) / sizeof(kMeshCoreChannelSlotOptions[0]), &g_settings.mc_channel_slot, nullptr, nullptr, 0, false, "mc_channel_slot"},
     {"MC Channel Name", settings::ui::SettingType::Text, nullptr, 0, nullptr, nullptr, g_settings.mc_channel_name, sizeof(g_settings.mc_channel_name), false, "mc_channel_name"},
     {"MC Channel Key", settings::ui::SettingType::Text, nullptr, 0, nullptr, nullptr, g_settings.mc_channel_key, sizeof(g_settings.mc_channel_key), true, "mc_channel_key"},
@@ -3892,6 +3923,8 @@ static bool should_show_item(const settings::ui::SettingItem& item)
         if (has_pref_key(item, "mc_airtime")) return false;
         if (has_pref_key(item, "mc_flood_max")) return false;
         if (has_pref_key(item, "mc_multi_acks")) return false;
+        if (has_pref_key(item, "mc_send_prof")) return false;
+        if (has_pref_key(item, "mc_fwd_prof")) return false;
         if (has_pref_key(item, "mc_channel_slot")) return false;
         if (has_pref_key(item, "mc_channel_name")) return false;
         if (has_pref_key(item, "mc_channel_key")) return false;
@@ -3909,6 +3942,8 @@ static bool should_show_item(const settings::ui::SettingItem& item)
         if (has_pref_key(item, "mc_airtime")) return false;
         if (has_pref_key(item, "mc_flood_max")) return false;
         if (has_pref_key(item, "mc_multi_acks")) return false;
+        if (has_pref_key(item, "mc_send_prof")) return false;
+        if (has_pref_key(item, "mc_fwd_prof")) return false;
         if (has_pref_key(item, "mc_channel_slot")) return false;
         if (has_pref_key(item, "mc_channel_name")) return false;
         if (has_pref_key(item, "mc_channel_key")) return false;

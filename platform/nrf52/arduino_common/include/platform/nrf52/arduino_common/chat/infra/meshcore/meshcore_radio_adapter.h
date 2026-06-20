@@ -2,6 +2,7 @@
 
 #include "chat/infra/meshcore/meshcore_ble_backend.h"
 #include "chat/infra/meshcore/meshcore_identity_crypto.h"
+#include "chat/infra/meshcore/meshcore_protocol_helpers.h"
 #include "chat/ports/i_mesh_adapter.h"
 #include "chat/runtime/meshcore_runtime.h"
 #include "chat/runtime/protocol_runtime_factory.h"
@@ -90,6 +91,9 @@ class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter,
     bool sendRawData(const uint8_t* path, size_t path_len,
                      const uint8_t* payload, size_t payload_len,
                      uint32_t* out_est_timeout);
+    bool sendRawDataEx(uint8_t profile, const uint8_t* path, size_t path_len,
+                       const uint8_t* payload, size_t payload_len,
+                       uint32_t* out_est_timeout) override;
     void setFloodScopeKey(const uint8_t* key, size_t len);
 
   private:
@@ -98,6 +102,7 @@ class MeshCoreRadioAdapter final : public ::chat::IMeshAdapter,
     bool transmitFrame(const uint8_t* data, size_t size);
     bool sendAdvert(bool broadcast);
     bool handleNodeInfoAppData(const ::chat::MeshIncomingData& incoming);
+    ::chat::meshcore::PayloadProfile payloadProfile() const;
     ::chat::runtime::RuntimeContext buildRuntimeContext() const;
     ::chat::runtime::ProtocolRuntimeBundle protocolRuntimeBundle(
         const ::chat::runtime::IProtocolRuntimeContextProvider& context_provider);

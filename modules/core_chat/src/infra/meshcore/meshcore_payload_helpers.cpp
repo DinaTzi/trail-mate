@@ -25,11 +25,9 @@ constexpr uint8_t kPayloadTypeGrpTxt = 0x05;
 constexpr uint8_t kPayloadTypeAnonReq = 0x07;
 constexpr uint8_t kPayloadTypeDirectData = kPayloadTypeAnonReq;
 constexpr uint8_t kPayloadTypePath = 0x08;
-constexpr uint8_t kPayloadVer1 = 0x00;
 constexpr size_t kMeshcoreMaxPathSize = 64;
 constexpr size_t kMeshcoreMaxFrameSize = 255;
 constexpr size_t kCipherBlockSize = 16;
-constexpr size_t kCipherMacSize = 2;
 constexpr size_t kMeshcorePubKeySize = 32;
 constexpr size_t kMeshcorePubKeyPrefixSize = 8;
 constexpr NodeId kSyntheticNodePrefix = 0x4D430000UL;
@@ -172,21 +170,37 @@ bool isPeerPayloadType(uint8_t payload_type)
 
 bool isPeerCipherShape(size_t payload_len)
 {
-    if (payload_len <= (2 + kCipherMacSize))
+    return isPeerCipherShape(PayloadProfile::V1, payload_len);
+}
+
+bool isPeerCipherShape(PayloadProfile profile, size_t payload_len)
+{
+    const size_t hash_bytes = payloadHashBytes(profile);
+    const size_t mac_bytes = payloadMacBytes(profile);
+    const size_t prefix_len = hash_bytes * 2U;
+    if (payload_len <= (prefix_len + mac_bytes))
     {
         return false;
     }
-    const size_t enc_len = payload_len - 2 - kCipherMacSize;
+    const size_t enc_len = payload_len - prefix_len - mac_bytes;
     return (enc_len % kCipherBlockSize) == 0;
 }
 
 bool isAnonReqCipherShape(size_t payload_len)
 {
-    if (payload_len <= (1 + kMeshcorePubKeySize + kCipherMacSize))
+    return isAnonReqCipherShape(PayloadProfile::V1, payload_len);
+}
+
+bool isAnonReqCipherShape(PayloadProfile profile, size_t payload_len)
+{
+    const size_t hash_bytes = payloadHashBytes(profile);
+    const size_t mac_bytes = payloadMacBytes(profile);
+    const size_t prefix_len = hash_bytes + kMeshcorePubKeySize;
+    if (payload_len <= (prefix_len + mac_bytes))
     {
         return false;
     }
-    const size_t enc_len = payload_len - 1 - kMeshcorePubKeySize - kCipherMacSize;
+    const size_t enc_len = payload_len - prefix_len - mac_bytes;
     return (enc_len % kCipherBlockSize) == 0;
 }
 
@@ -195,9 +209,23 @@ bool buildFrameNoTransport(uint8_t route_type, uint8_t payload_type,
                            const uint8_t* payload, size_t payload_len,
                            uint8_t* out_frame, size_t out_cap, size_t* out_len)
 {
+    return buildFrameNoTransport(PayloadProfile::V1,
+                                 route_type, payload_type,
+                                 path, path_len,
+                                 payload, payload_len,
+                                 out_frame, out_cap, out_len);
+}
+
+bool buildFrameNoTransport(PayloadProfile profile,
+                           uint8_t route_type, uint8_t payload_type,
+                           const uint8_t* path, size_t path_len,
+                           const uint8_t* payload, size_t payload_len,
+                           uint8_t* out_frame, size_t out_cap, size_t* out_len)
+{
     if (!out_frame || !out_len || !payload || payload_len == 0 ||
         out_cap == 0 || path_len > kMeshcoreMaxPathSize ||
-        (path_len > 0 && !path))
+        (path_len > 0 && !path) ||
+        !pathIsWellFormed(profile, path_len))
     {
         return false;
     }
@@ -211,7 +239,7 @@ bool buildFrameNoTransport(uint8_t route_type, uint8_t payload_type,
     }
 
     size_t index = 0;
-    out_frame[index++] = buildHeader(route_type, payload_type, kPayloadVer1);
+    out_frame[index++] = buildHeader(route_type, payload_type, payloadVersion(profile));
     out_frame[index++] = static_cast<uint8_t>(path_len);
     if (path_len > 0)
     {
@@ -233,17 +261,36 @@ bool buildPeerDatagramPayload(uint8_t dest_hash, uint8_t src_hash,
                               const uint8_t* plain, size_t plain_len,
                               uint8_t* out_payload, size_t out_cap, size_t* out_len)
 {
-    if (!key16 || !key32 || !plain || plain_len == 0 || !out_payload || !out_len || out_cap < 3)
+    return buildPeerDatagramPayload(PayloadProfile::V1,
+                                    &dest_hash, &src_hash,
+                                    key16, key32,
+                                    plain, plain_len,
+                                    out_payload, out_cap, out_len);
+}
+
+bool buildPeerDatagramPayload(PayloadProfile profile,
+                              const uint8_t* dest_hash, const uint8_t* src_hash,
+                              const uint8_t key16[16], const uint8_t key32[32],
+                              const uint8_t* plain, size_t plain_len,
+                              uint8_t* out_payload, size_t out_cap, size_t* out_len)
+{
+    const size_t hash_bytes = payloadHashBytes(profile);
+    const size_t prefix_len = hash_bytes * 2U;
+    if (!dest_hash || !src_hash || !key16 || !key32 || !plain || plain_len == 0 ||
+        !out_payload || !out_len || out_cap <= prefix_len)
     {
         return false;
     }
 
     size_t index = 0;
-    out_payload[index++] = dest_hash;
-    out_payload[index++] = src_hash;
+    memcpy(&out_payload[index], dest_hash, hash_bytes);
+    index += hash_bytes;
+    memcpy(&out_payload[index], src_hash, hash_bytes);
+    index += hash_bytes;
     const size_t encrypted_len = encryptThenMac(key16, key32,
                                                 &out_payload[index], out_cap - index,
-                                                plain, plain_len);
+                                                plain, plain_len,
+                                                payloadMacBytes(profile));
     if (encrypted_len == 0)
     {
         return false;

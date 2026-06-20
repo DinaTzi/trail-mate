@@ -6,6 +6,7 @@
 #pragma once
 
 #include "chat/domain/chat_types.h"
+#include "chat/infra/meshcore/meshcore_protocol_helpers.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -128,12 +129,24 @@ void xorCrypt(uint8_t* data, size_t len, const uint8_t* key, size_t key_len);
 const uint8_t* selectChannelKey(const chat::MeshConfig& cfg, size_t* out_len);
 bool isPeerPayloadType(uint8_t payload_type);
 bool isPeerCipherShape(size_t payload_len);
+bool isPeerCipherShape(PayloadProfile profile, size_t payload_len);
 bool isAnonReqCipherShape(size_t payload_len);
+bool isAnonReqCipherShape(PayloadProfile profile, size_t payload_len);
 bool buildFrameNoTransport(uint8_t route_type, uint8_t payload_type,
                            const uint8_t* path, size_t path_len,
                            const uint8_t* payload, size_t payload_len,
                            uint8_t* out_frame, size_t out_cap, size_t* out_len);
+bool buildFrameNoTransport(PayloadProfile profile,
+                           uint8_t route_type, uint8_t payload_type,
+                           const uint8_t* path, size_t path_len,
+                           const uint8_t* payload, size_t payload_len,
+                           uint8_t* out_frame, size_t out_cap, size_t* out_len);
 bool buildPeerDatagramPayload(uint8_t dest_hash, uint8_t src_hash,
+                              const uint8_t key16[16], const uint8_t key32[32],
+                              const uint8_t* plain, size_t plain_len,
+                              uint8_t* out_payload, size_t out_cap, size_t* out_len);
+bool buildPeerDatagramPayload(PayloadProfile profile,
+                              const uint8_t* dest_hash, const uint8_t* src_hash,
                               const uint8_t key16[16], const uint8_t key32[32],
                               const uint8_t* plain, size_t plain_len,
                               uint8_t* out_payload, size_t out_cap, size_t* out_len);
