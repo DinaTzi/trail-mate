@@ -17,7 +17,7 @@ namespace
 
 constexpr std::size_t kMaxCandidateButtons = text_candidates::kMaxBuiltinTextCandidates;
 constexpr lv_coord_t kHeaderHeightPx = 30;
-constexpr lv_coord_t kHeaderCloseButtonHeightPx = 28;
+constexpr lv_coord_t kHeaderCloseButtonHeightPx = 26;
 constexpr lv_coord_t kPickerOuterPaddingPx = 6;
 constexpr lv_coord_t kGridGapPx = 6;
 
@@ -287,6 +287,8 @@ void set_button_label(lv_obj_t* button,
         label = lv_label_create(button);
     }
     ::ui::i18n::set_content_label_text_raw(label, text ? text : "");
+    lv_obj_set_width(label, LV_PCT(100));
+    lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
     lv_obj_set_style_text_font(label,
@@ -620,14 +622,17 @@ void open_text_candidate_picker(lv_obj_t* textarea,
     s_picker.title_label = title_label;
     const char* title = text_candidates::title(set);
     ::ui::i18n::set_label_text_raw(title_label, title);
+    lv_obj_set_height(title_label, LV_PCT(100));
+    lv_label_set_long_mode(title_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_font(title_label,
                                ::ui::page_profile::resolve_caption_font(),
                                LV_PART_MAIN);
     lv_obj_set_style_text_color(title_label, lv_color_hex(0x3A2A1A), LV_PART_MAIN);
 
     lv_obj_t* hint_label = lv_label_create(header);
-    ::ui::i18n::set_label_text_raw(hint_label, "WASD  Q close  E pick");
+    ::ui::i18n::set_label_text_raw(hint_label, "WASD move  Q close  E pick");
     lv_obj_set_flex_grow(hint_label, 1);
+    lv_obj_set_height(hint_label, LV_PCT(100));
     lv_label_set_long_mode(hint_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(hint_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_set_style_text_font(hint_label,
@@ -641,12 +646,14 @@ void open_text_candidate_picker(lv_obj_t* textarea,
                     kHeaderCloseButtonHeightPx);
     style_toolbar_button(close_btn);
     set_button_label(close_btn, "Close");
+    lv_obj_clear_flag(close_btn, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(close_btn, on_close_clicked, LV_EVENT_CLICKED, nullptr);
     lv_obj_add_event_cb(close_btn, on_picker_key, LV_EVENT_KEY, nullptr);
 
     lv_obj_t* grid = lv_obj_create(s_picker.root);
     lv_obj_set_width(grid, LV_PCT(100));
     lv_obj_set_flex_grow(grid, 1);
+    lv_obj_set_style_min_height(grid, 0, LV_PART_MAIN);
     lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(grid,
                           LV_FLEX_ALIGN_START,
@@ -745,6 +752,7 @@ lv_obj_t* add_text_candidate_button(lv_obj_t* toolbar,
 
     lv_obj_t* button = lv_btn_create(toolbar);
     lv_obj_set_size(button, width, height);
+    lv_obj_clear_flag(button, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_user_data(button, textarea);
     style_toolbar_button(button, reference_button);
     set_button_label(button,

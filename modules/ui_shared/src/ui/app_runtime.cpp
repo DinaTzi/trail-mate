@@ -4,6 +4,7 @@
 #include "ui/menu/menu_runtime.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 
 #if defined(ESP_PLATFORM)
@@ -215,6 +216,8 @@ void show_menu_internal()
 #if defined(ESP_PLATFORM)
     ESP_LOGI(kTag, "show_menu_internal active=%s", s_active_app ? s_active_app->name() : "(null)");
 #endif
+    std::printf("[UI][Lifecycle] menu visible=1 active=%s scene=menu\n",
+                s_active_app ? s_active_app->name() : "<none>");
     ui_clear_active_app();
     set_default_group(menu_g);
     ui::menu_layout::setMenuVisible(true);
@@ -273,6 +276,8 @@ void exit_to_menu_timer_cb(lv_timer_t* timer)
              parent,
              static_cast<unsigned long>(child_count(parent)));
 #endif
+    std::printf("[UI][Lifecycle] app exit name=%s reason=to_menu\n",
+                app->name());
     app->exit(parent);
     if (parent != nullptr)
     {
@@ -398,6 +403,8 @@ void ui_switch_to_app(AppScreen* app, lv_obj_t* parent)
 #if defined(ESP_PLATFORM)
         ESP_LOGI(kTag, "exiting previous app=%s", s_active_app->name());
 #endif
+        std::printf("[UI][Lifecycle] app exit name=%s reason=switch\n",
+                    s_active_app->name());
         s_active_app->exit(parent);
     }
     if (app)
@@ -405,6 +412,10 @@ void ui_switch_to_app(AppScreen* app, lv_obj_t* parent)
 #if defined(ESP_PLATFORM)
         ESP_LOGI(kTag, "enter app=%s", app->name());
 #endif
+        std::printf("[UI][Lifecycle] app enter from=%s to=%s parent=%d\n",
+                    s_active_app ? s_active_app->name() : "<none>",
+                    app->name(),
+                    parent ? 1 : 0);
         app->enter(parent);
         ui::menu_runtime::setScene(ui::menu_runtime::Scene::App);
     }
@@ -415,6 +426,8 @@ void ui_exit_active_app(lv_obj_t* parent)
 {
     if (s_active_app)
     {
+        std::printf("[UI][Lifecycle] app exit name=%s reason=explicit\n",
+                    s_active_app->name());
         s_active_app->exit(parent);
     }
     s_active_app = nullptr;

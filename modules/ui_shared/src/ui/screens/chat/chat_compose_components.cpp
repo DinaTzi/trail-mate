@@ -9,8 +9,10 @@
 #include "ui/localization.h"
 #include "ui/ui_common.h"
 #include "ui/widgets/ime/ime_widget.h"
+#include "ui/widgets/text_candidate_picker.h"
 
 #include <cstdio> // snprintf
+#include <cstdint>
 #include <cstring>
 
 #ifndef CHAT_COMPOSE_LOG_ENABLE
@@ -48,6 +50,8 @@ struct ChatComposeScreen::Impl
     ActionContext send_ctx;
     ActionContext position_ctx;
     ActionContext cancel_ctx;
+    lv_obj_t* sym_btn = nullptr;
+    lv_obj_t* emoji_btn = nullptr;
 };
 
 static void set_btn_label_white(lv_obj_t* btn)
@@ -328,6 +332,60 @@ void ChatComposeScreen::setBackCallback(void (*cb)(void*), void* user_data)
 void ChatComposeScreen::attachImeWidget(::ui::widgets::ImeWidget* widget)
 {
     ime_widget_ = widget;
+    if (!impl_ || !widget || !impl_->w.textarea)
+    {
+        return;
+    }
+
+    lv_obj_t* ime_toggle = widget->toggle_btn();
+    lv_obj_t* toolbar = ime_toggle && lv_obj_is_valid(ime_toggle) ? lv_obj_get_parent(ime_toggle) : nullptr;
+    if (!toolbar || !lv_obj_is_valid(toolbar))
+    {
+        impl_->sym_btn = nullptr;
+        impl_->emoji_btn = nullptr;
+        return;
+    }
+
+    lv_group_t* group = lv_group_get_default();
+    const auto ensure_candidate_button =
+        [&](lv_obj_t*& button, ::ui::widgets::text_candidates::CandidateSet set, std::uint32_t index)
+        {
+            if (button && (!lv_obj_is_valid(button) || lv_obj_get_parent(button) != toolbar))
+            {
+                button = nullptr;
+            }
+            if (!button)
+            {
+                button = ::ui::widgets::add_text_candidate_button(
+                    toolbar,
+                    impl_->w.textarea,
+                    set,
+                    group,
+                    ime_toggle);
+            }
+            else
+            {
+                lv_obj_set_user_data(button, impl_->w.textarea);
+                if (group)
+                {
+                    lv_group_remove_obj(button);
+                    lv_group_add_obj(group, button);
+                }
+            }
+            if (button)
+            {
+                lv_obj_move_to_index(button, index);
+            }
+        };
+
+    ensure_candidate_button(
+        impl_->sym_btn,
+        ::ui::widgets::text_candidates::CandidateSet::Symbols,
+        1);
+    ensure_candidate_button(
+        impl_->emoji_btn,
+        ::ui::widgets::text_candidates::CandidateSet::Emoji,
+        2);
 }
 
 lv_obj_t* ChatComposeScreen::getTextarea() const

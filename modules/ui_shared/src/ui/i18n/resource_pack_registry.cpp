@@ -312,6 +312,7 @@ void log_limited_route(unsigned& counter,
                        const char* text,
                        const char* extra)
 {
+#if UI_I18N_ROUTE_LOG_ENABLE
     if (counter >= max_count)
     {
         return;
@@ -323,6 +324,14 @@ void log_limited_route(unsigned& counter,
                 safe_text(via),
                 safe_text(extra),
                 text ? text : "");
+#else
+    (void)counter;
+    (void)max_count;
+    (void)route;
+    (void)via;
+    (void)text;
+    (void)extra;
+#endif
 }
 
 const char* usage_name(FontPackUsage usage)
@@ -1328,11 +1337,13 @@ bool load_font_pack(FontPackRecord& pack)
                 pack.id.c_str(),
                 pack.source_path.c_str(),
                 static_cast<unsigned long>(pack.estimated_ram_bytes));
+#if UI_I18N_ROUTE_LOG_ENABLE
     std::printf("%s[route] route=pack_load state=begin id=%s builtin=0 source=%s ram=%lu\n",
                 kLogTag,
                 pack.id.c_str(),
                 pack.source_path.c_str(),
                 static_cast<unsigned long>(pack.estimated_ram_bytes));
+#endif
     ScopedFontLoadOverlay overlay(pack);
     pack.owned_font = lv_binfont_create(pack.source_path.c_str());
     if (pack.owned_font == nullptr)
@@ -1342,11 +1353,13 @@ bool load_font_pack(FontPackRecord& pack)
                     kLogTag,
                     pack.id.c_str(),
                     pack.source_path.c_str());
+#if UI_I18N_ROUTE_LOG_ENABLE
         std::printf("%s[route] route=pack_load state=failed id=%s source=%s failures=%u\n",
                     kLogTag,
                     pack.id.c_str(),
                     pack.source_path.c_str(),
                     static_cast<unsigned>(pack.load_failure_count));
+#endif
         return false;
     }
 
@@ -1355,11 +1368,13 @@ bool load_font_pack(FontPackRecord& pack)
                 pack.id.c_str(),
                 pack.source_path.c_str(),
                 static_cast<unsigned long>(pack.estimated_ram_bytes));
+#if UI_I18N_ROUTE_LOG_ENABLE
     std::printf("%s[route] route=pack_load state=ready id=%s source=%s font=%p\n",
                 kLogTag,
                 pack.id.c_str(),
                 pack.source_path.c_str(),
                 static_cast<void*>(pack.owned_font));
+#endif
     clear_font_load_failure(pack);
     return true;
 #else
@@ -1492,10 +1507,12 @@ void rebuild_runtime_font_chains()
     if (s_ui_font_chain.desc != last_ui_chain ||
         s_content_font_chain.desc != last_content_chain)
     {
+#if UI_I18N_ROUTE_LOG_ENABLE
         std::printf("%s[route] route=font_chain ui_chain=%s content_chain=%s\n",
                     kLogTag,
                     s_ui_font_chain.desc.empty() ? "<none>" : s_ui_font_chain.desc.c_str(),
                     s_content_font_chain.desc.empty() ? "<none>" : s_content_font_chain.desc.c_str());
+#endif
         last_ui_chain = s_ui_font_chain.desc;
         last_content_chain = s_content_font_chain.desc;
     }
@@ -2059,6 +2076,7 @@ bool catalog_external_font_pack(const std::string& pack_dir)
                 usage_name(pack.usage),
                 static_cast<unsigned long>(pack.estimated_ram_bytes),
                 pack.source_path.empty() ? "<none>" : pack.source_path.c_str());
+#if UI_I18N_ROUTE_LOG_ENABLE
     std::printf("%s[route] route=pack_catalog id=%s builtin=%d usage=%s coverage=%lu ram=%lu source=%s\n",
                 kLogTag,
                 pack.id.c_str(),
@@ -2067,6 +2085,7 @@ bool catalog_external_font_pack(const std::string& pack_dir)
                 static_cast<unsigned long>(pack.coverage.size()),
                 static_cast<unsigned long>(pack.estimated_ram_bytes),
                 pack.source_path.empty() ? "<none>" : pack.source_path.c_str());
+#endif
     s_font_packs.push_back(std::move(pack));
     return true;
 }
@@ -3057,7 +3076,6 @@ bool ensure_content_font_for_text(const char* text)
         return true;
     }
 
-    const bool interesting_text = route_text_is_interesting(text);
     ScopedForcedFontLoadOverlay forced_overlay;
     bool changed = false;
     changed |= ensure_active_content_pack_loaded();
@@ -3103,6 +3121,8 @@ bool ensure_content_font_for_text(const char* text)
         rebuild_runtime_font_chains();
     }
 
+#if UI_I18N_ROUTE_LOG_ENABLE
+    const bool interesting_text = route_text_is_interesting(text);
     if (interesting_text && s_content_route_diagnostics < 80)
     {
         char extra[192];
@@ -3122,6 +3142,7 @@ bool ensure_content_font_for_text(const char* text)
                           text,
                           extra);
     }
+#endif
 
     if (!missing.empty() && s_missing_content_font_diagnostics < kMaxMissingFontDiagnostics)
     {
@@ -3280,6 +3301,7 @@ void set_label_text_raw(lv_obj_t* label, const char* text)
     if (label)
     {
         const char* value = text ? text : "";
+#if UI_I18N_ROUTE_LOG_ENABLE
         if (route_text_is_interesting(value))
         {
             char extra[160];
@@ -3296,6 +3318,7 @@ void set_label_text_raw(lv_obj_t* label, const char* text)
                               value,
                               extra);
         }
+#endif
         lv_label_set_text(label, value);
         ::ui::fonts::apply_localized_font(label, value, lv_obj_get_style_text_font(label, LV_PART_MAIN));
     }
@@ -3316,6 +3339,7 @@ void set_content_label_text_raw(lv_obj_t* label, const char* text)
     if (label)
     {
         const char* value = text ? text : "";
+#if UI_I18N_ROUTE_LOG_ENABLE
         if (route_text_is_interesting(value))
         {
             char extra[192];
@@ -3332,6 +3356,7 @@ void set_content_label_text_raw(lv_obj_t* label, const char* text)
                               value,
                               extra);
         }
+#endif
         lv_label_set_text(label, value);
         ::ui::fonts::apply_content_font(label, value, lv_obj_get_style_text_font(label, LV_PART_MAIN));
     }
@@ -3353,6 +3378,7 @@ void set_label_text_fmt(lv_obj_t* label, const char* english_fmt, ...)
 
 void log_direct_text_route(const char* owner, const void* label, const char* text)
 {
+#if UI_I18N_ROUTE_LOG_ENABLE
     if (!route_text_is_interesting(text))
     {
         return;
@@ -3373,6 +3399,11 @@ void log_direct_text_route(const char* owner, const void* label, const char* tex
                       "lv_label_set_text",
                       text,
                       extra);
+#else
+    (void)owner;
+    (void)label;
+    (void)text;
+#endif
 }
 
 } // namespace ui::i18n

@@ -16,6 +16,10 @@
 #define lv_font_montserrat_18 lv_font_montserrat_14
 #endif
 
+#ifndef UI_I18N_ROUTE_LOG_ENABLE
+#define UI_I18N_ROUTE_LOG_ENABLE 0
+#endif
+
 namespace ui::fonts
 {
 
@@ -179,6 +183,7 @@ inline void log_localized_font_route(FontScope scope,
                                      const lv_font_t* base_font,
                                      const lv_font_t* resolved_font)
 {
+#if UI_I18N_ROUTE_LOG_ENABLE
     if (!utf8_has_non_ascii(text))
     {
         return;
@@ -203,6 +208,12 @@ inline void log_localized_font_route(FontScope scope,
                 static_cast<const void*>(fallback),
                 static_cast<const void*>(resolved_font),
                 text ? text : "");
+#else
+    (void)scope;
+    (void)text;
+    (void)base_font;
+    (void)resolved_font;
+#endif
 }
 
 inline const lv_font_t* localized_font(FontScope scope,

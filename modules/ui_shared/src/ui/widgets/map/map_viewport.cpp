@@ -31,6 +31,7 @@ struct RuntimeImpl
     TileContext tile_ctx{};
     lv_timer_t* loader_timer = nullptr;
     uint32_t loader_interval_ms = 50;
+    uint32_t last_loader_active_log_ms = 0;
     bool alive = false;
     bool has_map_data = false;
     bool has_visible_map_data = false;
@@ -634,6 +635,21 @@ void loader_timer_cb(lv_timer_t* timer)
         return;
     }
 
+    const uint32_t now_ms = lv_tick_get();
+    if (impl->last_loader_active_log_ms == 0 ||
+        now_ms - impl->last_loader_active_log_ms >= 5000U)
+    {
+        impl->last_loader_active_log_ms = now_ms;
+        std::printf("[UI][Lifecycle] map tile_loader active root=%p interval_ms=%lu focus=%.6f,%.6f zoom=%d visible=%d data=%d\n",
+                    impl->widgets.root,
+                    static_cast<unsigned long>(impl->loader_interval_ms),
+                    impl->model.focus_point.lat,
+                    impl->model.focus_point.lon,
+                    impl->model.zoom,
+                    impl->has_visible_map_data ? 1 : 0,
+                    impl->has_map_data ? 1 : 0);
+    }
+
     tile_loader_step(impl->tile_ctx);
 
     uint8_t missing_source = 0;
@@ -747,7 +763,13 @@ Widgets create(Runtime& runtime, lv_obj_t* parent, uint32_t loader_interval_ms)
                       &impl->has_visible_map_data);
 
     impl->loader_timer = lv_timer_create(loader_timer_cb, loader_interval_ms, impl);
+    impl->loader_interval_ms = loader_interval_ms;
     impl->alive = true;
+    std::printf("[UI][Lifecycle] map runtime create root=%p tile=%p loader=%p interval_ms=%lu\n",
+                impl->widgets.root,
+                impl->widgets.tile_layer,
+                impl->loader_timer,
+                static_cast<unsigned long>(loader_interval_ms));
 
     MAP_VIEWPORT_LOG("create root=%p tile=%p overlay=%p loader_timer=%p interval=%u\n",
                      impl->widgets.root,
@@ -770,6 +792,12 @@ void destroy(Runtime& runtime)
                      impl->widgets.root,
                      impl->loader_timer,
                      impl->alive ? 1 : 0);
+    std::printf("[UI][Lifecycle] map runtime destroy root=%p loader=%p alive=%d visible=%d data=%d\n",
+                impl->widgets.root,
+                impl->loader_timer,
+                impl->alive ? 1 : 0,
+                impl->has_visible_map_data ? 1 : 0,
+                impl->has_map_data ? 1 : 0);
     impl->alive = false;
 
     if (impl->loader_timer)
