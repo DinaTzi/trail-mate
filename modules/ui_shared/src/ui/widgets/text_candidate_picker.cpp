@@ -20,6 +20,7 @@ constexpr lv_coord_t kHeaderHeightPx = 30;
 constexpr lv_coord_t kHeaderCloseButtonHeightPx = 26;
 constexpr lv_coord_t kPickerOuterPaddingPx = 6;
 constexpr lv_coord_t kGridGapPx = 6;
+constexpr lv_coord_t kGridTopPaddingPx = 4;
 
 struct PickerState
 {
@@ -272,10 +273,10 @@ lv_coord_t object_height_hint(lv_obj_t* obj)
     return height > 0 ? height : 0;
 }
 
-void set_button_label(lv_obj_t* button,
-                      const char* text,
-                      const lv_font_t* font = nullptr,
-                      lv_color_t color = lv_color_hex(0x3A2A1A))
+void set_candidate_button_label(lv_obj_t* button,
+                                const char* text,
+                                const lv_font_t* font = nullptr,
+                                lv_color_t color = lv_color_hex(0x3A2A1A))
 {
     if (!button)
     {
@@ -288,6 +289,32 @@ void set_button_label(lv_obj_t* button,
     }
     ::ui::i18n::set_content_label_text_raw(label, text ? text : "");
     lv_obj_set_width(label, LV_PCT(100));
+    lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label,
+                               font ? font : ::ui::fonts::localized_font(
+                                                 ::ui::fonts::ui_chrome_font()),
+                               LV_PART_MAIN);
+    lv_obj_center(label);
+}
+
+void set_toolbar_button_label(lv_obj_t* button,
+                              const char* text,
+                              const lv_font_t* font = nullptr,
+                              lv_color_t color = lv_color_hex(0x3A2A1A))
+{
+    if (!button)
+    {
+        return;
+    }
+    lv_obj_t* label = lv_obj_get_child(button, 0);
+    if (!label)
+    {
+        label = lv_label_create(button);
+    }
+    ::ui::i18n::set_label_text_raw(label, text ? text : "");
+    lv_obj_set_width(label, LV_SIZE_CONTENT);
     lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
@@ -389,7 +416,7 @@ void refresh_candidates()
             continue;
         }
         lv_obj_clear_flag(button, LV_OBJ_FLAG_HIDDEN);
-        set_button_label(button, candidate, s_picker.candidate_font);
+        set_candidate_button_label(button, candidate, s_picker.candidate_font);
         apply_candidate_button_style(button, slot == s_picker.active);
     }
     refresh_title();
@@ -411,7 +438,17 @@ void focus_candidate(std::size_t index)
     if (slot < s_picker.candidate_count && s_picker.buttons[slot])
     {
         lv_group_focus_obj(s_picker.buttons[slot]);
-        lv_obj_scroll_to_view(s_picker.buttons[slot], LV_ANIM_OFF);
+        if (lv_obj_t* grid = lv_obj_get_parent(s_picker.buttons[slot]))
+        {
+            if (static_cast<int>(slot) < s_picker.columns)
+            {
+                lv_obj_scroll_to_y(grid, 0, LV_ANIM_OFF);
+            }
+            else
+            {
+                lv_obj_scroll_to_view(s_picker.buttons[slot], LV_ANIM_OFF);
+            }
+        }
     }
 }
 
@@ -599,14 +636,31 @@ void open_text_candidate_picker(lv_obj_t* textarea,
     lv_obj_set_style_bg_color(s_picker.root, lv_color_hex(0xFBF3E7), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(s_picker.root, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_picker.root, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_picker.root, kPickerOuterPaddingPx, LV_PART_MAIN);
-    lv_obj_set_flex_flow(s_picker.root, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(s_picker.root, kPickerOuterPaddingPx, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_picker.root, 0, LV_PART_MAIN);
     lv_obj_clear_flag(s_picker.root, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(s_picker.root, on_picker_key, LV_EVENT_KEY, nullptr);
 
+    lv_obj_update_layout(s_picker.root);
+    lv_coord_t screen_w = lv_obj_get_width(s_picker.root);
+    lv_coord_t screen_h = lv_obj_get_height(s_picker.root);
+    if (screen_w <= 0)
+    {
+        screen_w = lv_display_get_horizontal_resolution(nullptr);
+    }
+    if (screen_h <= 0)
+    {
+        screen_h = lv_display_get_vertical_resolution(nullptr);
+    }
+    const lv_coord_t content_w =
+        std::max<lv_coord_t>(1, screen_w - static_cast<lv_coord_t>(kPickerOuterPaddingPx * 2));
+    const lv_coord_t grid_y =
+        static_cast<lv_coord_t>(kPickerOuterPaddingPx + kHeaderHeightPx + kPickerOuterPaddingPx);
+    const lv_coord_t grid_h =
+        std::max<lv_coord_t>(1, screen_h - grid_y - kPickerOuterPaddingPx);
+
     lv_obj_t* header = lv_obj_create(s_picker.root);
-    lv_obj_set_size(header, LV_PCT(100), kHeaderHeightPx);
+    lv_obj_set_size(header, content_w, kHeaderHeightPx);
+    lv_obj_set_pos(header, kPickerOuterPaddingPx, kPickerOuterPaddingPx);
     lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(header,
                           LV_FLEX_ALIGN_SPACE_BETWEEN,
@@ -645,15 +699,14 @@ void open_text_candidate_picker(lv_obj_t* textarea,
                     ::ui::page_profile::resolve_compact_button_min_width(),
                     kHeaderCloseButtonHeightPx);
     style_toolbar_button(close_btn);
-    set_button_label(close_btn, "Close");
+    set_toolbar_button_label(close_btn, "Close");
     lv_obj_clear_flag(close_btn, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(close_btn, on_close_clicked, LV_EVENT_CLICKED, nullptr);
     lv_obj_add_event_cb(close_btn, on_picker_key, LV_EVENT_KEY, nullptr);
 
     lv_obj_t* grid = lv_obj_create(s_picker.root);
-    lv_obj_set_width(grid, LV_PCT(100));
-    lv_obj_set_flex_grow(grid, 1);
-    lv_obj_set_style_min_height(grid, 0, LV_PART_MAIN);
+    lv_obj_set_size(grid, content_w, grid_h);
+    lv_obj_set_pos(grid, kPickerOuterPaddingPx, grid_y);
     lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(grid,
                           LV_FLEX_ALIGN_START,
@@ -664,18 +717,14 @@ void open_text_candidate_picker(lv_obj_t* textarea,
     lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(grid, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(grid, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(grid, kGridTopPaddingPx, LV_PART_MAIN);
     lv_obj_set_style_pad_row(grid, kGridGapPx, LV_PART_MAIN);
     lv_obj_set_style_pad_column(grid, kGridGapPx, LV_PART_MAIN);
 
     const int columns = picker_columns();
-    lv_coord_t screen_w = lv_obj_get_width(parent);
-    if (screen_w <= 0)
-    {
-        screen_w = lv_display_get_physical_horizontal_resolution(nullptr);
-    }
     const lv_coord_t cell_w =
         std::max<lv_coord_t>(34,
-                             (screen_w - (kPickerOuterPaddingPx * 2) -
+                             (content_w -
                               ((columns - 1) * kGridGapPx)) /
                                  columns);
     const lv_coord_t cell_h = std::max<lv_coord_t>(
@@ -709,9 +758,10 @@ void open_text_candidate_picker(lv_obj_t* textarea,
     {
         lv_obj_t* button = lv_btn_create(grid);
         lv_obj_set_size(button, cell_w, cell_h);
+        lv_obj_clear_flag(button, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_user_data(button, reinterpret_cast<void*>(static_cast<intptr_t>(slot)));
         apply_candidate_button_style(button, slot == 0);
-        set_button_label(button, "", button_font);
+        set_candidate_button_label(button, "", button_font);
         lv_obj_add_event_cb(button, on_candidate_clicked, LV_EVENT_CLICKED, nullptr);
         lv_obj_add_event_cb(button, on_candidate_focused, LV_EVENT_FOCUSED, nullptr);
         lv_obj_add_event_cb(button, on_picker_key, LV_EVENT_KEY, nullptr);
@@ -745,20 +795,19 @@ lv_obj_t* add_text_candidate_button(lv_obj_t* toolbar,
     {
         width = std::max<lv_coord_t>(48, profile.ime_toggle_width);
     }
-    if (set == text_candidates::CandidateSet::Emoji)
-    {
-        width = std::max<lv_coord_t>(width + 18, 64);
-    }
+    width = set == text_candidates::CandidateSet::Emoji
+                ? std::max<lv_coord_t>(width + 18, 68)
+                : std::max<lv_coord_t>(width, 46);
 
     lv_obj_t* button = lv_btn_create(toolbar);
     lv_obj_set_size(button, width, height);
     lv_obj_clear_flag(button, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_user_data(button, textarea);
     style_toolbar_button(button, reference_button);
-    set_button_label(button,
-                     text_candidates::button_label(set),
-                     button_label_font(reference_button),
-                     button_label_color(reference_button));
+    set_toolbar_button_label(button,
+                             text_candidates::button_label(set),
+                             button_label_font(reference_button),
+                             button_label_color(reference_button));
     lv_obj_add_event_cb(button,
                         on_toolbar_button_clicked,
                         LV_EVENT_CLICKED,
