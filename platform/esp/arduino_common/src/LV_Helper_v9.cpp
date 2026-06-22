@@ -814,34 +814,6 @@ static void lv_encoder_read(lv_indev_t* drv, lv_indev_data_t* data)
         return;
     }
 
-    if (walkie::is_active())
-    {
-        if (msg.dir == ROTARY_DIR_UP)
-        {
-            walkie::adjust_volume(1);
-            updateUserActivity();
-        }
-        else if (msg.dir == ROTARY_DIR_DOWN)
-        {
-            walkie::adjust_volume(-1);
-            updateUserActivity();
-        }
-
-        if (msg.centerBtnPressed)
-        {
-            data->enc_diff = 0;
-            data->state = LV_INDEV_STATE_PRESSED;
-            plane->feedback((void*)drv);
-            return;
-        }
-
-#if !defined(ARDUINO_T_DECK) && !defined(ARDUINO_T_DECK_PRO)
-        data->enc_diff = 0;
-        data->state = LV_INDEV_STATE_RELEASED;
-#endif
-        return;
-    }
-
     // Screen is awake, process input normally
     if (msg.dir != ROTARY_DIR_NONE || msg.centerBtnPressed)
     {

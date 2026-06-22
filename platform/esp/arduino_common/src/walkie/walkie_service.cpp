@@ -143,19 +143,6 @@ void set_error(const char* message)
     snprintf(s_last_error, sizeof(s_last_error), "%s", message);
 }
 
-uint8_t clamp_volume(int value)
-{
-    if (value < 0)
-    {
-        return 0;
-    }
-    if (value > 100)
-    {
-        return 100;
-    }
-    return static_cast<uint8_t>(value);
-}
-
 uint8_t compute_level(const int16_t* samples, int count, uint8_t prev)
 {
     int32_t peak = 0;
@@ -959,17 +946,6 @@ bool is_monitor_enabled()
     return s_monitor_enabled;
 }
 
-void adjust_volume(int delta)
-{
-    if (!s_active)
-    {
-        return;
-    }
-    s_volume = clamp_volume(static_cast<int>(s_volume) + delta);
-    walkie_runtime::codecSetVolume(&s_runtime_session, s_volume);
-    std::printf("[WALKIE] volume=%u\n", static_cast<unsigned>(s_volume));
-}
-
 int get_volume()
 {
     return s_volume;
@@ -1037,10 +1013,6 @@ bool set_monitor_enabled(bool)
 bool is_monitor_enabled()
 {
     return false;
-}
-
-void adjust_volume(int)
-{
 }
 
 int get_volume()

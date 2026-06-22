@@ -36,6 +36,7 @@ lv_obj_t* s_right_fill = nullptr;
 lv_obj_t* s_monitor_row = nullptr;
 lv_obj_t* s_monitor_switch = nullptr;
 lv_obj_t* s_monitor_label = nullptr;
+lv_obj_t* s_control_panel = nullptr;
 lv_obj_t* s_volume_bar = nullptr;
 lv_obj_t* s_volume_label = nullptr;
 lv_timer_t* s_timer = nullptr;
@@ -43,10 +44,10 @@ ui::widgets::TopBar s_top_bar;
 bool s_started = false;
 
 constexpr lv_coord_t kVuWidth = 12;
-constexpr lv_coord_t kVuHeight = 120;
-constexpr lv_coord_t kVolumeBarWidth = 220;
-constexpr lv_coord_t kVolumeBarHeight = 12;
-constexpr lv_coord_t kMonitorRowHeight = 36;
+constexpr lv_coord_t kVuHeight = 104;
+constexpr lv_coord_t kControlPanelWidth = 210;
+constexpr lv_coord_t kVolumeBarHeight = 8;
+constexpr lv_coord_t kMonitorRowHeight = 32;
 constexpr lv_coord_t kMonitorSwitchWidth = 46;
 constexpr lv_coord_t kMonitorSwitchHeight = 24;
 
@@ -121,17 +122,6 @@ void root_key_event_cb(lv_event_t* e)
     on_back(nullptr);
 }
 
-void monitor_switch_event_cb(lv_event_t* e)
-{
-    if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED || s_monitor_switch == nullptr)
-    {
-        return;
-    }
-
-    const bool enabled = lv_obj_has_state(s_monitor_switch, LV_STATE_CHECKED);
-    apply_monitor_enabled_from_ui(enabled);
-}
-
 void monitor_row_event_cb(lv_event_t* e)
 {
     if (!s_monitor_row)
@@ -179,6 +169,49 @@ void style_monitor_row(lv_obj_t* row)
     lv_obj_set_style_outline_width(row, 2, LV_STATE_FOCUSED);
     lv_obj_set_style_outline_color(row, lv_color_hex(0xC98118), LV_STATE_FOCUSED);
     lv_obj_set_style_outline_pad(row, 2, LV_STATE_FOCUSED);
+}
+
+void style_control_panel(lv_obj_t* panel)
+{
+    if (!panel)
+    {
+        return;
+    }
+    lv_obj_set_style_bg_color(panel, lv_color_hex(0xFFF8EA), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(panel, LV_OPA_70, LV_PART_MAIN);
+    lv_obj_set_style_border_width(panel, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(panel, lv_color_hex(0xE3C27F), LV_PART_MAIN);
+    lv_obj_set_style_radius(panel, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(panel, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(panel, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(panel, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(panel, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(panel, 4, LV_PART_MAIN);
+    lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(panel,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(panel, LV_OBJ_FLAG_CLICKABLE);
+}
+
+void style_readonly_volume_bar(lv_obj_t* bar)
+{
+    if (!bar)
+    {
+        return;
+    }
+    lv_obj_clear_flag(bar, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(bar, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+    lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(0xFFF0D3), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(bar, 4, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(0x5BAF4A), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(bar, 4, LV_PART_INDICATOR);
+    lv_obj_set_style_outline_width(bar, 0, LV_STATE_FOCUSED);
 }
 
 void update_vu(lv_obj_t* fill, uint8_t level)
@@ -346,7 +379,7 @@ void enter(const shell::Host* host, lv_obj_t* parent)
     lv_obj_set_style_bg_opa(stack, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(stack, 0, 0);
     lv_obj_set_style_pad_all(stack, 0, 0);
-    lv_obj_set_style_pad_row(stack, 8, 0);
+    lv_obj_set_style_pad_row(stack, 4, 0);
     lv_obj_set_flex_flow(stack, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(stack, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_clear_flag(stack, LV_OBJ_FLAG_SCROLLABLE);
@@ -366,8 +399,12 @@ void enter(const shell::Host* host, lv_obj_t* parent)
     lv_obj_set_style_text_font(s_mode_label, &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_align(s_mode_label, LV_TEXT_ALIGN_CENTER, 0);
 
-    s_monitor_row = lv_btn_create(stack);
-    lv_obj_set_size(s_monitor_row, kVolumeBarWidth, kMonitorRowHeight);
+    s_control_panel = lv_obj_create(stack);
+    lv_obj_set_size(s_control_panel, kControlPanelWidth, LV_SIZE_CONTENT);
+    style_control_panel(s_control_panel);
+
+    s_monitor_row = lv_btn_create(s_control_panel);
+    lv_obj_set_size(s_monitor_row, LV_PCT(100), kMonitorRowHeight);
     lv_obj_set_style_pad_left(s_monitor_row, 10, LV_PART_MAIN);
     lv_obj_set_style_pad_right(s_monitor_row, 8, LV_PART_MAIN);
     lv_obj_set_style_pad_top(s_monitor_row, 0, LV_PART_MAIN);
@@ -392,15 +429,45 @@ void enter(const shell::Host* host, lv_obj_t* parent)
 
     s_monitor_switch = lv_switch_create(s_monitor_row);
     lv_obj_set_size(s_monitor_switch, kMonitorSwitchWidth, kMonitorSwitchHeight);
+    lv_obj_clear_flag(s_monitor_switch, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(s_monitor_switch, LV_OBJ_FLAG_CLICK_FOCUSABLE);
     lv_obj_set_style_outline_width(s_monitor_switch, 2, LV_STATE_FOCUSED);
     lv_obj_set_style_outline_color(s_monitor_switch, lv_color_hex(0xC98118), LV_STATE_FOCUSED);
     lv_obj_set_style_outline_pad(s_monitor_switch, 2, LV_STATE_FOCUSED);
     lv_obj_add_event_cb(s_monitor_switch, root_key_event_cb, LV_EVENT_KEY, nullptr);
-    lv_obj_add_event_cb(s_monitor_switch, monitor_switch_event_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t* volume_row = lv_obj_create(s_control_panel);
+    lv_obj_set_size(volume_row, LV_PCT(100), 16);
+    lv_obj_set_style_bg_opa(volume_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(volume_row, 0, 0);
+    lv_obj_set_style_pad_all(volume_row, 0, 0);
+    lv_obj_set_style_pad_column(volume_row, 6, 0);
+    lv_obj_set_flex_flow(volume_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(volume_row,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_clear_flag(volume_row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(volume_row, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+    lv_obj_clear_flag(volume_row, LV_OBJ_FLAG_SCROLLABLE);
+
+    s_volume_label = lv_label_create(volume_row);
+    ::ui::i18n::set_label_text(s_volume_label, "VOL 80");
+    lv_obj_set_width(s_volume_label, 56);
+    lv_obj_set_style_text_font(s_volume_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_align(s_volume_label, LV_TEXT_ALIGN_LEFT, 0);
+
+    s_volume_bar = lv_bar_create(volume_row);
+    lv_obj_set_size(s_volume_bar, 0, kVolumeBarHeight);
+    lv_obj_set_flex_grow(s_volume_bar, 1);
+    lv_bar_set_range(s_volume_bar, 0, 100);
+    lv_bar_set_value(s_volume_bar, platform::ui::walkie::volume(), LV_ANIM_OFF);
+    style_readonly_volume_bar(s_volume_bar);
 
     if (app_g && s_monitor_row)
     {
         lv_group_add_obj(app_g, s_monitor_row);
+        lv_group_set_editing(app_g, false);
     }
 
     lv_obj_t* vu_left = lv_obj_create(content);
@@ -436,34 +503,6 @@ void enter(const shell::Host* host, lv_obj_t* parent)
     lv_obj_set_style_bg_color(s_right_fill, lv_color_hex(0x5BAF4A), 0);
     lv_obj_set_style_border_width(s_right_fill, 0, 0);
     lv_obj_clear_flag(s_right_fill, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t* vol_container = lv_obj_create(content);
-    lv_obj_set_size(vol_container, kVolumeBarWidth, LV_SIZE_CONTENT);
-    lv_obj_align(vol_container, LV_ALIGN_BOTTOM_MID, 0, -14);
-    lv_obj_set_style_bg_opa(vol_container, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(vol_container, 0, 0);
-    lv_obj_set_style_pad_all(vol_container, 0, 0);
-    lv_obj_set_style_pad_row(vol_container, 4, 0);
-    lv_obj_set_flex_flow(vol_container, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(vol_container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER);
-    lv_obj_clear_flag(vol_container, LV_OBJ_FLAG_SCROLLABLE);
-
-    s_volume_label = lv_label_create(vol_container);
-    ::ui::i18n::set_label_text(s_volume_label, "VOL 80");
-    lv_obj_set_style_text_font(s_volume_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_align(s_volume_label, LV_TEXT_ALIGN_CENTER, 0);
-
-    s_volume_bar = lv_bar_create(vol_container);
-    lv_obj_set_size(s_volume_bar, kVolumeBarWidth, kVolumeBarHeight);
-    lv_bar_set_range(s_volume_bar, 0, 100);
-    lv_bar_set_value(s_volume_bar, platform::ui::walkie::volume(), LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(s_volume_bar, lv_color_hex(0xFFF0D3), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_volume_bar, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_radius(s_volume_bar, 4, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_volume_bar, lv_color_hex(0x5BAF4A), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_opa(s_volume_bar, LV_OPA_COVER, LV_PART_INDICATOR);
-    lv_obj_set_style_radius(s_volume_bar, 4, LV_PART_INDICATOR);
 
     platform::ui::walkie::Status st = platform::ui::walkie::get_status();
     if (st.freq_mhz > 0.0f)
@@ -535,6 +574,7 @@ void exit(lv_obj_t* parent)
     s_monitor_row = nullptr;
     s_monitor_switch = nullptr;
     s_monitor_label = nullptr;
+    s_control_panel = nullptr;
     s_volume_bar = nullptr;
     s_volume_label = nullptr;
     s_top_bar = {};

@@ -20,7 +20,6 @@ bool is_active();
 void set_ptt(bool pressed);
 bool set_monitor_enabled(bool enabled);
 bool is_monitor_enabled();
-void adjust_volume(int delta);
 int get_volume();
 void on_key_event(char key, int state);
 Status get_status();
