@@ -17,6 +17,7 @@ on:
       - "modules/**"
       - "platform/linux/**"
       - ".github/workflows/cardputer-zero-linux.yml"
+  workflow_dispatch:
 
 jobs:
   cardputer-zero:
