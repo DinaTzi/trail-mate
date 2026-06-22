@@ -6,6 +6,7 @@ permissions:
   contents: read
   issues: read
   pull-requests: read
+  copilot-requests: write
 
 safe-outputs:
   create-pull-request:
@@ -16,7 +17,6 @@ safe-outputs:
 tools:
   github:
   bash: true
-
 ---
 
 # Test Improver
