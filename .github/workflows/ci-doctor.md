@@ -10,6 +10,7 @@ permissions:
   actions: read
   issues: read
   pull-requests: read
+  copilot-requests: write
 
 safe-outputs:
   add-comment:
@@ -17,6 +18,7 @@ safe-outputs:
 
 tools:
   github:
+---
 ---
 
 # CI Doctor
