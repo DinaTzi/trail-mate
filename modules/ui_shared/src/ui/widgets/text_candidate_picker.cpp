@@ -21,6 +21,7 @@ constexpr lv_coord_t kHeaderCloseButtonHeightPx = 26;
 constexpr lv_coord_t kPickerOuterPaddingPx = 6;
 constexpr lv_coord_t kGridGapPx = 6;
 constexpr lv_coord_t kGridTopPaddingPx = 4;
+constexpr lv_coord_t kGridBottomPaddingPx = 2;
 
 struct PickerState
 {
@@ -633,10 +634,16 @@ void open_text_candidate_picker(lv_obj_t* textarea,
 
     s_picker.root = lv_obj_create(parent);
     lv_obj_set_size(s_picker.root, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_flex_flow(s_picker.root, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(s_picker.root,
+                          LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_START);
     lv_obj_set_style_bg_color(s_picker.root, lv_color_hex(0xFBF3E7), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(s_picker.root, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_picker.root, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_picker.root, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_picker.root, kPickerOuterPaddingPx, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(s_picker.root, kPickerOuterPaddingPx, LV_PART_MAIN);
     lv_obj_clear_flag(s_picker.root, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(s_picker.root, on_picker_key, LV_EVENT_KEY, nullptr);
 
@@ -653,14 +660,9 @@ void open_text_candidate_picker(lv_obj_t* textarea,
     }
     const lv_coord_t content_w =
         std::max<lv_coord_t>(1, screen_w - static_cast<lv_coord_t>(kPickerOuterPaddingPx * 2));
-    const lv_coord_t grid_y =
-        static_cast<lv_coord_t>(kPickerOuterPaddingPx + kHeaderHeightPx + kPickerOuterPaddingPx);
-    const lv_coord_t grid_h =
-        std::max<lv_coord_t>(1, screen_h - grid_y - kPickerOuterPaddingPx);
 
     lv_obj_t* header = lv_obj_create(s_picker.root);
     lv_obj_set_size(header, content_w, kHeaderHeightPx);
-    lv_obj_set_pos(header, kPickerOuterPaddingPx, kPickerOuterPaddingPx);
     lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(header,
                           LV_FLEX_ALIGN_SPACE_BETWEEN,
@@ -705,8 +707,8 @@ void open_text_candidate_picker(lv_obj_t* textarea,
     lv_obj_add_event_cb(close_btn, on_picker_key, LV_EVENT_KEY, nullptr);
 
     lv_obj_t* grid = lv_obj_create(s_picker.root);
-    lv_obj_set_size(grid, content_w, grid_h);
-    lv_obj_set_pos(grid, kPickerOuterPaddingPx, grid_y);
+    lv_obj_set_size(grid, content_w, 0);
+    lv_obj_set_flex_grow(grid, 1);
     lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(grid,
                           LV_FLEX_ALIGN_START,
@@ -718,6 +720,7 @@ void open_text_candidate_picker(lv_obj_t* textarea,
     lv_obj_set_style_border_width(grid, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(grid, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_top(grid, kGridTopPaddingPx, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(grid, kGridBottomPaddingPx, LV_PART_MAIN);
     lv_obj_set_style_pad_row(grid, kGridGapPx, LV_PART_MAIN);
     lv_obj_set_style_pad_column(grid, kGridGapPx, LV_PART_MAIN);
 
