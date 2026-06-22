@@ -19,7 +19,6 @@ safe-outputs:
 tools:
   github:
 ---
----
 
 # CI Doctor
 
