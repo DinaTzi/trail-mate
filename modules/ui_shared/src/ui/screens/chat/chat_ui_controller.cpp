@@ -246,6 +246,27 @@ void handle_conversation_back(void* user_data)
         controller->backToList();
     }
 }
+
+// Returns the UiController if the LVGL event should trigger the action
+// (CLICKED, or KEY with LV_KEY_ENTER), otherwise nullptr.
+UiController* get_controller_for_activate_event(lv_event_t* e)
+{
+    auto* controller = static_cast<UiController*>(lv_event_get_user_data(e));
+    if (!controller)
+    {
+        return nullptr;
+    }
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_KEY)
+    {
+        if (static_cast<lv_key_t>(lv_event_get_key(e)) != LV_KEY_ENTER)
+        {
+            return nullptr;
+        }
+        return controller;
+    }
+    return (code == LV_EVENT_CLICKED) ? controller : nullptr;
+}
 } // namespace
 
 UiController::UiController(lv_obj_t* parent,
@@ -1103,21 +1124,7 @@ void UiController::clearKeyVerificationError()
 
 void UiController::key_verify_submit_event_cb(lv_event_t* e)
 {
-    auto* controller = static_cast<UiController*>(lv_event_get_user_data(e));
-    if (!controller)
-    {
-        return;
-    }
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_KEY)
-    {
-        lv_key_t key = static_cast<lv_key_t>(lv_event_get_key(e));
-        if (key != LV_KEY_ENTER)
-        {
-            return;
-        }
-    }
-    if (code == LV_EVENT_CLICKED || code == LV_EVENT_KEY)
+    if (auto* controller = get_controller_for_activate_event(e))
     {
         controller->submitKeyVerificationInput();
     }
@@ -1125,21 +1132,7 @@ void UiController::key_verify_submit_event_cb(lv_event_t* e)
 
 void UiController::key_verify_close_event_cb(lv_event_t* e)
 {
-    auto* controller = static_cast<UiController*>(lv_event_get_user_data(e));
-    if (!controller)
-    {
-        return;
-    }
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_KEY)
-    {
-        lv_key_t key = static_cast<lv_key_t>(lv_event_get_key(e));
-        if (key != LV_KEY_ENTER)
-        {
-            return;
-        }
-    }
-    if (code == LV_EVENT_CLICKED || code == LV_EVENT_KEY)
+    if (auto* controller = get_controller_for_activate_event(e))
     {
         controller->closeKeyVerificationModal(true);
     }
@@ -1147,21 +1140,7 @@ void UiController::key_verify_close_event_cb(lv_event_t* e)
 
 void UiController::key_verify_trust_event_cb(lv_event_t* e)
 {
-    auto* controller = static_cast<UiController*>(lv_event_get_user_data(e));
-    if (!controller)
-    {
-        return;
-    }
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_KEY)
-    {
-        lv_key_t key = static_cast<lv_key_t>(lv_event_get_key(e));
-        if (key != LV_KEY_ENTER)
-        {
-            return;
-        }
-    }
-    if (code == LV_EVENT_CLICKED || code == LV_EVENT_KEY)
+    if (auto* controller = get_controller_for_activate_event(e))
     {
         controller->trustKeyFromVerificationModal();
     }

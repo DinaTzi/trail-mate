@@ -54,12 +54,12 @@ ChatDeliveryEvent mapLegacyChatSendResult(
 ChatDeliveryEvent makeAckTimeoutDeliveryEvent(ChatDeliveryRef ref,
                                               uint32_t timestamp_ms)
 {
-    LegacyChatSendResult result{};
-    result.ref = ref;
-    result.success = false;
-    result.failure = LegacyChatSendFailure::AckTimeout;
-    result.timestamp_ms = timestamp_ms;
-    return mapLegacyChatSendResult(result);
+    ChatDeliveryEvent event{};
+    event.ref = ref;
+    event.timestamp_ms = timestamp_ms;
+    event.state = DeliveryState::Failed;
+    event.failure = SendFailureKind::AckTimeout;
+    return event;
 }
 
 } // namespace chat::delivery

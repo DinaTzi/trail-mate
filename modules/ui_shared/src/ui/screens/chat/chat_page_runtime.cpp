@@ -164,14 +164,7 @@ void enter(const shell::Host* host, lv_obj_t* parent)
     lv_obj_set_style_pad_all(s_chat_container, 0, 0);
     lv_obj_set_style_radius(s_chat_container, 0, 0);
 
-    if (app_g != nullptr)
-    {
-        set_default_group(app_g);
-    }
-    else
-    {
-        set_default_group(prev_group);
-    }
+    set_default_group(app_g != nullptr ? app_g : prev_group);
 
     chat::ChannelId default_channel = (app::configFacade().getConfig().chat_channel == 1)
                                           ? chat::ChannelId::SECONDARY
