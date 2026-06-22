@@ -48,7 +48,7 @@ void ChatModel::onSendResult(MessageId msg_id, bool ok)
         for (size_t i = 0; i < data.messages.size(); i++)
         {
             ChatMessage* msg = &data.messages[i].message;
-            if (msg && msg->msg_id == msg_id)
+            if (msg->msg_id == msg_id)
             {
                 msg->status = ok ? MessageStatus::Sent : MessageStatus::Failed;
                 if (!ok)
@@ -95,15 +95,7 @@ std::vector<ChatMessage> ChatModel::getRecent(const ConversationId& conv, size_t
 
 std::vector<ChatMessage> ChatModel::getFailedMessages() const
 {
-    std::vector<ChatMessage> result;
-    size_t count = failed_messages_.size();
-
-    for (size_t i = 0; i < count; i++)
-    {
-        result.push_back(failed_messages_[i]);
-    }
-
-    return result;
+    return failed_messages_;
 }
 
 const ChatMessage* ChatModel::getMessage(MessageId msg_id) const
@@ -114,7 +106,7 @@ const ChatMessage* ChatModel::getMessage(MessageId msg_id) const
         for (size_t i = 0; i < data.messages.size(); i++)
         {
             const ChatMessage* msg = &data.messages[i].message;
-            if (msg && msg->msg_id == msg_id)
+            if (msg->msg_id == msg_id)
             {
                 return msg;
             }

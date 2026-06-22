@@ -402,6 +402,12 @@ bool ContactService::isNodeVisible(uint32_t last_seen) const
 
 std::string ContactService::formatTimeStatus(uint32_t last_seen) const
 {
+    static constexpr uint32_t kOnlineSecs = 120;
+    static constexpr uint32_t kSecsPerMinute = 60;
+    static constexpr uint32_t kSecsPerHour = 3600;
+    static constexpr uint32_t kSecsPerDay = 86400;
+    static constexpr uint32_t kOfflineThresholdSecs = 6 * kSecsPerDay;
+
     uint32_t now_secs = sys::epoch_seconds_now();
     if (now_secs < last_seen)
     {
@@ -410,30 +416,30 @@ std::string ContactService::formatTimeStatus(uint32_t last_seen) const
 
     uint32_t age_secs = now_secs - last_seen;
 
-    if (age_secs <= 120)
+    if (age_secs <= kOnlineSecs)
     {
         return "Online";
     }
 
-    if (age_secs < 3600)
+    if (age_secs < kSecsPerHour)
     {
-        uint32_t minutes = age_secs / 60;
+        uint32_t minutes = age_secs / kSecsPerMinute;
         char buf[16];
         std::snprintf(buf, sizeof(buf), "Seen %" PRIu32 "m", minutes);
         return std::string(buf);
     }
 
-    if (age_secs < 86400)
+    if (age_secs < kSecsPerDay)
     {
-        uint32_t hours = age_secs / 3600;
+        uint32_t hours = age_secs / kSecsPerHour;
         char buf[16];
         std::snprintf(buf, sizeof(buf), "Seen %" PRIu32 "h", hours);
         return std::string(buf);
     }
 
-    if (age_secs < 6 * 86400)
+    if (age_secs < kOfflineThresholdSecs)
     {
-        uint32_t days = age_secs / 86400;
+        uint32_t days = age_secs / kSecsPerDay;
         char buf[16];
         std::snprintf(buf, sizeof(buf), "Seen %" PRIu32 "d", days);
         return std::string(buf);

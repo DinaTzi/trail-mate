@@ -24,9 +24,7 @@ bool MtDedup::isDuplicate(NodeId from_node, uint32_t packet_id)
 {
     cleanup();
 
-    PacketKey key;
-    key.from = from_node;
-    key.id = packet_id;
+    const PacketKey key{from_node, packet_id};
 
     return cache_.find(key) != cache_.end();
 }
@@ -37,13 +35,10 @@ void MtDedup::markSeen(NodeId from_node, uint32_t packet_id)
 
     if (cache_.size() >= MAX_CACHE_SIZE)
     {
-        auto oldest = cache_.begin();
-        cache_.erase(oldest);
+        cache_.erase(cache_.begin());
     }
 
-    PacketKey key;
-    key.from = from_node;
-    key.id = packet_id;
+    const PacketKey key{from_node, packet_id};
 
     PacketEntry entry;
     entry.timestamp = sys::millis_now();
