@@ -9,6 +9,22 @@ namespace platform::ui::time
 namespace
 {
 
+// DST rule calendar constants
+constexpr int kMarch = 3;
+constexpr int kApril = 4;
+constexpr int kSeptember = 9;
+constexpr int kOctober = 10;
+constexpr int kNovember = 11;
+constexpr int kSunday = 0;
+constexpr int kFirstOccurrence = 1;
+constexpr int kSecondOccurrence = 2;
+constexpr int kLastOccurrence = 5;
+constexpr int kUtcOffsetMin = 0;
+constexpr int kAestOffsetMin = 600;
+constexpr int kAedtOffsetMin = 660;
+constexpr int kNzstOffsetMin = 720;
+constexpr int kNzdtOffsetMin = 780;
+
 constexpr int kUtc = 0;
 constexpr int kBeijing = 1;
 constexpr int kTaipei = 2;
@@ -204,27 +220,33 @@ bool is_dst_for_rule(const TimezoneProfile& profile, std::time_t utc_seconds)
     case DstRuleKind::Us:
         return in_simple_dst_window(utc_seconds,
                                     utc.year,
-                                    3,
-                                    2,
-                                    0,
+                                    kMarch,
+                                    kSecondOccurrence,
+                                    kSunday,
                                     2,
                                     profile.standard_offset_min,
-                                    11,
-                                    1,
-                                    0,
+                                    kNovember,
+                                    kFirstOccurrence,
+                                    kSunday,
                                     2,
                                     profile.daylight_offset_min);
     case DstRuleKind::Eu:
-        return in_simple_dst_window(utc_seconds, utc.year, 3, 5, 0, 1, 0, 10, 5, 0, 1, 0);
+        return in_simple_dst_window(utc_seconds, utc.year,
+                                    kMarch, kLastOccurrence, kSunday, 1, kUtcOffsetMin,
+                                    kOctober, kLastOccurrence, kSunday, 1, kUtcOffsetMin);
     case DstRuleKind::Australia:
     {
         const int season_year = utc.month < 7 ? utc.year - 1 : utc.year;
-        return in_simple_dst_window(utc_seconds, season_year, 10, 1, 0, 2, 600, 4, 1, 0, 3, 660);
+        return in_simple_dst_window(utc_seconds, season_year,
+                                    kOctober, kFirstOccurrence, kSunday, 2, kAestOffsetMin,
+                                    kApril, kFirstOccurrence, kSunday, 3, kAedtOffsetMin);
     }
     case DstRuleKind::NewZealand:
     {
         const int season_year = utc.month < 7 ? utc.year - 1 : utc.year;
-        return in_simple_dst_window(utc_seconds, season_year, 9, 5, 0, 2, 720, 4, 1, 0, 3, 780);
+        return in_simple_dst_window(utc_seconds, season_year,
+                                    kSeptember, kLastOccurrence, kSunday, 2, kNzstOffsetMin,
+                                    kApril, kFirstOccurrence, kSunday, 3, kNzdtOffsetMin);
     }
     case DstRuleKind::None:
     default:
