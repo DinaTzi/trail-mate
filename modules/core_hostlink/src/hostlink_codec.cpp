@@ -6,17 +6,27 @@
 namespace hostlink
 {
 
+namespace
+{
+
+constexpr uint16_t kCrcInit = 0xFFFF;
+constexpr uint16_t kCrcMsbMask = 0x8000;
+constexpr uint16_t kCrcPolynomial = 0x1021;
+constexpr int kBitsPerByte = 8;
+
+} // namespace
+
 uint16_t crc16_ccitt(const uint8_t* data, size_t len)
 {
-    uint16_t crc = 0xFFFF;
+    uint16_t crc = kCrcInit;
     for (size_t i = 0; i < len; ++i)
     {
         crc ^= static_cast<uint16_t>(data[i]) << 8;
-        for (int j = 0; j < 8; ++j)
+        for (int j = 0; j < kBitsPerByte; ++j)
         {
-            if (crc & 0x8000)
+            if (crc & kCrcMsbMask)
             {
-                crc = static_cast<uint16_t>((crc << 1) ^ 0x1021);
+                crc = static_cast<uint16_t>((crc << 1) ^ kCrcPolynomial);
             }
             else
             {

@@ -11,6 +11,8 @@ namespace
 constexpr uint8_t kTeamStateVersion = 1;
 constexpr size_t kTeamNameMaxLen = 48;
 constexpr size_t kMemberNameMaxLen = 32;
+constexpr uint32_t kFnvOffsetBasis = 2166136261u;
+constexpr uint32_t kFnvPrime = 16777619u;
 
 void push_u8(std::vector<uint8_t>& out, uint8_t value)
 {
@@ -141,11 +143,11 @@ bool build_team_state_payload(const TeamStateSnapshot& snapshot,
 
 uint32_t hash_bytes(const uint8_t* data, size_t len)
 {
-    uint32_t hash = 2166136261u;
+    uint32_t hash = kFnvOffsetBasis;
     for (size_t i = 0; i < len; ++i)
     {
         hash ^= data[i];
-        hash *= 16777619u;
+        hash *= kFnvPrime;
     }
     return hash;
 }
